@@ -19,7 +19,6 @@ import {
 interface HeaderProps {
   location: string | null;
   onRequestLocation: () => void;
-  onGpsCoordinates: (coords: { latitude: number; longitude: number }) => void;
   onManualLocation: (city: string) => void;
   searchQuery: string;
   onSearchChange: (q: string) => void;
@@ -27,16 +26,11 @@ interface HeaderProps {
 
 const CITIES = ["Mumbai", "Delhi", "Bangalore", "Hyderabad", "Chennai", "Pune", "Kolkata", "Ahmedabad", "Jaipur", "Lucknow"];
 
-function formatCoordinateLocation(latitude: number, longitude: number) {
-  return `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
-}
-
 const subscribeHydration = () => () => {};
 
 export default function MarketplaceHeader({
   location,
   onRequestLocation,
-  onGpsCoordinates,
   onManualLocation,
   searchQuery,
   onSearchChange,
@@ -111,27 +105,9 @@ export default function MarketplaceHeader({
 
   // Use browser geolocation to get user's current location
   const handleUseMyLocation = () => {
-    if (!navigator.geolocation) {
-      alert("Geolocation is not supported by your browser");
-      onRequestLocation();
-      return;
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      ({ coords }) => {
-        const { latitude, longitude } = coords;
-        // Send coordinates to parent
-        onGpsCoordinates({ latitude, longitude });
-        // Format and apply as location string
-        applyCity(formatCoordinateLocation(latitude, longitude));
-      },
-      (error) => {
-        console.error("Geolocation error:", error);
-        alert("Unable to access your location. Please enable location services.");
-        onRequestLocation();
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-    );
+    onRequestLocation();
+    setLocOpen(false);
+    setCityInput("");
   };
 
   return (

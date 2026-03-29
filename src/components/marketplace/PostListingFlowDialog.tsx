@@ -443,7 +443,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
         </div>
 
         {step === "category" ? (
-          <section className="flex max-h-[62vh] flex-col">
+          <section key="post-step-category" className="flex max-h-[62vh] flex-col">
             <div className="space-y-4 overflow-y-auto p-6">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="font-heading text-lg">Step 1: Select categories</h3>
@@ -531,7 +531,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
             </div>
           </section>
         ) : step === "details" ? (
-          <section className="flex max-h-[62vh] flex-col">
+          <section key="post-step-details" className="flex max-h-[62vh] flex-col">
             <div className="space-y-4 overflow-y-auto p-6">
               <h3 className="font-heading text-lg">Step 2: Product details</h3>
 
@@ -612,7 +612,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
             </div>
           </section>
         ) : step === "photos" ? (
-          <section className="flex max-h-[62vh] flex-col">
+          <section key="post-step-photos" className="flex max-h-[62vh] flex-col">
             <div className="space-y-4 overflow-y-auto p-6">
               <h3 className="font-heading text-lg">Step 3: Upload photos</h3>
 
@@ -688,7 +688,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
             </div>
           </section>
         ) : (
-          <form onSubmit={handleSubmit} className="flex max-h-[62vh] flex-col">
+          <form key="post-step-purpose" onSubmit={handleSubmit} className="flex max-h-[62vh] flex-col">
             <div className="space-y-4 overflow-y-auto p-6">
               <h3 className="font-heading text-lg">Step 4: Purpose and pricing</h3>
 

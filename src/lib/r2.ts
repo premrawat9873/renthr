@@ -1,7 +1,12 @@
 import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { randomUUID } from "crypto";
+import sharp from "sharp";
 
 const MAX_IMAGE_SIZE_BYTES = 8 * 1024 * 1024;
+const TARGET_COMPRESSED_IMAGE_SIZE_BYTES = 250 * 1024;
+const MAX_COMPRESSED_IMAGE_SIZE_BYTES = 300 * 1024;
+const COMPRESSION_WIDTH_STEPS = [800, 720, 640];
+const COMPRESSION_QUALITY_STEPS = [70, 64, 58, 52, 46, 40];
 const ALLOWED_IMAGE_MIME_TYPES = new Set([
   "image/jpeg",
   "image/png",
@@ -134,18 +139,57 @@ function sanitizeFileName(name: string) {
   return sanitized || "image";
 }
 
-function toUploadKey(file: File, prefix: string) {
-  const contentType = file.type;
+function toUploadKey(fileName: string, contentType: string, prefix: string) {
   const extension = MIME_EXTENSION_MAP[contentType] ?? "bin";
   const daySegment = new Date().toISOString().slice(0, 10);
   const safePrefix = prefix.replace(/^\/+|\/+$/g, "");
-  const baseName = sanitizeFileName(file.name);
+  const baseName = sanitizeFileName(fileName);
 
   return `${safePrefix}/${daySegment}/${randomUUID()}-${baseName}.${extension}`;
 }
 
 function toPublicImageUrl(publicBaseUrl: string, key: string) {
   return new URL(key, ensureTrailingSlash(publicBaseUrl)).toString();
+}
+
+async function compressImageBuffer(buffer: Buffer) {
+  let bestCandidate: Buffer | null = null;
+
+  for (const width of COMPRESSION_WIDTH_STEPS) {
+    for (const quality of COMPRESSION_QUALITY_STEPS) {
+      const candidate = await sharp(buffer, { failOn: "none" })
+        .rotate()
+        .resize({
+          width,
+          fit: "inside",
+          withoutEnlargement: true,
+        })
+        .jpeg({
+          quality,
+          mozjpeg: true,
+          chromaSubsampling: "4:2:0",
+        })
+        .toBuffer();
+
+      if (!bestCandidate || candidate.length < bestCandidate.length) {
+        bestCandidate = candidate;
+      }
+
+      if (candidate.length <= TARGET_COMPRESSED_IMAGE_SIZE_BYTES) {
+        return candidate;
+      }
+
+      if (candidate.length <= MAX_COMPRESSED_IMAGE_SIZE_BYTES) {
+        return candidate;
+      }
+    }
+  }
+
+  if (!bestCandidate) {
+    throw new R2UploadError("Unable to process this image.", 400);
+  }
+
+  return bestCandidate;
 }
 
 export async function uploadImageToR2(
@@ -166,16 +210,33 @@ export async function uploadImageToR2(
 
   const config = getR2Config();
   const client = getR2Client();
-  const key = toUploadKey(file, options?.prefix ?? "listings");
-  const body = Buffer.from(await file.arrayBuffer());
+  const originalBuffer = Buffer.from(await file.arrayBuffer());
+
+  let compressedBody: Buffer;
+
+  try {
+    compressedBody = await compressImageBuffer(originalBuffer);
+  } catch (error) {
+    if (error instanceof R2UploadError) {
+      throw error;
+    }
+
+    throw new R2UploadError(
+      "Unable to optimize this image. Please try another file.",
+      400
+    );
+  }
+
+  const contentType = "image/jpeg";
+  const key = toUploadKey(file.name, contentType, options?.prefix ?? "listings");
 
   try {
     await client.send(
       new PutObjectCommand({
         Bucket: config.bucketName,
         Key: key,
-        Body: body,
-        ContentType: file.type,
+        Body: compressedBody,
+        ContentType: contentType,
         CacheControl: "public, max-age=31536000, immutable",
       })
     );
@@ -186,7 +247,7 @@ export async function uploadImageToR2(
   return {
     key,
     url: toPublicImageUrl(config.publicBaseUrl, key),
-    size: file.size,
-    contentType: file.type,
+    size: compressedBody.length,
+    contentType,
   };
 }

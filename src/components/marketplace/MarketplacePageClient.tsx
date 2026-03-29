@@ -80,8 +80,53 @@ function haversineDistanceKm(
   return earthRadiusKm * c;
 }
 
-function formatCoordinateLocation(latitude: number, longitude: number) {
-  return `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+type ReverseGeocodeResult = {
+  city: string;
+  state: string;
+};
+
+async function reverseGeocodeLocation(
+  latitude: number,
+  longitude: number
+): Promise<ReverseGeocodeResult | null> {
+  try {
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`
+    );
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = (await response.json()) as {
+      address?: {
+        city?: string;
+        town?: string;
+        village?: string;
+        county?: string;
+        state?: string;
+      };
+    };
+
+    const city =
+      data.address?.city ??
+      data.address?.town ??
+      data.address?.village ??
+      data.address?.county ??
+      "";
+    const state = data.address?.state ?? "";
+
+    if (!city && !state) {
+      return null;
+    }
+
+    return {
+      city: city || "Unknown",
+      state: state || "Unknown",
+    };
+  } catch {
+    return null;
+  }
 }
 
 function compareById(aId: string, bId: string) {
@@ -178,13 +223,38 @@ export function MarketplacePageClient({ products }: MarketplacePageClientProps) 
   const requestLocation = useCallback(() => {
     if ('geolocation' in navigator) {
       navigator.geolocation.getCurrentPosition(
-        ({ coords }) => {
-          dispatch(setUserCoords({ latitude: coords.latitude, longitude: coords.longitude }));
-          dispatch(setLocation(formatCoordinateLocation(coords.latitude, coords.longitude)));
+        async ({ coords }) => {
+          const { latitude, longitude } = coords;
+
+          dispatch(setUserCoords({ latitude, longitude }));
+
+          const geocoded = await reverseGeocodeLocation(latitude, longitude);
+          if (geocoded) {
+            dispatch(
+              setUserLocation({
+                city: geocoded.city,
+                state: geocoded.state,
+                latitude,
+                longitude,
+              })
+            );
+
+            dispatch(setLocation(`${geocoded.city}, ${geocoded.state}`));
+            return;
+          }
+
+          dispatch(setLocation('Current location'));
         },
-        () => dispatch(setLocation('Bangalore'))
+        () => {
+          dispatch(setUserCoords(null));
+          dispatch(setUserLocation(null));
+          dispatch(setLocation('Bangalore'));
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
       );
     } else {
+      dispatch(setUserCoords(null));
+      dispatch(setUserLocation(null));
       dispatch(setLocation('Bangalore'));
     }
   }, [dispatch]);
@@ -292,7 +362,6 @@ export function MarketplacePageClient({ products }: MarketplacePageClientProps) 
       <MarketplaceHeader
         location={safeLocation}
         onRequestLocation={requestLocation}
-        onGpsCoordinates={(coords) => dispatch(setUserCoords(coords))}
         onManualLocation={handleManualLocation}
         searchQuery={safeSearchQuery}
         onSearchChange={(query) => dispatch(setSearchQuery(query))}
