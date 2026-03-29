@@ -1,4 +1,14 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
+
+export const metadata: Metadata = {
+  title: 'Profile',
+  description: 'View and update your account profile.',
+  robots: {
+    index: false,
+    follow: false,
+  },
+};
 
 export default function ProfilePage() {
   return (

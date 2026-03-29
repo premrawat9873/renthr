@@ -23,6 +23,8 @@ export const CATEGORIES: Category[] = [
 
 export const VISIBLE_COUNT = 12;
 
+const NOW = Date.now();
+
 export const MOCK_PRODUCTS: Product[] = [
   {
     id: "1",
@@ -35,7 +37,7 @@ export const MOCK_PRODUCTS: Product[] = [
     images: ["https://images.unsplash.com/photo-1516035069371-29a1b244cc32?w=800&h=600&fit=crop", "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?w=800&h=600&fit=crop&q=80", "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?w=800&h=600&fit=crop&q=70", "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?w=800&h=600&fit=crop&q=60", "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?w=800&h=600&fit=crop&q=50"],
     location: "Koramangala",
     distance: 1.2,
-    postedAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
+    postedAt: new Date(NOW - 2 * 60 * 60 * 1000),
     rating: 4.8,
     reviewCount: 42,
     featured: true,
@@ -55,7 +57,7 @@ export const MOCK_PRODUCTS: Product[] = [
     images: ["https://images.unsplash.com/photo-1592750475338-74b7b21085ab?w=800&h=600&fit=crop", "https://images.unsplash.com/photo-1592750475338-74b7b21085ab?w=800&h=600&fit=crop&q=80", "https://images.unsplash.com/photo-1592750475338-74b7b21085ab?w=800&h=600&fit=crop&q=70", "https://images.unsplash.com/photo-1592750475338-74b7b21085ab?w=800&h=600&fit=crop&q=60", "https://images.unsplash.com/photo-1592750475338-74b7b21085ab?w=800&h=600&fit=crop&q=50"],
     location: "Indiranagar",
     distance: 3.5,
-    postedAt: new Date(Date.now() - 5 * 60 * 60 * 1000),
+    postedAt: new Date(NOW - 5 * 60 * 60 * 1000),
   },
   {
     id: "3",
@@ -68,7 +70,7 @@ export const MOCK_PRODUCTS: Product[] = [
     images: ["https://images.unsplash.com/photo-1558981806-ec527fa84c39?w=800&h=600&fit=crop", "https://images.unsplash.com/photo-1558981806-ec527fa84c39?w=800&h=600&fit=crop&q=80", "https://images.unsplash.com/photo-1558981806-ec527fa84c39?w=800&h=600&fit=crop&q=70", "https://images.unsplash.com/photo-1558981806-ec527fa84c39?w=800&h=600&fit=crop&q=60", "https://images.unsplash.com/photo-1558981806-ec527fa84c39?w=800&h=600&fit=crop&q=50"],
     location: "HSR Layout",
     distance: 4.1,
-    postedAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000),
+    postedAt: new Date(NOW - 1 * 24 * 60 * 60 * 1000),
   },
   {
     id: "4",
@@ -81,7 +83,7 @@ export const MOCK_PRODUCTS: Product[] = [
     images: ["https://images.unsplash.com/photo-1473968512647-3e447244af8f?w=800&h=600&fit=crop", "https://images.unsplash.com/photo-1473968512647-3e447244af8f?w=800&h=600&fit=crop&q=80", "https://images.unsplash.com/photo-1473968512647-3e447244af8f?w=800&h=600&fit=crop&q=70", "https://images.unsplash.com/photo-1473968512647-3e447244af8f?w=800&h=600&fit=crop&q=60", "https://images.unsplash.com/photo-1473968512647-3e447244af8f?w=800&h=600&fit=crop&q=50"],
     location: "Whitefield",
     distance: 8.7,
-    postedAt: new Date(Date.now() - 30 * 60 * 1000),
+    postedAt: new Date(NOW - 30 * 60 * 1000),
     rating: 4.6,
     reviewCount: 18,
     featured: true,
@@ -97,7 +99,7 @@ export const MOCK_PRODUCTS: Product[] = [
     images: ["https://images.unsplash.com/photo-1518455027359-f3f8164ba6bd?w=800&h=600&fit=crop", "https://images.unsplash.com/photo-1518455027359-f3f8164ba6bd?w=800&h=600&fit=crop&q=80", "https://images.unsplash.com/photo-1518455027359-f3f8164ba6bd?w=800&h=600&fit=crop&q=70", "https://images.unsplash.com/photo-1518455027359-f3f8164ba6bd?w=800&h=600&fit=crop&q=60", "https://images.unsplash.com/photo-1518455027359-f3f8164ba6bd?w=800&h=600&fit=crop&q=50"],
     location: "MG Road",
     distance: 2.3,
-    postedAt: new Date(Date.now() - 12 * 60 * 60 * 1000),
+    postedAt: new Date(NOW - 12 * 60 * 60 * 1000),
   },
   {
     id: "6",
@@ -110,7 +112,7 @@ export const MOCK_PRODUCTS: Product[] = [
     images: ["https://images.unsplash.com/photo-1606144042614-b2417e99c4e3?w=800&h=600&fit=crop", "https://images.unsplash.com/photo-1606144042614-b2417e99c4e3?w=800&h=600&fit=crop&q=80", "https://images.unsplash.com/photo-1606144042614-b2417e99c4e3?w=800&h=600&fit=crop&q=70", "https://images.unsplash.com/photo-1606144042614-b2417e99c4e3?w=800&h=600&fit=crop&q=60", "https://images.unsplash.com/photo-1606144042614-b2417e99c4e3?w=800&h=600&fit=crop&q=50"],
     location: "Jayanagar",
     distance: 5.0,
-    postedAt: new Date(Date.now() - 3 * 60 * 60 * 1000),
+    postedAt: new Date(NOW - 3 * 60 * 60 * 1000),
     rating: 4.9,
     reviewCount: 87,
   },
@@ -125,7 +127,7 @@ export const MOCK_PRODUCTS: Product[] = [
     images: ["https://images.unsplash.com/photo-1510915361894-db8b60106cb1?w=800&h=600&fit=crop", "https://images.unsplash.com/photo-1510915361894-db8b60106cb1?w=800&h=600&fit=crop&q=80", "https://images.unsplash.com/photo-1510915361894-db8b60106cb1?w=800&h=600&fit=crop&q=70", "https://images.unsplash.com/photo-1510915361894-db8b60106cb1?w=800&h=600&fit=crop&q=60", "https://images.unsplash.com/photo-1510915361894-db8b60106cb1?w=800&h=600&fit=crop&q=50"],
     location: "BTM Layout",
     distance: 3.8,
-    postedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
+    postedAt: new Date(NOW - 2 * 24 * 60 * 60 * 1000),
     featured: true,
   },
   {
@@ -139,7 +141,7 @@ export const MOCK_PRODUCTS: Product[] = [
     images: ["https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?w=800&h=600&fit=crop", "https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?w=800&h=600&fit=crop&q=80", "https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?w=800&h=600&fit=crop&q=70", "https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?w=800&h=600&fit=crop&q=60", "https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?w=800&h=600&fit=crop&q=50"],
     location: "Electronic City",
     distance: 12.4,
-    postedAt: new Date(Date.now() - 6 * 60 * 60 * 1000),
+    postedAt: new Date(NOW - 6 * 60 * 60 * 1000),
     rating: 4.3,
     reviewCount: 31,
   },
@@ -154,7 +156,7 @@ export const MOCK_PRODUCTS: Product[] = [
     images: ["https://images.unsplash.com/photo-1504148455328-c376907d081c?w=800&h=600&fit=crop", "https://images.unsplash.com/photo-1504148455328-c376907d081c?w=800&h=600&fit=crop&q=80", "https://images.unsplash.com/photo-1504148455328-c376907d081c?w=800&h=600&fit=crop&q=70", "https://images.unsplash.com/photo-1504148455328-c376907d081c?w=800&h=600&fit=crop&q=60", "https://images.unsplash.com/photo-1504148455328-c376907d081c?w=800&h=600&fit=crop&q=50"],
     location: "Marathahalli",
     distance: 6.2,
-    postedAt: new Date(Date.now() - 45 * 60 * 1000),
+    postedAt: new Date(NOW - 45 * 60 * 1000),
     rating: 4.5,
     reviewCount: 120,
   },
@@ -169,7 +171,7 @@ export const MOCK_PRODUCTS: Product[] = [
     images: ["https://images.unsplash.com/photo-1551028719-00167b16eac5?w=800&h=600&fit=crop", "https://images.unsplash.com/photo-1551028719-00167b16eac5?w=800&h=600&fit=crop&q=80", "https://images.unsplash.com/photo-1551028719-00167b16eac5?w=800&h=600&fit=crop&q=70", "https://images.unsplash.com/photo-1551028719-00167b16eac5?w=800&h=600&fit=crop&q=60", "https://images.unsplash.com/photo-1551028719-00167b16eac5?w=800&h=600&fit=crop&q=50"],
     location: "Koramangala",
     distance: 1.5,
-    postedAt: new Date(Date.now() - 8 * 60 * 60 * 1000),
+    postedAt: new Date(NOW - 8 * 60 * 60 * 1000),
     featured: true,
   },
   {
@@ -183,7 +185,7 @@ export const MOCK_PRODUCTS: Product[] = [
     images: ["https://images.unsplash.com/photo-1593359677879-a4bb92f829d1?w=800&h=600&fit=crop", "https://images.unsplash.com/photo-1593359677879-a4bb92f829d1?w=800&h=600&fit=crop&q=80", "https://images.unsplash.com/photo-1593359677879-a4bb92f829d1?w=800&h=600&fit=crop&q=70", "https://images.unsplash.com/photo-1593359677879-a4bb92f829d1?w=800&h=600&fit=crop&q=60", "https://images.unsplash.com/photo-1593359677879-a4bb92f829d1?w=800&h=600&fit=crop&q=50"],
     location: "Hebbal",
     distance: 9.3,
-    postedAt: new Date(Date.now() - 4 * 60 * 60 * 1000),
+    postedAt: new Date(NOW - 4 * 60 * 60 * 1000),
   },
   {
     id: "12",
@@ -196,7 +198,7 @@ export const MOCK_PRODUCTS: Product[] = [
     images: ["https://images.unsplash.com/photo-1580480055273-228ff5388ef8?w=800&h=600&fit=crop", "https://images.unsplash.com/photo-1580480055273-228ff5388ef8?w=800&h=600&fit=crop&q=80", "https://images.unsplash.com/photo-1580480055273-228ff5388ef8?w=800&h=600&fit=crop&q=70", "https://images.unsplash.com/photo-1580480055273-228ff5388ef8?w=800&h=600&fit=crop&q=60", "https://images.unsplash.com/photo-1580480055273-228ff5388ef8?w=800&h=600&fit=crop&q=50"],
     location: "Sarjapur Road",
     distance: 7.1,
-    postedAt: new Date(Date.now() - 20 * 60 * 1000),
+    postedAt: new Date(NOW - 20 * 60 * 1000),
     rating: 4.7,
     reviewCount: 56,
   },
@@ -211,7 +213,7 @@ export const MOCK_PRODUCTS: Product[] = [
     images: ["https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=800&h=600&fit=crop", "https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=800&h=600&fit=crop&q=80", "https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=800&h=600&fit=crop&q=70", "https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=800&h=600&fit=crop&q=60", "https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=800&h=600&fit=crop&q=50"],
     location: "Whitefield",
     distance: 8.2,
-    postedAt: new Date(Date.now() - 7 * 60 * 60 * 1000),
+    postedAt: new Date(NOW - 7 * 60 * 60 * 1000),
   },
   {
     id: "14",
@@ -224,7 +226,7 @@ export const MOCK_PRODUCTS: Product[] = [
     images: ["https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?w=800&h=600&fit=crop", "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?w=800&h=600&fit=crop&q=80", "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?w=800&h=600&fit=crop&q=70", "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?w=800&h=600&fit=crop&q=60", "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?w=800&h=600&fit=crop&q=50"],
     location: "MG Road",
     distance: 2.1,
-    postedAt: new Date(Date.now() - 1 * 60 * 60 * 1000),
+    postedAt: new Date(NOW - 1 * 60 * 60 * 1000),
     rating: 4.4,
     reviewCount: 63,
     featured: true,
@@ -240,7 +242,7 @@ export const MOCK_PRODUCTS: Product[] = [
     images: ["https://images.unsplash.com/photo-1558317374-067fb5f30001?w=800&h=600&fit=crop", "https://images.unsplash.com/photo-1558317374-067fb5f30001?w=800&h=600&fit=crop&q=80", "https://images.unsplash.com/photo-1558317374-067fb5f30001?w=800&h=600&fit=crop&q=70", "https://images.unsplash.com/photo-1558317374-067fb5f30001?w=800&h=600&fit=crop&q=60", "https://images.unsplash.com/photo-1558317374-067fb5f30001?w=800&h=600&fit=crop&q=50"],
     location: "Jayanagar",
     distance: 4.5,
-    postedAt: new Date(Date.now() - 10 * 60 * 60 * 1000),
+    postedAt: new Date(NOW - 10 * 60 * 60 * 1000),
   },
   {
     id: "16",
@@ -253,7 +255,7 @@ export const MOCK_PRODUCTS: Product[] = [
     images: ["https://images.unsplash.com/photo-1532298229144-0ec0c57515c7?w=800&h=600&fit=crop", "https://images.unsplash.com/photo-1532298229144-0ec0c57515c7?w=800&h=600&fit=crop&q=80", "https://images.unsplash.com/photo-1532298229144-0ec0c57515c7?w=800&h=600&fit=crop&q=70", "https://images.unsplash.com/photo-1532298229144-0ec0c57515c7?w=800&h=600&fit=crop&q=60", "https://images.unsplash.com/photo-1532298229144-0ec0c57515c7?w=800&h=600&fit=crop&q=50"],
     location: "Indiranagar",
     distance: 3.0,
-    postedAt: new Date(Date.now() - 4 * 60 * 60 * 1000),
+    postedAt: new Date(NOW - 4 * 60 * 60 * 1000),
     rating: 4.7,
     reviewCount: 29,
   },
@@ -268,7 +270,7 @@ export const MOCK_PRODUCTS: Product[] = [
     images: ["https://images.unsplash.com/photo-1594620302200-9a762244a156?w=800&h=600&fit=crop", "https://images.unsplash.com/photo-1594620302200-9a762244a156?w=800&h=600&fit=crop&q=80", "https://images.unsplash.com/photo-1594620302200-9a762244a156?w=800&h=600&fit=crop&q=70", "https://images.unsplash.com/photo-1594620302200-9a762244a156?w=800&h=600&fit=crop&q=60", "https://images.unsplash.com/photo-1594620302200-9a762244a156?w=800&h=600&fit=crop&q=50"],
     location: "BTM Layout",
     distance: 3.2,
-    postedAt: new Date(Date.now() - 18 * 60 * 60 * 1000),
+    postedAt: new Date(NOW - 18 * 60 * 60 * 1000),
   },
   {
     id: "18",
@@ -281,7 +283,7 @@ export const MOCK_PRODUCTS: Product[] = [
     images: ["https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800&h=600&fit=crop", "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800&h=600&fit=crop&q=80", "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800&h=600&fit=crop&q=70", "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800&h=600&fit=crop&q=60", "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800&h=600&fit=crop&q=50"],
     location: "Koramangala",
     distance: 1.8,
-    postedAt: new Date(Date.now() - 3 * 60 * 60 * 1000),
+    postedAt: new Date(NOW - 3 * 60 * 60 * 1000),
     featured: true,
   },
   {
@@ -295,7 +297,7 @@ export const MOCK_PRODUCTS: Product[] = [
     images: ["https://images.unsplash.com/photo-1478720568477-152d9b164e26?w=800&h=600&fit=crop", "https://images.unsplash.com/photo-1478720568477-152d9b164e26?w=800&h=600&fit=crop&q=80", "https://images.unsplash.com/photo-1478720568477-152d9b164e26?w=800&h=600&fit=crop&q=70", "https://images.unsplash.com/photo-1478720568477-152d9b164e26?w=800&h=600&fit=crop&q=60", "https://images.unsplash.com/photo-1478720568477-152d9b164e26?w=800&h=600&fit=crop&q=50"],
     location: "HSR Layout",
     distance: 5.5,
-    postedAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
+    postedAt: new Date(NOW - 2 * 60 * 60 * 1000),
     rating: 4.2,
     reviewCount: 15,
   },
@@ -310,7 +312,7 @@ export const MOCK_PRODUCTS: Product[] = [
     images: ["https://images.unsplash.com/photo-1487730116645-74489c95b41b?w=800&h=600&fit=crop", "https://images.unsplash.com/photo-1487730116645-74489c95b41b?w=800&h=600&fit=crop&q=80", "https://images.unsplash.com/photo-1487730116645-74489c95b41b?w=800&h=600&fit=crop&q=70", "https://images.unsplash.com/photo-1487730116645-74489c95b41b?w=800&h=600&fit=crop&q=60", "https://images.unsplash.com/photo-1487730116645-74489c95b41b?w=800&h=600&fit=crop&q=50"],
     location: "Electronic City",
     distance: 11.0,
-    postedAt: new Date(Date.now() - 5 * 60 * 60 * 1000),
+    postedAt: new Date(NOW - 5 * 60 * 60 * 1000),
     rating: 4.6,
     reviewCount: 44,
   },
@@ -325,7 +327,7 @@ export const MOCK_PRODUCTS: Product[] = [
     images: ["https://images.unsplash.com/photo-1520523839897-bd0b52f945a0?w=800&h=600&fit=crop", "https://images.unsplash.com/photo-1520523839897-bd0b52f945a0?w=800&h=600&fit=crop&q=80", "https://images.unsplash.com/photo-1520523839897-bd0b52f945a0?w=800&h=600&fit=crop&q=70", "https://images.unsplash.com/photo-1520523839897-bd0b52f945a0?w=800&h=600&fit=crop&q=60", "https://images.unsplash.com/photo-1520523839897-bd0b52f945a0?w=800&h=600&fit=crop&q=50"],
     location: "Marathahalli",
     distance: 6.8,
-    postedAt: new Date(Date.now() - 14 * 60 * 60 * 1000),
+    postedAt: new Date(NOW - 14 * 60 * 60 * 1000),
   },
   {
     id: "22",
@@ -338,7 +340,7 @@ export const MOCK_PRODUCTS: Product[] = [
     images: ["https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?w=800&h=600&fit=crop", "https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?w=800&h=600&fit=crop&q=80", "https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?w=800&h=600&fit=crop&q=70", "https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?w=800&h=600&fit=crop&q=60", "https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?w=800&h=600&fit=crop&q=50"],
     location: "Sarjapur Road",
     distance: 7.5,
-    postedAt: new Date(Date.now() - 9 * 60 * 60 * 1000),
+    postedAt: new Date(NOW - 9 * 60 * 60 * 1000),
     featured: true,
   },
   {
@@ -352,7 +354,7 @@ export const MOCK_PRODUCTS: Product[] = [
     images: ["https://images.unsplash.com/photo-1529262363592-25a14e3a6dd9?w=800&h=600&fit=crop", "https://images.unsplash.com/photo-1529262363592-25a14e3a6dd9?w=800&h=600&fit=crop&q=80", "https://images.unsplash.com/photo-1529262363592-25a14e3a6dd9?w=800&h=600&fit=crop&q=70", "https://images.unsplash.com/photo-1529262363592-25a14e3a6dd9?w=800&h=600&fit=crop&q=60", "https://images.unsplash.com/photo-1529262363592-25a14e3a6dd9?w=800&h=600&fit=crop&q=50"],
     location: "Hebbal",
     distance: 10.0,
-    postedAt: new Date(Date.now() - 6 * 60 * 60 * 1000),
+    postedAt: new Date(NOW - 6 * 60 * 60 * 1000),
     rating: 4.1,
     reviewCount: 22,
   },
@@ -367,6 +369,6 @@ export const MOCK_PRODUCTS: Product[] = [
     images: ["https://images.unsplash.com/photo-1576678927484-cc907957088c?w=800&h=600&fit=crop", "https://images.unsplash.com/photo-1576678927484-cc907957088c?w=800&h=600&fit=crop&q=80", "https://images.unsplash.com/photo-1576678927484-cc907957088c?w=800&h=600&fit=crop&q=70", "https://images.unsplash.com/photo-1576678927484-cc907957088c?w=800&h=600&fit=crop&q=60", "https://images.unsplash.com/photo-1576678927484-cc907957088c?w=800&h=600&fit=crop&q=50"],
     location: "Jayanagar",
     distance: 4.9,
-    postedAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000),
+    postedAt: new Date(NOW - 1 * 24 * 60 * 60 * 1000),
   },
 ];

@@ -7,6 +7,7 @@ import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { logout, selectCurrentUser, selectIsAuthenticated } from "@/store/slices/authSlice";
 import { selectWishlistIds } from "@/store/slices/wishlistSlice";
 import { useSupabaseAuth } from "@/lib/supabase-auth";
+import PostListingFlowDialog from "@/components/marketplace/PostListingFlowDialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -48,6 +49,7 @@ export default function MarketplaceHeader({
   const wishlistCount = useAppSelector(selectWishlistIds).length;
   const [locOpen, setLocOpen] = useState(false);
   const [cityInput, setCityInput] = useState("");
+  const [postFlowOpen, setPostFlowOpen] = useState(false);
   const isHydrated = useSyncExternalStore(subscribeHydration, () => true, () => false);
   const dropRef = useRef<HTMLDivElement>(null);
   const displayLocation = isHydrated ? location : null;
@@ -276,7 +278,12 @@ export default function MarketplaceHeader({
             </DropdownMenuContent>
           </DropdownMenu>
 
-          <Button variant="highlight" size="sm" className="gap-1.5 rounded-full">
+          <Button
+            variant="highlight"
+            size="sm"
+            className="gap-1.5 rounded-full"
+            onClick={() => setPostFlowOpen(true)}
+          >
             <Plus className="h-4 w-4" />
             <span className="hidden sm:inline">Post Listing</span>
           </Button>
@@ -296,6 +303,8 @@ export default function MarketplaceHeader({
           />
         </div>
       </div>
+
+      <PostListingFlowDialog open={postFlowOpen} onOpenChange={setPostFlowOpen} />
     </header>
   );
 }

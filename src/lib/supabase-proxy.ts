@@ -5,7 +5,7 @@ import {
   verifyCustomSessionToken,
 } from '@/lib/custom-session';
 
-const PROTECTED_ROUTES = ['/home'];
+const PROTECTED_ROUTES: string[] = [];
 
 function isProtectedRoute(pathname: string) {
   return PROTECTED_ROUTES.some((route) => pathname === route || pathname.startsWith(`${route}/`));

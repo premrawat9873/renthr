@@ -1,4 +1,14 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
+
+export const metadata: Metadata = {
+  title: 'My Posts',
+  description: 'Manage the listings you created in the marketplace.',
+  robots: {
+    index: false,
+    follow: false,
+  },
+};
 
 export default function MyPostsPage() {
   return (
