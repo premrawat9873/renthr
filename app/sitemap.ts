@@ -1,9 +1,10 @@
 import type { MetadataRoute } from 'next';
-import { MOCK_PRODUCTS } from '@/data/mockData';
+import { getMarketplaceListingProductsPayload } from '@/lib/listings';
 import { getSiteUrl } from '@/lib/site';
 
-export default function sitemap(): MetadataRoute.Sitemap {
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const siteUrl = getSiteUrl();
+  const products = await getMarketplaceListingProductsPayload();
 
   const staticRoutes: MetadataRoute.Sitemap = [
     {
@@ -32,9 +33,9 @@ export default function sitemap(): MetadataRoute.Sitemap {
     },
   ];
 
-  const productRoutes: MetadataRoute.Sitemap = MOCK_PRODUCTS.map((product) => ({
+  const productRoutes: MetadataRoute.Sitemap = products.map((product) => ({
     url: `${siteUrl}/product/${product.id}`,
-    lastModified: product.postedAt,
+    lastModified: new Date(product.postedAt),
     changeFrequency: 'weekly',
     priority: 0.8,
   }));

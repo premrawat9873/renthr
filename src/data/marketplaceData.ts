@@ -8,7 +8,7 @@ export interface RentPrices {
 export interface Product {
   id: string;
   title: string;
-  type: "sell" | "rent";
+  type: "sell" | "rent" | "both";
   price: number | null;
   rentPrices: RentPrices | null;
   category: string;
@@ -22,6 +22,7 @@ export interface Product {
   featured?: boolean;
   description?: string;
   features?: string[];
+  ownerId?: string;
   ownerName?: string;
   ownerImage?: string;
   ownerTag?: string;

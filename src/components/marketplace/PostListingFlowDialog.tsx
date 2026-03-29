@@ -16,6 +16,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { CATEGORIES } from "@/data/mockData";
 import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { useAppSelector } from "@/store/hooks";
+import { selectLocation } from "@/store/slices/marketplaceSlice";
 
 type PostStep = "category" | "details" | "photos" | "purpose";
 type AgeUnit = "days" | "months" | "years";
@@ -26,6 +28,16 @@ interface PostListingFlowDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
+
+type UploadImagesResponse = {
+  images?: string[];
+  error?: string;
+};
+
+type CreateListingResponse = {
+  id?: string;
+  error?: string;
+};
 
 const MAX_CATEGORY_SELECTION = 2;
 const MAX_PHOTO_UPLOADS = 3;
@@ -64,6 +76,7 @@ const ACTION_BUTTON_BORDER_CLASS =
   "border border-primary/45 disabled:opacity-100 disabled:border-primary/45";
 
 export default function PostListingFlowDialog({ open, onOpenChange }: PostListingFlowDialogProps) {
+  const selectedLocation = useAppSelector(selectLocation);
   const [step, setStep] = useState<PostStep>("category");
   const [categorySearch, setCategorySearch] = useState("");
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
@@ -76,6 +89,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
   const [rentPrices, setRentPrices] = useState<Record<RentDurationOption, string>>(INITIAL_RENT_PRICES);
   const [sellPrice, setSellPrice] = useState("");
   const [selectedPhotoFiles, setSelectedPhotoFiles] = useState<File[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const selectedCategories = useMemo(
     () => CATEGORIES.filter((category) => selectedCategoryIds.includes(category.id)),
@@ -152,9 +166,14 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
     setRentPrices(INITIAL_RENT_PRICES);
     setSellPrice("");
     setSelectedPhotoFiles([]);
+    setIsSubmitting(false);
   };
 
   const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen && isSubmitting) {
+      return;
+    }
+
     onOpenChange(nextOpen);
     if (!nextOpen) {
       resetFlow();
@@ -266,29 +285,101 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
     }));
   };
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!canSubmit) return;
+    if (!canSubmit || isSubmitting) return;
 
-    const selectedLabels = selectedCategories.map((category) => category.label).join(", ");
-    const selectedPurposeLabels = PURPOSE_OPTIONS
-      .filter((option) => selectedPurposes.includes(option.value))
-      .map((option) => option.label)
-      .join(" + ");
-    const selectedRentSummary = selectedRentDurationOptions
-      .map((option) => `${option.label}: INR ${rentPrices[option.value]}`)
-      .join(", ");
+    setIsSubmitting(true);
 
-    toast({
-      title: "Listing draft captured",
-      description:
-        `${name.trim()} in ${selectedLabels}. Purpose: ${selectedPurposeLabels}. ` +
-        `${isSellSelected ? `Sell price INR ${sellPrice}. ` : ""}` +
-        `${isRentSelected ? `Rent: ${selectedRentSummary}.` : ""}` +
-        ` Condition age: ${ageValue} ${ageUnit} old. Photos: ${selectedPhotoFiles.length}.`,
-    });
+    try {
+      const uploadFormData = new FormData();
+      selectedPhotoFiles.forEach((file) => {
+        uploadFormData.append("images", file);
+      });
 
-    handleOpenChange(false);
+      const uploadResponse = await fetch("/api/images/upload", {
+        method: "POST",
+        body: uploadFormData,
+      });
+
+      const uploadPayload = (await uploadResponse.json().catch(() => null)) as UploadImagesResponse | null;
+      if (!uploadResponse.ok || !uploadPayload || !Array.isArray(uploadPayload.images)) {
+        throw new Error(
+          typeof uploadPayload?.error === "string"
+            ? uploadPayload.error
+            : "Image upload failed. Please try again."
+        );
+      }
+
+      const selectedRentPricePayload = selectedRentDurations.reduce(
+        (accumulator, duration) => {
+          accumulator[duration] = rentPrices[duration];
+          return accumulator;
+        },
+        {} as Partial<Record<RentDurationOption, string>>
+      );
+
+      const saveListingResponse = await fetch("/api/listings", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          title: name.trim(),
+          description: description.trim(),
+          categoryIds: selectedCategoryIds,
+          ageValue,
+          ageUnit,
+          purposes: selectedPurposes,
+          sellPrice,
+          rentPrices: selectedRentPricePayload,
+          imageUrls: uploadPayload.images,
+          location: selectedLocation ?? "Bangalore",
+        }),
+      });
+
+      const saveListingPayload = (await saveListingResponse
+        .json()
+        .catch(() => null)) as CreateListingResponse | null;
+      if (!saveListingResponse.ok || !saveListingPayload?.id) {
+        throw new Error(
+          typeof saveListingPayload?.error === "string"
+            ? saveListingPayload.error
+            : "Listing could not be saved."
+        );
+      }
+
+      const selectedLabels = selectedCategories.map((category) => category.label).join(", ");
+      const selectedPurposeLabels = PURPOSE_OPTIONS
+        .filter((option) => selectedPurposes.includes(option.value))
+        .map((option) => option.label)
+        .join(" + ");
+      const selectedRentSummary = selectedRentDurationOptions
+        .map((option) => `${option.label}: INR ${rentPrices[option.value]}`)
+        .join(", ");
+
+      toast({
+        title: "Listing saved",
+        description:
+          `${name.trim()} in ${selectedLabels}. Purpose: ${selectedPurposeLabels}. ` +
+          `${isSellSelected ? `Sell price INR ${sellPrice}. ` : ""}` +
+          `${isRentSelected ? `Rent: ${selectedRentSummary}. ` : ""}` +
+          `Condition age: ${ageValue} ${ageUnit} old. Uploaded ${uploadPayload.images.length} photo${uploadPayload.images.length > 1 ? "s" : ""} to Cloudflare R2. Listing ID: ${saveListingPayload.id}.`,
+      });
+
+      handleOpenChange(false);
+    } catch (error) {
+      toast({
+        title: "Listing save failed",
+        description:
+          error instanceof Error
+            ? error.message
+            : "Unable to save this listing right now. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -715,11 +806,22 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
             </div>
 
             <div className="flex flex-col gap-3 border-t border-primary/10 bg-background px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-              <Button type="button" variant="outline" onClick={() => setStep("photos")} className="border-primary/45">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setStep("photos")}
+                className="border-primary/45"
+                disabled={isSubmitting}
+              >
                 Back to photos
               </Button>
-              <Button type="submit" variant="highlight" disabled={!canSubmit} className={cn("gap-2", ACTION_BUTTON_BORDER_CLASS)}>
-                Save listing draft
+              <Button
+                type="submit"
+                variant="highlight"
+                disabled={!canSubmit || isSubmitting}
+                className={cn("gap-2", ACTION_BUTTON_BORDER_CLASS)}
+              >
+                {isSubmitting ? "Uploading photos..." : "Save listing draft"}
               </Button>
             </div>
           </form>

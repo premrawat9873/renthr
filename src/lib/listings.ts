@@ -1,0 +1,231 @@
+import "server-only";
+
+import type { Product } from "@/data/marketplaceData";
+import {
+  serializeListingProduct,
+  type ListingProductPayload,
+} from "@/data/listings";
+import type { Prisma } from "../../generated/prisma/client";
+import { prisma } from "@/lib/prisma";
+
+const DEFAULT_IMAGE_URL =
+  "https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=1200&h=900&fit=crop";
+
+const listingSelect = {
+  id: true,
+  title: true,
+  content: true,
+  category: true,
+  categories: true,
+  listingType: true,
+  sellPrice: true,
+  rentHourly: true,
+  rentDaily: true,
+  rentWeekly: true,
+  rentMonthly: true,
+  image: true,
+  images: true,
+  location: true,
+  features: true,
+  featured: true,
+  rating: true,
+  reviewCount: true,
+  createdAt: true,
+  author: {
+    select: {
+      id: true,
+      name: true,
+      email: true,
+    },
+  },
+} satisfies Prisma.PostSelect;
+
+type ListingRecord = Prisma.PostGetPayload<{ select: typeof listingSelect }>;
+
+function normalizeImageList(input: { image: string | null; images: string[] }) {
+  const ordered = [
+    ...(typeof input.image === "string" ? [input.image] : []),
+    ...input.images,
+  ]
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+
+  const unique = Array.from(new Set(ordered));
+  const primaryImage = unique[0] ?? DEFAULT_IMAGE_URL;
+
+  return {
+    primaryImage,
+    images: unique.length > 0 ? unique : [primaryImage],
+  };
+}
+
+function mapListingRecordToProduct(record: ListingRecord): Product {
+  const supportsRent =
+    record.listingType === "RENT" || record.listingType === "BOTH";
+  const supportsSell =
+    record.listingType === "SELL" || record.listingType === "BOTH";
+  const listingType: Product["type"] =
+    supportsRent && supportsSell ? "both" : supportsRent ? "rent" : "sell";
+  const normalizedImages = normalizeImageList({
+    image: record.image,
+    images: record.images,
+  });
+  const ownerName =
+    record.author.name?.trim() ||
+    record.author.email.split("@")[0] ||
+    "User";
+
+  return {
+    id: String(record.id),
+    title: record.title,
+    type: listingType,
+    price: supportsSell ? (record.sellPrice ?? null) : null,
+    rentPrices:
+      supportsRent
+        ? {
+            hourly: record.rentHourly ?? null,
+            daily: record.rentDaily ?? null,
+            weekly: record.rentWeekly ?? null,
+            monthly: record.rentMonthly ?? null,
+          }
+        : null,
+    category: record.category,
+    image: normalizedImages.primaryImage,
+    images: normalizedImages.images,
+    location: record.location,
+    distance: 0,
+    postedAt: record.createdAt,
+    featured: record.featured,
+    rating: record.rating ?? undefined,
+    reviewCount: record.reviewCount ?? undefined,
+    description: record.content ?? undefined,
+    features: record.features.length > 0 ? record.features : undefined,
+    ownerId: String(record.author.id),
+    ownerName,
+    ownerTag: "Verified Seller",
+  };
+}
+
+async function findManyListings() {
+  return prisma.post.findMany({
+    where: {
+      published: true,
+      listingType: {
+        not: null,
+      },
+    },
+    orderBy: {
+      createdAt: "desc",
+    },
+    select: listingSelect,
+  });
+}
+
+async function findManyListingsByAuthorId(authorId: number) {
+  return prisma.post.findMany({
+    where: {
+      authorId,
+      published: true,
+      listingType: {
+        not: null,
+      },
+    },
+    orderBy: {
+      createdAt: "desc",
+    },
+    select: listingSelect,
+  });
+}
+
+function parseListingId(id: string) {
+  const parsed = Number.parseInt(id, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return null;
+  }
+  return parsed;
+}
+
+export async function getMarketplaceListingProducts() {
+  const records = await findManyListings();
+  return records.map(mapListingRecordToProduct);
+}
+
+export async function getMarketplaceListingProductsPayload() {
+  const products = await getMarketplaceListingProducts();
+  return products.map(serializeListingProduct);
+}
+
+export async function getMarketplaceListingProductsByUserId(
+  userId: number | string
+) {
+  const parsedUserId =
+    typeof userId === "number" ? userId : Number.parseInt(userId, 10);
+  if (!Number.isFinite(parsedUserId) || parsedUserId <= 0) {
+    return [];
+  }
+
+  const records = await findManyListingsByAuthorId(parsedUserId);
+  return records.map(mapListingRecordToProduct);
+}
+
+export async function getMarketplaceListingProductsPayloadByUserId(
+  userId: number | string
+) {
+  const products = await getMarketplaceListingProductsByUserId(userId);
+  return products.map(serializeListingProduct);
+}
+
+export async function getPublicListingUserProfileById(userId: string | number) {
+  const parsedUserId =
+    typeof userId === "number" ? userId : Number.parseInt(userId, 10);
+  if (!Number.isFinite(parsedUserId) || parsedUserId <= 0) {
+    return null;
+  }
+
+  const user = await prisma.user.findUnique({
+    where: {
+      id: parsedUserId,
+    },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+    },
+  });
+
+  if (!user) {
+    return null;
+  }
+
+  return {
+    id: String(user.id),
+    name: user.name?.trim() || user.email.split("@")[0] || "User",
+  };
+}
+
+export async function getListingProductById(id: string) {
+  const listingId = parseListingId(id);
+  if (!listingId) {
+    return null;
+  }
+
+  const record = await prisma.post.findFirst({
+    where: {
+      id: listingId,
+      published: true,
+      listingType: {
+        not: null,
+      },
+    },
+    select: listingSelect,
+  });
+
+  return record ? mapListingRecordToProduct(record) : null;
+}
+
+export async function getListingProductPayloadById(
+  id: string
+): Promise<ListingProductPayload | null> {
+  const product = await getListingProductById(id);
+  return product ? serializeListingProduct(product) : null;
+}

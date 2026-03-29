@@ -17,6 +17,8 @@ export default function ProductCard({ product, rentDurations, priority = false }
   const dispatch = useAppDispatch();
   const liked = useAppSelector((state) => selectIsWishlisted(state, product.id));
   const images = product.images?.length > 0 ? product.images : [product.image];
+  const isRentAvailable = product.type === "rent" || product.type === "both";
+  const isSellAvailable = product.type === "sell" || product.type === "both";
 
   return (
     <div
@@ -34,13 +36,16 @@ export default function ProductCard({ product, rentDurations, priority = false }
               Featured
             </Badge>
           )}
-          <Badge variant={product.type === "rent" ? "rent" : "sell"} className="text-[10px] uppercase tracking-wider px-2.5 py-1">
-            {product.type === "rent" ? (
+          {isRentAvailable && (
+            <Badge variant="rent" className="text-[10px] uppercase tracking-wider px-2.5 py-1">
               <span className="flex items-center gap-1"><CalendarClock className="h-3 w-3" />Rent</span>
-            ) : (
+            </Badge>
+          )}
+          {isSellAvailable && (
+            <Badge variant="sell" className="text-[10px] uppercase tracking-wider px-2.5 py-1">
               <span className="flex items-center gap-1"><Tag className="h-3 w-3" />Sell</span>
-            )}
-          </Badge>
+            </Badge>
+          )}
         </div>
         {/* Heart/Bookmark */}
         <button
@@ -63,7 +68,7 @@ export default function ProductCard({ product, rentDurations, priority = false }
         </h3>
 
         {/* Rating (rent only) */}
-        {product.type === "rent" && product.rating != null && (
+        {isRentAvailable && product.rating != null && (
           <div className="flex items-center gap-1.5">
             <Star className="h-3.5 w-3.5 fill-star text-star" />
             <span className="text-xs font-medium text-foreground">{product.rating}</span>
@@ -75,10 +80,12 @@ export default function ProductCard({ product, rentDurations, priority = false }
 
         {/* Price */}
         <div className="space-y-0.5">
-          {product.type === "sell" && product.price != null && (
-            <p className="text-base font-semibold text-foreground">{formatPrice(product.price)}</p>
+          {isSellAvailable && product.price != null && (
+            <p className="text-base font-semibold text-foreground">
+              {isRentAvailable ? `Buy ${formatPrice(product.price)}` : formatPrice(product.price)}
+            </p>
           )}
-          {product.type === "rent" && product.rentPrices && (
+          {isRentAvailable && product.rentPrices && (
             <div className="flex flex-wrap gap-x-2 gap-y-0.5">
               {renderRentPrice(product, rentDurations)}
             </div>

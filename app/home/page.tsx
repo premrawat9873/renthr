@@ -1,7 +1,9 @@
 import type { Metadata } from 'next';
 import MarketplacePageClient from '@/components/marketplace/MarketplacePageClient';
-import { MOCK_PRODUCTS } from '@/data/mockData';
+import { getMarketplaceListingProductsPayload } from '@/lib/listings';
 import { getSiteUrl } from '@/lib/site';
+
+export const revalidate = 0;
 
 export const metadata: Metadata = {
   title: 'Rent, Buy, and Sell Near You',
@@ -19,13 +21,15 @@ export const metadata: Metadata = {
   },
 };
 
-export default function HomePage() {
+export default async function HomePage() {
   const siteUrl = getSiteUrl();
+  const products = await getMarketplaceListingProductsPayload();
+
   const itemListJsonLd = {
     '@context': 'https://schema.org',
     '@type': 'ItemList',
     name: 'Marketplace Listings',
-    itemListElement: MOCK_PRODUCTS.map((product, index) => ({
+    itemListElement: products.map((product, index) => ({
       '@type': 'ListItem',
       position: index + 1,
       item: {
@@ -43,7 +47,7 @@ export default function HomePage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd) }}
       />
-      <MarketplacePageClient />
+      <MarketplacePageClient products={products} />
     </>
   );
 }

@@ -1,9 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { MOCK_PRODUCTS, CATEGORIES } from '@/data/mockData';
+import { CATEGORIES } from '@/data/mockData';
+import type { ListingProductPayload } from '@/data/listings';
 import { formatPrice, RentDuration } from '@/data/marketplaceData';
 import Footer from '@/components/marketplace/Footer';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
@@ -130,40 +132,30 @@ function GalleryModal({
   );
 }
 
-export function ProductDetailClient({ id }: { id: string }) {
+export function ProductDetailClient({ product }: { product: ListingProductPayload }) {
   const router = useRouter();
   const dispatch = useAppDispatch();
-  const product = MOCK_PRODUCTS.find((p) => p.id === id);
-  const liked = useAppSelector((state) => selectIsWishlisted(state, id));
+  const liked = useAppSelector((state) => selectIsWishlisted(state, product.id));
+  const isRentAvailable = product.type === 'rent' || product.type === 'both';
+  const isSellAvailable = product.type === 'sell' || product.type === 'both';
+  const ownerProfileHref = product.ownerId ? `/profile/${product.ownerId}` : null;
+  const ownerDisplayName = product.ownerName || 'User';
 
   const [selectedDuration, setSelectedDuration] = useState<RentDuration>('daily');
   const [quantity, setQuantity] = useState(1);
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [galleryIndex, setGalleryIndex] = useState(0);
 
-  if (!product) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center space-y-3">
-          <h2 className="font-heading text-xl font-medium">Product not found</h2>
-          <button onClick={() => router.push('/home')} className="text-primary text-sm hover:underline">
-            Back to marketplace
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   const images = product.images.length > 0 ? product.images : [product.image];
   const availableDurations =
-    product.type === 'rent' && product.rentPrices
+    isRentAvailable && product.rentPrices
       ? (Object.entries(product.rentPrices) as [RentDuration, number | null][]) // safe by model
           .filter(([, v]) => v != null)
           .map(([k]) => k)
       : [];
 
   const currentPrice =
-    product.type === 'rent' && product.rentPrices
+    isRentAvailable && product.rentPrices
       ? product.rentPrices[selectedDuration]
       : product.price;
 
@@ -197,7 +189,7 @@ export function ProductDetailClient({ id }: { id: string }) {
               <Share2 className="h-4 w-4" /> Share
             </button>
             <button
-              onClick={() => dispatch(toggleWishlist(id))}
+              onClick={() => dispatch(toggleWishlist(product.id))}
               className="flex items-center gap-1.5 text-sm font-medium hover:text-primary transition-colors"
             >
               <Heart
@@ -327,21 +319,42 @@ export function ProductDetailClient({ id }: { id: string }) {
             <div className="flex items-center gap-4">
               <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center overflow-hidden">
                 {product.ownerImage ? (
-                  <Image
-                    src={product.ownerImage}
-                    alt={product.ownerName}
-                    width={48}
-                    height={48}
-                    className="h-12 w-12 object-cover"
-                  />
+                  ownerProfileHref ? (
+                    <Link href={ownerProfileHref} className="block h-12 w-12">
+                      <Image
+                        src={product.ownerImage}
+                        alt={ownerDisplayName}
+                        width={48}
+                        height={48}
+                        className="h-12 w-12 object-cover"
+                      />
+                    </Link>
+                  ) : (
+                    <Image
+                      src={product.ownerImage}
+                      alt={ownerDisplayName}
+                      width={48}
+                      height={48}
+                      className="h-12 w-12 object-cover"
+                    />
+                  )
                 ) : (
                   <span className="text-lg font-medium text-muted-foreground">
-                    {(product.ownerName || 'U')[0]}
+                    {(ownerDisplayName || 'U')[0]}
                   </span>
                 )}
               </div>
               <div>
-                <p className="font-medium text-foreground">Listed by {product.ownerName || 'User'}</p>
+                {ownerProfileHref ? (
+                  <Link
+                    href={ownerProfileHref}
+                    className="font-medium text-foreground hover:text-primary hover:underline"
+                  >
+                    Listed by {ownerDisplayName}
+                  </Link>
+                ) : (
+                  <p className="font-medium text-foreground">Listed by {ownerDisplayName}</p>
+                )}
                 <p className="text-sm text-muted-foreground flex items-center gap-1">
                   <Shield className="h-3.5 w-3.5 text-primary" />
                   {product.ownerTag || 'Verified Seller'}
@@ -356,9 +369,13 @@ export function ProductDetailClient({ id }: { id: string }) {
               <p className="text-sm text-muted-foreground leading-relaxed">
                 {product.description ||
                   `This ${
-                    product.type === 'rent' ? 'rental' : 'sale'
+                    isRentAvailable && isSellAvailable
+                      ? 'rent or sale'
+                      : isRentAvailable
+                        ? 'rental'
+                        : 'sale'
                   } listing is available in ${product.location}. Contact the ${
-                    product.type === 'rent' ? 'owner' : 'seller'
+                    isRentAvailable && !isSellAvailable ? 'owner' : 'seller'
                   } for more details about the product condition and availability.`}
               </p>
             </div>
@@ -395,14 +412,22 @@ export function ProductDetailClient({ id }: { id: string }) {
 
           <div className="lg:col-span-1">
             <div className="sticky top-20 bg-card rounded-2xl border border-border/40 shadow-lg p-6 space-y-5">
-              {product.type === 'sell' && product.price != null && (
+              {isSellAvailable && product.price != null && (
                 <div>
+                  {isRentAvailable && (
+                    <div className="text-xs uppercase tracking-wider text-muted-foreground mb-1">
+                      Buy price
+                    </div>
+                  )}
                   <span className="text-2xl font-semibold">{formatPrice(product.price)}</span>
                 </div>
               )}
 
-              {product.type === 'rent' && product.rentPrices && (
+              {isRentAvailable && product.rentPrices && (
                 <>
+                  {isSellAvailable && (
+                    <div className="border-t border-border/40" />
+                  )}
                   <div className="grid grid-cols-2 gap-2">
                     {availableDurations.map((d) => (
                       <button
@@ -464,7 +489,11 @@ export function ProductDetailClient({ id }: { id: string }) {
               <div className="border-t border-border/40" />
 
               <button className="w-full py-3.5 rounded-2xl bg-primary text-primary-foreground font-medium text-base hover:bg-primary/90 hover:shadow-md transition-all duration-200 active:scale-[0.98]">
-                {product.type === 'rent' ? 'Request to book' : 'Contact seller'}
+                {isRentAvailable && isSellAvailable
+                  ? 'Request to buy or rent'
+                  : isRentAvailable
+                    ? 'Request to book'
+                    : 'Contact seller'}
               </button>
 
               <div className="flex items-center gap-2 text-sm text-muted-foreground">

@@ -33,6 +33,21 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY="<your-anon-key>"
 
 After saving env vars, restart the dev server.
 
+## Cloudflare R2 Image Upload Setup
+
+Listing images are uploaded through `POST /api/images/upload` and stored in Cloudflare R2.
+
+Add these environment variables:
+
+```env
+R2_PUBLIC_URL="https://<public-r2-domain>"
+R2_ACCOUNT_ID="<cloudflare-account-id>"
+S3_API="https://<cloudflare-account-id>.r2.cloudflarestorage.com"
+R2_BUCKET_NAME="rent-hr-bucket"
+R2_ACCESS_KEY_ID="<r2-access-key-id>"
+R2_SECRET_ACCESS_KEY="<r2-secret-access-key>"
+```
+
 ## Quality Checks
 
 ```bash

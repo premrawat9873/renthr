@@ -6,8 +6,11 @@ import CategorySection from '@/components/marketplace/CategorySection';
 import FilterBar from '@/components/marketplace/FilterBar';
 import ProductGrid from '@/components/marketplace/ProductGrid';
 import Footer from '@/components/marketplace/Footer';
-import { MOCK_PRODUCTS } from '@/data/mockData';
-import type { RentDuration } from '@/data/marketplaceData';
+import {
+  deserializeListingProduct,
+  type ListingProductPayload,
+} from '@/data/listings';
+import type { ListingFilter, Product, RentDuration } from '@/data/marketplaceData';
 import type { LocationData } from '@/components/marketplace/LocationSelector';
 import { MapPin } from 'lucide-react';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
@@ -41,6 +44,7 @@ const EMPTY_DURATIONS: RentDuration[] = [];
 const DEFAULT_PRICE_RANGE: [number, number] = [0, MAX_PRICE];
 
 const LOCATION_COORDINATES: Record<string, { lat: number; lng: number }> = {
+  Bangalore: { lat: 12.9716, lng: 77.5946 },
   Koramangala: { lat: 12.9352, lng: 77.6245 },
   Indiranagar: { lat: 12.9719, lng: 77.6412 },
   'HSR Layout': { lat: 12.9116, lng: 77.6474 },
@@ -84,7 +88,57 @@ function compareById(aId: string, bId: string) {
   return aId.localeCompare(bId, undefined, { numeric: true });
 }
 
-export function MarketplacePageClient() {
+function supportsRent(product: Product) {
+  return product.type === 'rent' || product.type === 'both';
+}
+
+function supportsSell(product: Product) {
+  return product.type === 'sell' || product.type === 'both';
+}
+
+function getPrimaryRentPrice(product: Product) {
+  if (!product.rentPrices) {
+    return null;
+  }
+
+  return (
+    product.rentPrices.daily ??
+    product.rentPrices.hourly ??
+    product.rentPrices.weekly ??
+    product.rentPrices.monthly ??
+    null
+  );
+}
+
+function getComparablePrice(product: Product, filter: ListingFilter) {
+  if (filter === 'sell') {
+    return product.price;
+  }
+
+  if (filter === 'rent') {
+    return getPrimaryRentPrice(product);
+  }
+
+  if (product.type === 'sell') {
+    return product.price;
+  }
+
+  if (product.type === 'rent') {
+    return getPrimaryRentPrice(product);
+  }
+
+  const candidates = [product.price, getPrimaryRentPrice(product)].filter(
+    (value): value is number => value != null
+  );
+
+  return candidates.length > 0 ? Math.min(...candidates) : null;
+}
+
+interface MarketplacePageClientProps {
+  products: ListingProductPayload[];
+}
+
+export function MarketplacePageClient({ products }: MarketplacePageClientProps) {
   const dispatch = useAppDispatch();
   const location = useAppSelector(selectLocation);
   const userLocation = useAppSelector(selectUserLocation);
@@ -108,6 +162,10 @@ export function MarketplacePageClient() {
   const safeSort = isHydrated ? sort : 'newest';
   const safePriceRange: [number, number] = isHydrated ? priceRange : DEFAULT_PRICE_RANGE;
   const safeHasActiveFilters = isHydrated ? hasActiveFilters : false;
+  const availableProducts = useMemo(
+    () => products.map(deserializeListingProduct),
+    [products]
+  );
 
   const handleLocationChange = useCallback((locData: LocationData | null) => {
     if (!locData) return;
@@ -147,7 +205,7 @@ export function MarketplacePageClient() {
   }, [dispatch]);
 
   const filteredProducts = useMemo(() => {
-    let results = [...MOCK_PRODUCTS];
+    let results = [...availableProducts];
 
     results = results.map((product) => {
       if (!safeUserCoords) return product;
@@ -169,8 +227,8 @@ export function MarketplacePageClient() {
       results = results.filter((p) => p.category === safeSelectedCategory);
     }
 
-    if (safeFilter === 'rent') results = results.filter((p) => p.type === 'rent');
-    if (safeFilter === 'sell') results = results.filter((p) => p.type === 'sell');
+    if (safeFilter === 'rent') results = results.filter((p) => supportsRent(p));
+    if (safeFilter === 'sell') results = results.filter((p) => supportsSell(p));
 
     if (safeUserCoords) {
       const nearbyResults = results.filter((p) => p.distance <= NEARBY_RADIUS_KM);
@@ -182,14 +240,17 @@ export function MarketplacePageClient() {
 
     if (safeFilter === 'rent' && safeRentDurations.length > 0) {
       results = results.filter((p) => {
-        if (!p.rentPrices) return false;
+        if (!supportsRent(p) || !p.rentPrices) return false;
         return safeRentDurations.some((d) => p.rentPrices![d] != null);
       });
     }
 
     if (safePriceRange[0] > 0 || safePriceRange[1] < MAX_PRICE) {
       results = results.filter((p) => {
-        const price = p.type === 'sell' ? (p.price ?? 0) : (p.rentPrices?.daily ?? 0);
+        const price = getComparablePrice(p, safeFilter);
+        if (price == null) {
+          return false;
+        }
         return price >= safePriceRange[0] && price <= safePriceRange[1];
       });
     }
@@ -208,23 +269,23 @@ export function MarketplacePageClient() {
     }
     if (safeSort === 'price-asc') {
       results.sort((a, b) => {
-        const pa = a.type === 'sell' ? (a.price ?? Infinity) : (a.rentPrices?.daily ?? Infinity);
-        const pb = b.type === 'sell' ? (b.price ?? Infinity) : (b.rentPrices?.daily ?? Infinity);
+        const pa = getComparablePrice(a, safeFilter) ?? Infinity;
+        const pb = getComparablePrice(b, safeFilter) ?? Infinity;
         const byPrice = pa - pb;
         return byPrice !== 0 ? byPrice : compareById(a.id, b.id);
       });
     }
     if (safeSort === 'price-desc') {
       results.sort((a, b) => {
-        const pa = a.type === 'sell' ? (a.price ?? 0) : (a.rentPrices?.daily ?? 0);
-        const pb = b.type === 'sell' ? (b.price ?? 0) : (b.rentPrices?.daily ?? 0);
+        const pa = getComparablePrice(a, safeFilter) ?? 0;
+        const pb = getComparablePrice(b, safeFilter) ?? 0;
         const byPrice = pb - pa;
         return byPrice !== 0 ? byPrice : compareById(a.id, b.id);
       });
     }
 
     return results;
-  }, [safeSearchQuery, safeSelectedCategory, safeFilter, safeRentDurations, safeSort, safePriceRange, safeUserCoords]);
+  }, [availableProducts, safeSearchQuery, safeSelectedCategory, safeFilter, safeRentDurations, safeSort, safePriceRange, safeUserCoords]);
 
   return (
     <div className="min-h-screen bg-background flex flex-col">

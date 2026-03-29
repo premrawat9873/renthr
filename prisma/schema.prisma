@@ -7,6 +7,12 @@ datasource db {
   provider = "postgresql"
 }
 
+enum ListingType {
+  SELL
+  RENT
+  BOTH
+}
+
 model User {
   id           Int    @id @default(autoincrement())
   email        String @unique
@@ -16,13 +22,49 @@ model User {
   otpExpiresAt DateTime?
   otpRequestedAt DateTime?
   posts        Post[]
+  addresses    Address[]
+}
+
+model Address {
+  id        Int      @id @default(autoincrement())
+  address   String
+  state     String
+  city      String
+  pincode   String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@index([userId])
 }
 
 model Post {
-  id        Int     @id @default(autoincrement())
-  title     String
-  content   String?
-  published Boolean @default(false)
-  author    User    @relation(fields: [authorId], references: [id])
-  authorId  Int
+  id         Int         @id @default(autoincrement())
+  title      String
+  content    String?
+  published  Boolean     @default(false)
+  author     User        @relation(fields: [authorId], references: [id])
+  authorId   Int
+  listingType ListingType?
+  category   String      @default("electronics")
+  categories String[]    @default([])
+  location   String      @default("Bangalore")
+  ageValue   Float?
+  ageUnit    String?
+  sellPrice  Int?
+  rentHourly Int?
+  rentDaily  Int?
+  rentWeekly Int?
+  rentMonthly Int?
+  image      String?
+  images     String[]    @default([])
+  features   String[]    @default([])
+  featured   Boolean     @default(false)
+  rating     Float?
+  reviewCount Int?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @default(now()) @updatedAt
+
+  @@index([listingType, createdAt])
 }

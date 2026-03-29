@@ -1,15 +1,13 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import ProductDetailClient from '@/components/marketplace/ProductDetailClient';
-import { MOCK_PRODUCTS } from '@/data/mockData';
 import { formatPrice } from '@/data/marketplaceData';
+import { getListingProductPayloadById } from '@/lib/listings';
 import { getSiteUrl, SITE_NAME } from '@/lib/site';
 
 type ProductPageParams = { id: string };
 
-export function generateStaticParams(): ProductPageParams[] {
-  return MOCK_PRODUCTS.map((product) => ({ id: product.id }));
-}
+export const revalidate = 0;
 
 export async function generateMetadata({
   params,
@@ -17,7 +15,7 @@ export async function generateMetadata({
   params: Promise<ProductPageParams>;
 }): Promise<Metadata> {
   const { id } = await params;
-  const product = MOCK_PRODUCTS.find((item) => item.id === id);
+  const product = await getListingProductPayloadById(id);
 
   if (!product) {
     return {
@@ -29,11 +27,16 @@ export async function generateMetadata({
     };
   }
 
+  const hasSellPrice =
+    (product.type === 'sell' || product.type === 'both') && product.price != null;
+
   const baseDescription =
     product.description ??
     `${product.title} is available in ${product.location} for ${
-      product.type === 'sell' && product.price != null
+      hasSellPrice
         ? formatPrice(product.price)
+        : product.type === 'both'
+          ? 'rent or sale'
         : 'rental'
     }.`;
 
@@ -72,7 +75,7 @@ export default async function ProductDetailPage({
   params: Promise<ProductPageParams>;
 }) {
   const { id } = await params;
-  const product = MOCK_PRODUCTS.find((item) => item.id === id);
+  const product = await getListingProductPayloadById(id);
 
   if (!product) {
     notFound();
@@ -80,6 +83,8 @@ export default async function ProductDetailPage({
 
   const siteUrl = getSiteUrl();
   const productUrl = `${siteUrl}/product/${product.id}`;
+  const hasSellPrice =
+    (product.type === 'sell' || product.type === 'both') && product.price != null;
   const productJsonLd = {
     '@context': 'https://schema.org',
     '@type': 'Product',
@@ -94,7 +99,7 @@ export default async function ProductDetailPage({
       '@type': 'Brand',
       name: SITE_NAME,
     },
-    ...(product.type === 'sell' && product.price != null
+    ...(hasSellPrice
       ? {
           offers: {
             '@type': 'Offer',
@@ -123,7 +128,7 @@ export default async function ProductDetailPage({
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(productJsonLd) }}
       />
-      <ProductDetailClient id={id} />
+      <ProductDetailClient product={product} />
     </>
   );
 }
