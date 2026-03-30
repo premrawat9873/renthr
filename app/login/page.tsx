@@ -62,6 +62,31 @@ export default function LoginPage() {
   const postLoginRedirectPath =
     nextParam && nextParam.startsWith('/') && !nextParam.startsWith('//') ? nextParam : '/home';
 
+  const getAuthRedirectOrigin = () => {
+    const configuredSiteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+
+    if (configuredSiteUrl) {
+      try {
+        const configuredUrl = new URL(configuredSiteUrl);
+        const configuredOrigin = configuredUrl.origin;
+        const configuredHostIsLocal =
+          configuredUrl.hostname === 'localhost' || configuredUrl.hostname === '127.0.0.1';
+        const currentHostIsLocal =
+          window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+
+        if (!configuredHostIsLocal || currentHostIsLocal) {
+          return configuredOrigin;
+        }
+      } catch {
+        // Ignore invalid NEXT_PUBLIC_SITE_URL and fall back to current origin.
+      }
+    }
+
+    return window.location.origin;
+  };
+
+  const getPostLoginRedirectUrl = () => `${getAuthRedirectOrigin()}${postLoginRedirectPath}`;
+
   const resetOtpState = () => {
     setOtpRequested(false);
     setOtpCode('');
@@ -99,7 +124,7 @@ export default function LoginPage() {
           data: {
             name: name.trim() || undefined,
           },
-          emailRedirectTo: `${window.location.origin}${postLoginRedirectPath}`,
+          emailRedirectTo: getPostLoginRedirectUrl(),
         },
       });
 
@@ -280,7 +305,7 @@ export default function LoginPage() {
       const { error } = await supabase.auth.signInWithOAuth({
         provider,
         options: {
-          redirectTo: `${window.location.origin}${postLoginRedirectPath}`,
+          redirectTo: getPostLoginRedirectUrl(),
         },
       });
 
