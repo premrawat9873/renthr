@@ -24,6 +24,17 @@ function getPostLoginRedirectPath(request: NextRequest) {
   return '/home';
 }
 
+function getOAuthCallbackRedirectUrl(request: NextRequest) {
+  const callbackUrl = request.nextUrl.clone();
+  callbackUrl.pathname = '/auth/callback';
+
+  if (!isSafeInternalPath(callbackUrl.searchParams.get('next'))) {
+    callbackUrl.searchParams.set('next', '/home');
+  }
+
+  return callbackUrl;
+}
+
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({
     request,
@@ -68,6 +79,10 @@ export async function updateSession(request: NextRequest) {
     request.cookies.get(CUSTOM_SESSION_COOKIE_NAME)?.value
   );
   const isAuthenticated = Boolean(user) || Boolean(customSession);
+
+  if (pathname === '/' && request.nextUrl.searchParams.has('code')) {
+    return NextResponse.redirect(getOAuthCallbackRedirectUrl(request));
+  }
 
   if (pathname === '/') {
     return NextResponse.redirect(new URL('/home', request.url));
