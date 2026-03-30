@@ -118,7 +118,7 @@ export default function ProductGrid({
               <ProductCard
                 product={item.product}
                 rentDurations={rentDurations}
-                priority={i < 4}
+                priority={i === 0}
               />
             )}
           </div>

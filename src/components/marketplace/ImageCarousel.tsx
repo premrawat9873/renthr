@@ -10,6 +10,8 @@ interface Props {
 }
 
 const CAROUSEL_IMAGE_QUALITY = 75;
+const CAROUSEL_IMAGE_SIZES =
+  "(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw";
 
 export default function ImageCarousel({ images, alt, className = "", priority = false }: Props) {
   const [current, setCurrent] = useState(0);
@@ -36,9 +38,11 @@ export default function ImageCarousel({ images, alt, className = "", priority = 
           src={images[0]}
           alt={alt}
           fill
-          sizes="(max-width: 768px) 100vw, 33vw"
+          sizes={CAROUSEL_IMAGE_SIZES}
           quality={CAROUSEL_IMAGE_QUALITY}
           priority={priority}
+          loading={priority ? "eager" : "lazy"}
+          fetchPriority={priority ? "high" : "auto"}
           className={`object-cover transition-transform duration-500 ease-out group-hover:scale-105 ${className}`}
         />
       </div>
@@ -54,13 +58,14 @@ export default function ImageCarousel({ images, alt, className = "", priority = 
       {/* Active image only (keeps cards lightweight on first load) */}
       <div className={`relative w-full h-full ${className}`}>
         <Image
-          key={activeImage}
           src={activeImage}
           alt={`${alt} ${current + 1}`}
           fill
-          sizes="(max-width: 768px) 100vw, 33vw"
+          sizes={CAROUSEL_IMAGE_SIZES}
           quality={CAROUSEL_IMAGE_QUALITY}
           priority={priority}
+          loading={priority ? "eager" : "lazy"}
+          fetchPriority={priority ? "high" : "auto"}
           className="object-cover transition-transform duration-500 ease-out group-hover:scale-105"
         />
       </div>

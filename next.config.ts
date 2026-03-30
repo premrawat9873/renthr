@@ -1,6 +1,6 @@
 import type { NextConfig } from "next";
 
-const isDev = process.env.NODE_ENV !== "production";
+const ONE_YEAR_SECONDS = 60 * 60 * 24 * 365;
 
 function getR2RemotePattern() {
   const r2PublicUrl = process.env.R2_PUBLIC_URL;
@@ -36,8 +36,12 @@ if (r2Pattern) {
 
 const nextConfig: NextConfig = {
   images: {
-    unoptimized: isDev,
-    minimumCacheTTL: 60 * 60 * 24 * 30,
+    // Keep image optimization enabled in all environments so repeated renders
+    // hit Next's cache instead of directly hammering the R2 origin.
+    unoptimized: false,
+    minimumCacheTTL: ONE_YEAR_SECONDS,
+    deviceSizes: [360, 640, 768, 1024, 1280, 1536],
+    imageSizes: [96, 160, 240, 320, 480],
     formats: ["image/avif", "image/webp"],
     qualities: [70, 75],
     remotePatterns,
