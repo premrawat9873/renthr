@@ -9,6 +9,8 @@ interface Props {
   priority?: boolean;
 }
 
+const CAROUSEL_IMAGE_QUALITY = 75;
+
 export default function ImageCarousel({ images, alt, className = "", priority = false }: Props) {
   const [current, setCurrent] = useState(0);
   const [hovered, setHovered] = useState(false);
@@ -35,7 +37,7 @@ export default function ImageCarousel({ images, alt, className = "", priority = 
           alt={alt}
           fill
           sizes="(max-width: 768px) 100vw, 33vw"
-          quality={70}
+          quality={CAROUSEL_IMAGE_QUALITY}
           priority={priority}
           className={`object-cover transition-transform duration-500 ease-out group-hover:scale-105 ${className}`}
         />
@@ -57,7 +59,7 @@ export default function ImageCarousel({ images, alt, className = "", priority = 
           alt={`${alt} ${current + 1}`}
           fill
           sizes="(max-width: 768px) 100vw, 33vw"
-          quality={70}
+          quality={CAROUSEL_IMAGE_QUALITY}
           priority={priority}
           className="object-cover transition-transform duration-500 ease-out group-hover:scale-105"
         />

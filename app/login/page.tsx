@@ -59,10 +59,12 @@ export default function LoginPage() {
   const [otpRequested, setOtpRequested] = useState(false);
   const [otpCode, setOtpCode] = useState('');
   const nextParam = searchParams.get('next');
+  const oauthErrorParam = searchParams.get('error');
   const postLoginRedirectPath =
     nextParam && nextParam.startsWith('/') && !nextParam.startsWith('//') ? nextParam : '/home';
 
   const getAuthRedirectOrigin = () => {
+    const currentOrigin = window.location.origin;
     const configuredSiteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim();
 
     if (configuredSiteUrl) {
@@ -74,18 +76,30 @@ export default function LoginPage() {
         const currentHostIsLocal =
           window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
-        if (!configuredHostIsLocal || currentHostIsLocal) {
+        if (!configuredHostIsLocal && currentHostIsLocal) {
+          return currentOrigin;
+        }
+
+        if (configuredUrl.hostname === window.location.hostname) {
           return configuredOrigin;
         }
+
+        return currentOrigin;
       } catch {
         // Ignore invalid NEXT_PUBLIC_SITE_URL and fall back to current origin.
       }
     }
 
-    return window.location.origin;
+    return currentOrigin;
   };
 
   const getPostLoginRedirectUrl = () => `${getAuthRedirectOrigin()}${postLoginRedirectPath}`;
+
+  const getOAuthCallbackUrl = () => {
+    const callbackUrl = new URL('/auth/callback', getAuthRedirectOrigin());
+    callbackUrl.searchParams.set('next', postLoginRedirectPath);
+    return callbackUrl.toString();
+  };
 
   const resetOtpState = () => {
     setOtpRequested(false);
@@ -97,6 +111,23 @@ export default function LoginPage() {
       router.replace(postLoginRedirectPath);
     }
   }, [status, router, postLoginRedirectPath]);
+
+  useEffect(() => {
+    if (!oauthErrorParam) {
+      return;
+    }
+
+    const messageByErrorCode: Record<string, string> = {
+      missing_oauth_code: 'Google sign-in could not be completed. Please try again.',
+      missing_supabase_env: 'Auth is not configured correctly. Please contact support.',
+      oauth_exchange_failed: 'Google sign-in session could not be created. Please try again.',
+    };
+
+    setAuthError(
+      messageByErrorCode[oauthErrorParam] ||
+        'Sign-in could not be completed. Please try again.'
+    );
+  }, [oauthErrorParam]);
 
   const handleRegister = async () => {
     const emailValue = email.trim().toLowerCase();
@@ -305,7 +336,7 @@ export default function LoginPage() {
       const { error } = await supabase.auth.signInWithOAuth({
         provider,
         options: {
-          redirectTo: getPostLoginRedirectUrl(),
+          redirectTo: getOAuthCallbackUrl(),
         },
       });
 

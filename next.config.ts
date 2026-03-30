@@ -39,6 +39,7 @@ const nextConfig: NextConfig = {
     unoptimized: isDev,
     minimumCacheTTL: 60 * 60 * 24 * 30,
     formats: ["image/avif", "image/webp"],
+    qualities: [70, 75],
     remotePatterns,
   },
 };

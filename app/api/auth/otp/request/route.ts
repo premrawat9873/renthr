@@ -11,9 +11,35 @@ import { getResendClient, getResendFromEmail } from '@/lib/resend';
 
 const OTP_RESEND_COOLDOWN_SECONDS = 60;
 
+type ResendApiError = {
+  statusCode?: number;
+  name?: string;
+  message?: string;
+};
+
 type OtpRequestBody = {
   email?: unknown;
 };
+
+function getOtpDeliveryErrorMessage(error: ResendApiError | null | undefined) {
+  const message = typeof error?.message === 'string' ? error.message : '';
+  const statusCode = typeof error?.statusCode === 'number' ? error.statusCode : 0;
+
+  if (
+    statusCode === 403 &&
+    (message.includes('verify a domain') ||
+      message.includes('testing emails') ||
+      message.includes('own email address'))
+  ) {
+    return 'OTP email delivery is not configured for external recipients. Verify your domain in Resend and set RESEND_FROM_EMAIL to an address on that domain.';
+  }
+
+  if (message) {
+    return `Unable to send OTP: ${message}`;
+  }
+
+  return 'Unable to send OTP right now. Please try again.';
+}
 
 export async function POST(request: Request) {
   try {
@@ -78,7 +104,7 @@ export async function POST(request: Request) {
     // Send Email
     const resend = getResendClient();
 
-    await resend.emails.send({
+    const sendResult = await resend.emails.send({
       from: getResendFromEmail(),
       to: [email],
       subject: 'Your RentKart login OTP',
@@ -159,6 +185,25 @@ export async function POST(request: Request) {
 
       text: `Your RentKart OTP is ${otpCode}. It expires in ${OTP_EXPIRY_MINUTES} minutes.`,
     });
+
+    if (sendResult.error) {
+      // Avoid locking users into cooldown when email delivery is rejected upstream.
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          otpCodeHash: null,
+          otpExpiresAt: null,
+          otpRequestedAt: null,
+        },
+      });
+
+      return NextResponse.json(
+        {
+          error: getOtpDeliveryErrorMessage(sendResult.error),
+        },
+        { status: 502 }
+      );
+    }
 
     return NextResponse.json({
       message: `OTP sent successfully. Enter the ${OTP_CODE_LENGTH}-digit code to continue.`,

@@ -33,6 +33,38 @@ type CreateListingBody = {
 const VALID_AGE_UNITS = new Set(["days", "months", "years"]);
 const MAX_IMAGE_COUNT = 3;
 
+function isDatabaseNotReachableError(error: unknown) {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const maybeError = error as {
+    code?: unknown;
+    message?: unknown;
+    name?: unknown;
+  };
+
+  const code =
+    typeof maybeError.code === "string"
+      ? maybeError.code
+      : "";
+  const message =
+    typeof maybeError.message === "string"
+      ? maybeError.message
+      : "";
+  const name =
+    typeof maybeError.name === "string"
+      ? maybeError.name
+      : "";
+
+  return (
+    code === "P1001" ||
+    message.includes("Can't reach database server") ||
+    message.includes("DatabaseNotReachable") ||
+    name.includes("DatabaseNotReachable")
+  );
+}
+
 function uniqueStringArray(value: unknown) {
   if (!Array.isArray(value)) {
     return [];
@@ -351,7 +383,17 @@ export async function POST(request: Request) {
       },
       { status: 201 }
     );
-  } catch {
+  } catch (error) {
+    if (isDatabaseNotReachableError(error)) {
+      return NextResponse.json(
+        {
+          error:
+            "Database is temporarily unreachable. Please retry in a moment.",
+        },
+        { status: 503 }
+      );
+    }
+
     return NextResponse.json(
       { error: "Unable to save listing right now. Please try again." },
       { status: 500 }

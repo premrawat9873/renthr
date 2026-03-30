@@ -23,8 +23,6 @@ const MIME_EXTENSION_MAP: Record<string, string> = {
   "image/gif": "gif",
 };
 
-const FALLBACK_BUCKET_NAME = "rent-hr-bucket";
-
 type R2Config = {
   bucketName: string;
   publicBaseUrl: string;
@@ -61,6 +59,75 @@ function trimEnv(name: string) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function normalizeEndpoint(endpoint: string) {
+  try {
+    const url = new URL(endpoint);
+    if (url.protocol !== "https:" && url.protocol !== "http:") {
+      throw new R2UploadError("S3_API must use http:// or https://.", 500);
+    }
+
+    // S3-compatible SDK clients expect endpoint origin only.
+    return url.origin;
+  } catch (error) {
+    if (error instanceof R2UploadError) {
+      throw error;
+    }
+
+    throw new R2UploadError("S3_API must be a valid URL.", 500);
+  }
+}
+
+function toUploadServiceError(error: unknown) {
+  const providerError =
+    error && typeof error === "object"
+      ? (error as {
+          name?: string;
+          code?: string;
+          Code?: string;
+          message?: string;
+          $metadata?: { httpStatusCode?: number };
+        })
+      : null;
+
+  const code =
+    providerError?.Code ??
+    providerError?.code ??
+    providerError?.name ??
+    "UnknownError";
+  const status = providerError?.$metadata?.httpStatusCode;
+
+  if (status === 401 || code === "Unauthorized" || code === "InvalidAccessKeyId") {
+    return new R2UploadError(
+      "Cloudflare R2 rejected upload credentials. Verify R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY.",
+      502
+    );
+  }
+
+  if (status === 403 || code === "AccessDenied") {
+    return new R2UploadError(
+      "Cloudflare R2 denied bucket access. Verify R2_BUCKET_NAME permissions for this key pair.",
+      502
+    );
+  }
+
+  if (status === 404 || code === "NoSuchBucket") {
+    return new R2UploadError(
+      "Cloudflare R2 bucket not found. Verify R2_BUCKET_NAME and endpoint/account settings.",
+      502
+    );
+  }
+
+  const providerMessage =
+    typeof providerError?.message === "string" && providerError.message.trim().length > 0
+      ? providerError.message.trim()
+      : "Unknown provider error.";
+
+  return new R2UploadError(
+    `Image upload to Cloudflare R2 failed (${code}). ${providerMessage}`,
+    502
+  );
+}
+
 function getR2Config(): R2Config {
   if (cachedR2Config) {
     return cachedR2Config;
@@ -68,8 +135,10 @@ function getR2Config(): R2Config {
 
   const accountId = trimEnv("R2_ACCOUNT_ID");
   const endpointFromEnv = trimEnv("S3_API");
-  const endpoint = endpointFromEnv || (accountId ? `https://${accountId}.r2.cloudflarestorage.com` : "");
-  const bucketName = trimEnv("R2_BUCKET_NAME") || FALLBACK_BUCKET_NAME;
+  const endpointCandidate =
+    endpointFromEnv || (accountId ? `https://${accountId}.r2.cloudflarestorage.com` : "");
+  const endpoint = endpointCandidate ? normalizeEndpoint(endpointCandidate) : "";
+  const bucketName = trimEnv("R2_BUCKET_NAME");
   const publicBaseUrl = trimEnv("R2_PUBLIC_URL");
   const accessKeyId = trimEnv("R2_ACCESS_KEY_ID");
   const secretAccessKey = trimEnv("R2_SECRET_ACCESS_KEY");
@@ -83,6 +152,10 @@ function getR2Config(): R2Config {
 
   if (!publicBaseUrl) {
     throw new R2UploadError("R2_PUBLIC_URL is missing.", 500);
+  }
+
+  if (!bucketName) {
+    throw new R2UploadError("R2_BUCKET_NAME is missing.", 500);
   }
 
   if (!accessKeyId || !secretAccessKey) {
@@ -240,8 +313,8 @@ export async function uploadImageToR2(
         CacheControl: "public, max-age=31536000, immutable",
       })
     );
-  } catch {
-    throw new R2UploadError("Image upload to Cloudflare R2 failed.", 502);
+  } catch (error) {
+    throw toUploadServiceError(error);
   }
 
   return {

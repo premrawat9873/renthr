@@ -61,6 +61,57 @@ export type MarketplaceListingProductsPayloadPage = {
   hasMore: boolean;
 };
 
+function isDatabaseNotReachableError(error: unknown) {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const maybeError = error as {
+    code?: unknown;
+    message?: unknown;
+    name?: unknown;
+  };
+
+  const code =
+    typeof maybeError.code === "string"
+      ? maybeError.code
+      : "";
+  const message =
+    typeof maybeError.message === "string"
+      ? maybeError.message
+      : "";
+  const name =
+    typeof maybeError.name === "string"
+      ? maybeError.name
+      : "";
+
+  return (
+    code === "P1001" ||
+    message.includes("Can't reach database server") ||
+    message.includes("DatabaseNotReachable") ||
+    name.includes("DatabaseNotReachable")
+  );
+}
+
+async function withDatabaseReadFallback<T>(
+  label: string,
+  query: () => Promise<T>,
+  fallback: T
+) {
+  try {
+    return await query();
+  } catch (error) {
+    if (isDatabaseNotReachableError(error)) {
+      console.error(
+        `[listings] ${label} failed because database is unreachable. Returning fallback.`
+      );
+      return fallback;
+    }
+
+    throw error;
+  }
+}
+
 function normalizePageSize(limit?: number) {
   if (!Number.isFinite(limit)) {
     return MARKETPLACE_DEFAULT_PAGE_SIZE;
@@ -219,7 +270,11 @@ function parseListingId(id: string) {
 }
 
 export async function getMarketplaceListingProducts() {
-  const records = await findManyListings();
+  const records = await withDatabaseReadFallback(
+    "getMarketplaceListingProducts",
+    () => findManyListings(),
+    [] as ListingRecord[]
+  );
   return records.map(mapListingRecordToProduct);
 }
 
@@ -233,7 +288,11 @@ export async function getMarketplaceListingProductsPayloadPage(
 ): Promise<MarketplaceListingProductsPayloadPage> {
   const limit = normalizePageSize(options.limit);
   const cursorId = parseListingCursor(options.cursor);
-  const records = await findManyListingsPage({ limit, cursorId });
+  const records = await withDatabaseReadFallback(
+    "getMarketplaceListingProductsPayloadPage",
+    () => findManyListingsPage({ limit, cursorId }),
+    [] as ListingRecord[]
+  );
 
   const hasMore = records.length > limit;
   const visibleRecords = hasMore ? records.slice(0, limit) : records;
@@ -261,7 +320,11 @@ export async function getMarketplaceListingProductsByUserId(
     return [];
   }
 
-  const records = await findManyListingsByAuthorId(parsedUserId);
+  const records = await withDatabaseReadFallback(
+    "getMarketplaceListingProductsByUserId",
+    () => findManyListingsByAuthorId(parsedUserId),
+    [] as ListingRecord[]
+  );
   return records.map(mapListingRecordToProduct);
 }
 
@@ -279,16 +342,21 @@ export async function getPublicListingUserProfileById(userId: string | number) {
     return null;
   }
 
-  const user = await prisma.user.findUnique({
-    where: {
-      id: parsedUserId,
-    },
-    select: {
-      id: true,
-      name: true,
-      email: true,
-    },
-  });
+  const user = await withDatabaseReadFallback(
+    "getPublicListingUserProfileById",
+    () =>
+      prisma.user.findUnique({
+        where: {
+          id: parsedUserId,
+        },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+        },
+      }),
+    null
+  );
 
   if (!user) {
     return null;
@@ -306,16 +374,21 @@ export async function getListingProductById(id: string) {
     return null;
   }
 
-  const record = await prisma.post.findFirst({
-    where: {
-      id: listingId,
-      published: true,
-      listingType: {
-        not: null,
-      },
-    },
-    select: listingSelect,
-  });
+  const record = await withDatabaseReadFallback(
+    "getListingProductById",
+    () =>
+      prisma.post.findFirst({
+        where: {
+          id: listingId,
+          published: true,
+          listingType: {
+            not: null,
+          },
+        },
+        select: listingSelect,
+      }),
+    null
+  );
 
   return record ? mapListingRecordToProduct(record) : null;
 }
