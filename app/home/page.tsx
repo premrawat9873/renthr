@@ -1,6 +1,9 @@
 import type { Metadata } from 'next';
 import MarketplacePageClient from '@/components/marketplace/MarketplacePageClient';
-import { getMarketplaceListingProductsPayload } from '@/lib/listings';
+import {
+  getMarketplaceListingProductsPayloadPage,
+  MARKETPLACE_DEFAULT_PAGE_SIZE,
+} from '@/lib/listings';
 import { getSiteUrl } from '@/lib/site';
 
 export const revalidate = 0;
@@ -23,7 +26,10 @@ export const metadata: Metadata = {
 
 export default async function HomePage() {
   const siteUrl = getSiteUrl();
-  const products = await getMarketplaceListingProductsPayload();
+  const firstPage = await getMarketplaceListingProductsPayloadPage({
+    limit: MARKETPLACE_DEFAULT_PAGE_SIZE,
+  });
+  const { products, nextCursor, hasMore } = firstPage;
 
   const itemListJsonLd = {
     '@context': 'https://schema.org',
@@ -47,7 +53,11 @@ export default async function HomePage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd) }}
       />
-      <MarketplacePageClient products={products} />
+      <MarketplacePageClient
+        initialProducts={products}
+        initialNextCursor={nextCursor}
+        initialHasMore={hasMore}
+      />
     </>
   );
 }

@@ -8,6 +8,9 @@ import {
 import type { Prisma } from "../../generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 
+export const MARKETPLACE_DEFAULT_PAGE_SIZE = 10;
+export const MARKETPLACE_MAX_PAGE_SIZE = 30;
+
 const DEFAULT_IMAGE_URL =
   "https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=1200&h=900&fit=crop";
 
@@ -41,6 +44,50 @@ const listingSelect = {
 } satisfies Prisma.PostSelect;
 
 type ListingRecord = Prisma.PostGetPayload<{ select: typeof listingSelect }>;
+
+type MarketplaceListingsPageOptions = {
+  limit?: number;
+  cursor?: number | string | null;
+};
+
+type FindManyListingsPageOptions = {
+  limit: number;
+  cursorId: number | null;
+};
+
+export type MarketplaceListingProductsPayloadPage = {
+  products: ListingProductPayload[];
+  nextCursor: string | null;
+  hasMore: boolean;
+};
+
+function normalizePageSize(limit?: number) {
+  if (!Number.isFinite(limit)) {
+    return MARKETPLACE_DEFAULT_PAGE_SIZE;
+  }
+
+  const normalized = Math.floor(limit as number);
+  if (normalized <= 0) {
+    return MARKETPLACE_DEFAULT_PAGE_SIZE;
+  }
+
+  return Math.min(normalized, MARKETPLACE_MAX_PAGE_SIZE);
+}
+
+function parseListingCursor(cursor: number | string | null | undefined) {
+  if (cursor == null) {
+    return null;
+  }
+
+  const parsed =
+    typeof cursor === "number" ? cursor : Number.parseInt(String(cursor), 10);
+
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return null;
+  }
+
+  return parsed;
+}
 
 function normalizeImageList(input: { image: string | null; images: string[] }) {
   const ordered = [
@@ -121,6 +168,32 @@ async function findManyListings() {
   });
 }
 
+async function findManyListingsPage({
+  limit,
+  cursorId,
+}: FindManyListingsPageOptions) {
+  return prisma.post.findMany({
+    where: {
+      published: true,
+      listingType: {
+        not: null,
+      },
+      ...(cursorId
+        ? {
+            id: {
+              lt: cursorId,
+            },
+          }
+        : {}),
+    },
+    orderBy: {
+      id: "desc",
+    },
+    take: limit + 1,
+    select: listingSelect,
+  });
+}
+
 async function findManyListingsByAuthorId(authorId: number) {
   return prisma.post.findMany({
     where: {
@@ -153,6 +226,30 @@ export async function getMarketplaceListingProducts() {
 export async function getMarketplaceListingProductsPayload() {
   const products = await getMarketplaceListingProducts();
   return products.map(serializeListingProduct);
+}
+
+export async function getMarketplaceListingProductsPayloadPage(
+  options: MarketplaceListingsPageOptions = {}
+): Promise<MarketplaceListingProductsPayloadPage> {
+  const limit = normalizePageSize(options.limit);
+  const cursorId = parseListingCursor(options.cursor);
+  const records = await findManyListingsPage({ limit, cursorId });
+
+  const hasMore = records.length > limit;
+  const visibleRecords = hasMore ? records.slice(0, limit) : records;
+  const products = visibleRecords.map((record) =>
+    serializeListingProduct(mapListingRecordToProduct(record))
+  );
+  const nextCursor =
+    hasMore && visibleRecords.length > 0
+      ? String(visibleRecords[visibleRecords.length - 1].id)
+      : null;
+
+  return {
+    products,
+    nextCursor,
+    hasMore,
+  };
 }
 
 export async function getMarketplaceListingProductsByUserId(

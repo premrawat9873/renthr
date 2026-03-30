@@ -6,7 +6,10 @@ import {
   CUSTOM_SESSION_COOKIE_NAME,
   verifyCustomSessionToken,
 } from "@/lib/custom-session";
-import { getMarketplaceListingProductsPayload } from "@/lib/listings";
+import {
+  getMarketplaceListingProductsPayloadPage,
+  MARKETPLACE_DEFAULT_PAGE_SIZE,
+} from "@/lib/listings";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -167,9 +170,18 @@ function parseRentPrices(value: unknown) {
   return parsed;
 }
 
-export async function GET() {
-  const products = await getMarketplaceListingProductsPayload();
-  return NextResponse.json({ products });
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const limitParam = searchParams.get("limit");
+  const cursorParam = searchParams.get("cursor");
+  const parsedLimit = limitParam ? Number.parseInt(limitParam, 10) : NaN;
+
+  const page = await getMarketplaceListingProductsPayloadPage({
+    limit: Number.isFinite(parsedLimit) ? parsedLimit : MARKETPLACE_DEFAULT_PAGE_SIZE,
+    cursor: cursorParam,
+  });
+
+  return NextResponse.json(page);
 }
 
 export async function POST(request: Request) {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useCallback, useSyncExternalStore } from 'react';
+import { useMemo, useCallback, useState, useSyncExternalStore } from 'react';
 import MarketplaceHeader from '@/components/marketplace/MarketplaceHeader';
 import CategorySection from '@/components/marketplace/CategorySection';
 import FilterBar from '@/components/marketplace/FilterBar';
@@ -13,6 +13,7 @@ import {
 import type { ListingFilter, Product, RentDuration } from '@/data/marketplaceData';
 import type { LocationData } from '@/components/marketplace/LocationSelector';
 import { MapPin } from 'lucide-react';
+import { toast } from '@/hooks/use-toast';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import {
   MAX_PRICE,
@@ -39,6 +40,7 @@ import {
 } from '@/store/slices/marketplaceSlice';
 
 const NEARBY_RADIUS_KM = 12;
+const PAGE_SIZE = 10;
 const subscribeHydration = () => () => {};
 const EMPTY_DURATIONS: RentDuration[] = [];
 const DEFAULT_PRICE_RANGE: [number, number] = [0, MAX_PRICE];
@@ -180,11 +182,28 @@ function getComparablePrice(product: Product, filter: ListingFilter) {
 }
 
 interface MarketplacePageClientProps {
-  products: ListingProductPayload[];
+  initialProducts: ListingProductPayload[];
+  initialNextCursor: string | null;
+  initialHasMore: boolean;
 }
 
-export function MarketplacePageClient({ products }: MarketplacePageClientProps) {
+type ListingsPageResponse = {
+  products?: ListingProductPayload[];
+  nextCursor?: string | null;
+  hasMore?: boolean;
+  error?: string;
+};
+
+export function MarketplacePageClient({
+  initialProducts,
+  initialNextCursor,
+  initialHasMore,
+}: MarketplacePageClientProps) {
   const dispatch = useAppDispatch();
+  const [loadedProducts, setLoadedProducts] = useState<ListingProductPayload[]>(initialProducts);
+  const [nextCursor, setNextCursor] = useState<string | null>(initialNextCursor);
+  const [hasMorePages, setHasMorePages] = useState(initialHasMore);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const location = useAppSelector(selectLocation);
   const userLocation = useAppSelector(selectUserLocation);
   const userCoords = useAppSelector(selectUserCoords);
@@ -208,9 +227,67 @@ export function MarketplacePageClient({ products }: MarketplacePageClientProps) 
   const safePriceRange: [number, number] = isHydrated ? priceRange : DEFAULT_PRICE_RANGE;
   const safeHasActiveFilters = isHydrated ? hasActiveFilters : false;
   const availableProducts = useMemo(
-    () => products.map(deserializeListingProduct),
-    [products]
+    () => loadedProducts.map(deserializeListingProduct),
+    [loadedProducts]
   );
+
+  const loadMoreProducts = useCallback(async () => {
+    if (isLoadingMore || !hasMorePages) {
+      return;
+    }
+
+    setIsLoadingMore(true);
+
+    try {
+      const params = new URLSearchParams();
+      params.set('limit', String(PAGE_SIZE));
+      if (nextCursor) {
+        params.set('cursor', nextCursor);
+      }
+
+      const response = await fetch(`/api/listings?${params.toString()}`, {
+        cache: 'no-store',
+      });
+
+      const payload = (await response
+        .json()
+        .catch(() => null)) as ListingsPageResponse | null;
+
+      if (!response.ok || !payload || !Array.isArray(payload.products)) {
+        throw new Error(
+          payload?.error || 'Unable to load more listings right now. Please try again.'
+        );
+      }
+
+      setLoadedProducts((current) => {
+        const knownIds = new Set(current.map((item) => item.id));
+        const merged = [...current];
+
+        for (const item of payload.products ?? []) {
+          if (!knownIds.has(item.id)) {
+            knownIds.add(item.id);
+            merged.push(item);
+          }
+        }
+
+        return merged;
+      });
+
+      setNextCursor(typeof payload.nextCursor === 'string' ? payload.nextCursor : null);
+      setHasMorePages(Boolean(payload.hasMore));
+    } catch (error) {
+      toast({
+        title: 'Could not load more listings',
+        description:
+          error instanceof Error
+            ? error.message
+            : 'Please try again in a moment.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [hasMorePages, isLoadingMore, nextCursor]);
 
   const handleLocationChange = useCallback((locData: LocationData | null) => {
     if (!locData) return;
@@ -403,7 +480,13 @@ export function MarketplacePageClient({ products }: MarketplacePageClientProps) 
           onLocationChange={handleLocationChange}
         />
 
-        <ProductGrid products={filteredProducts} rentDurations={safeRentDurations} />
+        <ProductGrid
+          products={filteredProducts}
+          rentDurations={safeRentDurations}
+          hasMore={hasMorePages}
+          isLoadingMore={isLoadingMore}
+          onLoadMore={loadMoreProducts}
+        />
       </main>
 
       <Footer />

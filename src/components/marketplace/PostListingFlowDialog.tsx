@@ -41,6 +41,19 @@ type CreateListingResponse = {
 
 const MAX_CATEGORY_SELECTION = 2;
 const MAX_PHOTO_UPLOADS = 3;
+const MAX_SINGLE_UPLOAD_PAYLOAD_BYTES = 4 * 1024 * 1024;
+const TARGET_CLIENT_IMAGE_SIZE_BYTES = 1.5 * 1024 * 1024;
+const CLIENT_MAX_IMAGE_DIMENSION = 1600;
+const CLIENT_INITIAL_JPEG_QUALITY = 0.84;
+const CLIENT_MIN_JPEG_QUALITY = 0.5;
+const CLIENT_JPEG_QUALITY_STEP = 0.08;
+const ALLOWED_IMAGE_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/avif",
+  "image/gif",
+]);
 const AGE_UNITS: Array<{ value: AgeUnit; label: string }> = [
   { value: "days", label: "Days" },
   { value: "months", label: "Months" },
@@ -75,6 +88,94 @@ const FIELD_BORDER_CLASS =
 const ACTION_BUTTON_BORDER_CLASS =
   "border border-primary/45 disabled:opacity-100 disabled:border-primary/45";
 
+function toJpegFileName(name: string) {
+  const baseName = name.replace(/\.[^.]+$/, "");
+  return `${baseName || "image"}.jpg`;
+}
+
+function canvasToBlob(canvas: HTMLCanvasElement, quality: number) {
+  return new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) {
+          reject(new Error("Unable to process image."));
+          return;
+        }
+
+        resolve(blob);
+      },
+      "image/jpeg",
+      quality,
+    );
+  });
+}
+
+function loadImageElement(file: File) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const image = new window.Image();
+
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(image);
+    };
+
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("Unable to read selected image."));
+    };
+
+    image.src = objectUrl;
+  });
+}
+
+async function prepareImageForUpload(file: File) {
+  if (file.size <= MAX_SINGLE_UPLOAD_PAYLOAD_BYTES) {
+    return file;
+  }
+
+  const image = await loadImageElement(file);
+  const maxOriginalDimension = Math.max(image.width, image.height);
+  const scale =
+    maxOriginalDimension > CLIENT_MAX_IMAGE_DIMENSION
+      ? CLIENT_MAX_IMAGE_DIMENSION / maxOriginalDimension
+      : 1;
+
+  const targetWidth = Math.max(1, Math.round(image.width * scale));
+  const targetHeight = Math.max(1, Math.round(image.height * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = targetWidth;
+  canvas.height = targetHeight;
+
+  const context = canvas.getContext("2d");
+  if (!context) {
+    throw new Error("Unable to process image for upload.");
+  }
+
+  context.drawImage(image, 0, 0, targetWidth, targetHeight);
+
+  let quality = CLIENT_INITIAL_JPEG_QUALITY;
+  let output = await canvasToBlob(canvas, quality);
+
+  while (output.size > TARGET_CLIENT_IMAGE_SIZE_BYTES && quality > CLIENT_MIN_JPEG_QUALITY) {
+    quality = Math.max(CLIENT_MIN_JPEG_QUALITY, quality - CLIENT_JPEG_QUALITY_STEP);
+    output = await canvasToBlob(canvas, quality);
+
+    if (quality === CLIENT_MIN_JPEG_QUALITY) {
+      break;
+    }
+  }
+
+  if (output.size > MAX_SINGLE_UPLOAD_PAYLOAD_BYTES) {
+    throw new Error(`\"${file.name}\" is still too large after optimization. Please choose another image.`);
+  }
+
+  return new File([output], toJpegFileName(file.name), {
+    type: "image/jpeg",
+    lastModified: Date.now(),
+  });
+}
+
 export default function PostListingFlowDialog({ open, onOpenChange }: PostListingFlowDialogProps) {
   const selectedLocation = useAppSelector(selectLocation);
   const [step, setStep] = useState<PostStep>("category");
@@ -89,6 +190,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
   const [rentPrices, setRentPrices] = useState<Record<RentDurationOption, string>>(INITIAL_RENT_PRICES);
   const [sellPrice, setSellPrice] = useState("");
   const [selectedPhotoFiles, setSelectedPhotoFiles] = useState<File[]>([]);
+  const [isPreparingPhotos, setIsPreparingPhotos] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const selectedCategories = useMemo(
@@ -205,40 +307,78 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
   };
 
   const goToPurpose = () => {
-    if (!hasPhotoSelection) return;
+    if (!hasPhotoSelection || isPreparingPhotos) return;
     setStep("purpose");
   };
 
-  const handlePhotosSelected = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotosSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const incomingFiles = Array.from(event.target.files ?? []);
+    event.currentTarget.value = "";
+
     if (incomingFiles.length === 0) {
-      event.currentTarget.value = "";
       return;
     }
 
-    setSelectedPhotoFiles((current) => {
-      const slotsRemaining = MAX_PHOTO_UPLOADS - current.length;
-      if (slotsRemaining <= 0) {
-        toast({
-          title: "Upload limit reached",
-          description: `You can upload at most ${MAX_PHOTO_UPLOADS} photos.`,
-          variant: "destructive",
-        });
-        return current;
+    const slotsRemaining = MAX_PHOTO_UPLOADS - selectedPhotoFiles.length;
+    if (slotsRemaining <= 0) {
+      toast({
+        title: "Upload limit reached",
+        description: `You can upload at most ${MAX_PHOTO_UPLOADS} photos.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (incomingFiles.length > slotsRemaining) {
+      toast({
+        title: "Only 3 photos allowed",
+        description: `Added ${slotsRemaining} photo${slotsRemaining > 1 ? "s" : ""}. Remove one to add more.`,
+        variant: "destructive",
+      });
+    }
+
+    const candidateFiles = incomingFiles.slice(0, slotsRemaining);
+    setIsPreparingPhotos(true);
+
+    try {
+      const preparedFiles: File[] = [];
+      const skippedNames: string[] = [];
+
+      for (const file of candidateFiles) {
+        if (!ALLOWED_IMAGE_TYPES.has(file.type)) {
+          skippedNames.push(file.name);
+          continue;
+        }
+
+        try {
+          const preparedFile = await prepareImageForUpload(file);
+          preparedFiles.push(preparedFile);
+        } catch {
+          skippedNames.push(file.name);
+        }
       }
 
-      if (incomingFiles.length > slotsRemaining) {
-        toast({
-          title: "Only 3 photos allowed",
-          description: `Added ${slotsRemaining} photo${slotsRemaining > 1 ? "s" : ""}. Remove one to add more.`,
-          variant: "destructive",
+      if (preparedFiles.length > 0) {
+        setSelectedPhotoFiles((current) => {
+          const allowedSlots = MAX_PHOTO_UPLOADS - current.length;
+          if (allowedSlots <= 0) {
+            return current;
+          }
+
+          return [...current, ...preparedFiles.slice(0, allowedSlots)];
         });
       }
 
-      return [...current, ...incomingFiles.slice(0, slotsRemaining)];
-    });
-
-    event.currentTarget.value = "";
+      if (skippedNames.length > 0) {
+        toast({
+          title: "Some files were skipped",
+          description: `${skippedNames.length} file${skippedNames.length > 1 ? "s were" : " was"} too large or unsupported after optimization.`,
+          variant: "destructive",
+        });
+      }
+    } finally {
+      setIsPreparingPhotos(false);
+    }
   };
 
   const removePhoto = (indexToRemove: number) => {
@@ -292,23 +432,36 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
     setIsSubmitting(true);
 
     try {
-      const uploadFormData = new FormData();
-      selectedPhotoFiles.forEach((file) => {
+      const uploadedImageUrls: string[] = [];
+
+      for (const file of selectedPhotoFiles) {
+        const uploadFormData = new FormData();
         uploadFormData.append("images", file);
-      });
 
-      const uploadResponse = await fetch("/api/images/upload", {
-        method: "POST",
-        body: uploadFormData,
-      });
+        const uploadResponse = await fetch("/api/images/upload", {
+          method: "POST",
+          body: uploadFormData,
+        });
 
-      const uploadPayload = (await uploadResponse.json().catch(() => null)) as UploadImagesResponse | null;
-      if (!uploadResponse.ok || !uploadPayload || !Array.isArray(uploadPayload.images)) {
-        throw new Error(
-          typeof uploadPayload?.error === "string"
-            ? uploadPayload.error
-            : "Image upload failed. Please try again."
-        );
+        if (uploadResponse.status === 413) {
+          throw new Error(
+            `\"${file.name}\" is too large for deployment upload limits. Choose a smaller image and try again.`
+          );
+        }
+
+        const uploadPayload = (await uploadResponse
+          .json()
+          .catch(() => null)) as UploadImagesResponse | null;
+
+        if (!uploadResponse.ok || !uploadPayload || !Array.isArray(uploadPayload.images)) {
+          throw new Error(
+            typeof uploadPayload?.error === "string"
+              ? uploadPayload.error
+              : "Image upload failed. Please try again."
+          );
+        }
+
+        uploadedImageUrls.push(...uploadPayload.images);
       }
 
       const selectedRentPricePayload = selectedRentDurations.reduce(
@@ -333,7 +486,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
           purposes: selectedPurposes,
           sellPrice,
           rentPrices: selectedRentPricePayload,
-          imageUrls: uploadPayload.images,
+          imageUrls: uploadedImageUrls,
           location: selectedLocation ?? "Bangalore",
         }),
       });
@@ -364,7 +517,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
           `${name.trim()} in ${selectedLabels}. Purpose: ${selectedPurposeLabels}. ` +
           `${isSellSelected ? `Sell price INR ${sellPrice}. ` : ""}` +
           `${isRentSelected ? `Rent: ${selectedRentSummary}. ` : ""}` +
-          `Condition age: ${ageValue} ${ageUnit} old. Uploaded ${uploadPayload.images.length} photo${uploadPayload.images.length > 1 ? "s" : ""} to Cloudflare R2. Listing ID: ${saveListingPayload.id}.`,
+            `Condition age: ${ageValue} ${ageUnit} old. Uploaded ${uploadedImageUrls.length} photo${uploadedImageUrls.length > 1 ? "s" : ""} to Cloudflare R2. Listing ID: ${saveListingPayload.id}.`,
       });
 
       handleOpenChange(false);
@@ -624,6 +777,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
                   multiple
                   accept="image/*"
                   onChange={handlePhotosSelected}
+                  disabled={isPreparingPhotos || isSubmitting}
                   className={cn(FIELD_BORDER_CLASS, "cursor-pointer")}
                 />
                 <p className="text-xs text-muted-foreground">
@@ -632,6 +786,9 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
                 <p className="text-xs text-muted-foreground">
                   Selected: {selectedPhotoFiles.length}/{MAX_PHOTO_UPLOADS}
                 </p>
+                {isPreparingPhotos && (
+                  <p className="text-xs text-muted-foreground">Optimizing selected photos for upload...</p>
+                )}
               </div>
 
               {photoPreviews.length > 0 ? (
@@ -679,7 +836,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
                 type="button"
                 variant="highlight"
                 onClick={goToPurpose}
-                disabled={!hasPhotoSelection}
+                disabled={!hasPhotoSelection || isPreparingPhotos}
                 className={cn("gap-2", ACTION_BUTTON_BORDER_CLASS)}
               >
                 Continue to next window
@@ -818,10 +975,10 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
               <Button
                 type="submit"
                 variant="highlight"
-                disabled={!canSubmit || isSubmitting}
+                disabled={!canSubmit || isSubmitting || isPreparingPhotos}
                 className={cn("gap-2", ACTION_BUTTON_BORDER_CLASS)}
               >
-                {isSubmitting ? "Uploading photos..." : "Save listing draft"}
+                {isPreparingPhotos ? "Preparing photos..." : isSubmitting ? "Uploading photos..." : "Save listing draft"}
               </Button>
             </div>
           </form>
