@@ -1,7 +1,7 @@
 const FALLBACK_SITE_URL = 'https://example.com';
 
-export const SITE_NAME = 'Rent or Own Marketplace';
-export const SITE_DESCRIPTION = 'Rent, buy, and sell trusted items in your neighborhood.';
+export const SITE_NAME = 'RentHour Marketplace';
+export const SITE_DESCRIPTION = 'Rent, buy, and sell trusted items in your neighborhood with RentHour.';
 
 export function getSiteUrl() {
   const configuredUrl =

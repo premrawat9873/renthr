@@ -62,7 +62,7 @@ export default function Footer() {
           <div className="flex items-center gap-1">
             <span>© 2026</span>
             <span className="font-heading font-semibold text-primary-foreground">rent</span>
-            <span className="font-heading font-semibold text-highlight-foreground bg-highlight px-1 py-0.5 rounded text-[10px]">kart</span>
+            <span className="font-heading font-semibold text-highlight-foreground bg-highlight px-1 py-0.5 rounded text-[10px]">hour</span>
           </div>
           <div className="flex items-center gap-4">
             <a href="#" className="hover:text-highlight transition-colors">Privacy</a>

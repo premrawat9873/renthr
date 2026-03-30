@@ -85,11 +85,27 @@ function isDatabaseNotReachableError(error: unknown) {
       ? maybeError.name
       : "";
 
+  const normalizedCode = code.toUpperCase();
+  const normalizedMessage = message.toLowerCase();
+  const normalizedName = name.toLowerCase();
+
   return (
-    code === "P1001" ||
-    message.includes("Can't reach database server") ||
-    message.includes("DatabaseNotReachable") ||
-    name.includes("DatabaseNotReachable")
+    normalizedCode === "P1001" ||
+    normalizedCode === "EAI_AGAIN" ||
+    normalizedCode === "ENOTFOUND" ||
+    normalizedCode === "ECONNREFUSED" ||
+    normalizedCode === "ECONNRESET" ||
+    normalizedCode === "ETIMEDOUT" ||
+    normalizedCode === "EHOSTUNREACH" ||
+    normalizedCode === "ENETUNREACH" ||
+    normalizedMessage.includes("can't reach database server") ||
+    normalizedMessage.includes("database is unreachable") ||
+    normalizedMessage.includes("databasenotreachable") ||
+    normalizedMessage.includes("getaddrinfo eai_again") ||
+    normalizedMessage.includes("getaddrinfo enotfound") ||
+    normalizedMessage.includes("connect etimedout") ||
+    normalizedMessage.includes("connection timed out") ||
+    normalizedName.includes("databasenotreachable")
   );
 }
 

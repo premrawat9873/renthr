@@ -17,5 +17,5 @@ export function getResendClient() {
 }
 
 export function getResendFromEmail() {
-  return process.env.RESEND_FROM_EMAIL || 'RentKart <onboarding@resend.dev>';
+  return process.env.RESEND_FROM_EMAIL || 'RentHour <onboarding@resend.dev>';
 }

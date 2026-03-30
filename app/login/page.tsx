@@ -375,7 +375,7 @@ export default function LoginPage() {
                 rent
               </span>
               <span className="font-sora text-[1.05rem] font-bold text-[#1a1a1a] bg-[#f5bc00] px-2.5 py-[3px] rounded-md">
-                kart
+                hour
               </span>
             </div>
 

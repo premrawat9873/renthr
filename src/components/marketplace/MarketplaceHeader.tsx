@@ -1,4 +1,4 @@
-import { Search, MapPin, User, Plus, ChevronDown, X, Heart } from "lucide-react";
+import { Search, MapPin, User, ChevronDown, X, Heart } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState, useRef, useEffect, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
@@ -7,7 +7,6 @@ import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { logout, selectCurrentUser, selectIsAuthenticated } from "@/store/slices/authSlice";
 import { selectWishlistIds } from "@/store/slices/wishlistSlice";
 import { useSupabaseAuth } from "@/lib/supabase-auth";
-import PostListingFlowDialog from "@/components/marketplace/PostListingFlowDialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -43,7 +42,6 @@ export default function MarketplaceHeader({
   const wishlistCount = useAppSelector(selectWishlistIds).length;
   const [locOpen, setLocOpen] = useState(false);
   const [cityInput, setCityInput] = useState("");
-  const [postFlowOpen, setPostFlowOpen] = useState(false);
   const isHydrated = useSyncExternalStore(subscribeHydration, () => true, () => false);
   const dropRef = useRef<HTMLDivElement>(null);
   const displayLocation = isHydrated ? location : null;
@@ -111,13 +109,16 @@ export default function MarketplaceHeader({
   };
 
   return (
-    <header className="sticky top-0 z-50 border-b border-primary/25 bg-accent/85 shadow-[0_6px_20px_-16px_hsl(var(--primary)/0.45)] backdrop-blur supports-[backdrop-filter]:bg-accent/75">
-      <div className="flex h-16 w-full items-center gap-2 pl-2 pr-3 md:gap-3 md:pl-3 md:pr-6">
+    <header className="sticky top-0 z-50 overflow-hidden border-b border-primary/20 bg-accent/45 shadow-[0_8px_22px_-18px_hsl(var(--primary)/0.45)] backdrop-blur-md supports-[backdrop-filter]:bg-accent/35">
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-primary/8 via-accent/14 to-primary/8" />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,hsl(var(--primary)/0.08),transparent_62%)]" />
+
+      <div className="relative z-10 flex h-16 w-full items-center gap-2 pl-2 pr-3 md:gap-3 md:pl-3 md:pr-6">
         {/* Logo */}
-        <Link href="/home" className="flex items-center gap-1 shrink-0">
+        <Link href="/home" className="flex items-center gap-1 shrink-0 rounded-full border border-primary/30 bg-background/45 px-2.5 py-1 backdrop-blur-sm">
           <span className="text-xl font-heading font-bold text-primary">rent</span>
           <span className="text-xl font-heading font-bold text-highlight-foreground bg-highlight px-1.5 py-0.5 rounded-lg">
-            kart
+            hour
           </span>
         </Link>
 
@@ -125,7 +126,7 @@ export default function MarketplaceHeader({
         <div className="relative shrink-0" ref={dropRef}>
           <button
             onClick={() => setLocOpen(!locOpen)}
-            className="flex h-11 w-11 sm:w-[210px] lg:w-[250px] items-center justify-between gap-2 rounded-full border border-primary/20 bg-background px-3 sm:px-4 text-sm text-foreground transition-colors duration-200 hover:border-primary/40"
+            className="flex h-11 w-11 sm:w-[210px] lg:w-[250px] items-center justify-between gap-2 rounded-full border border-primary/25 bg-background/45 px-3 sm:px-4 text-sm text-foreground backdrop-blur-sm transition-colors duration-200 hover:border-primary/45"
           >
             <span className="inline-flex items-center gap-2 truncate">
               <MapPin className="h-4 w-4 text-primary" />
@@ -197,10 +198,10 @@ export default function MarketplaceHeader({
             placeholder="Search products..."
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
-            className="w-full h-10 pl-10 pr-16 rounded-full border border-primary/35 bg-background text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/25 focus:border-primary/45 transition-all duration-200"
+            className="h-10 w-full rounded-full border border-primary/25 bg-background/50 pl-10 pr-16 text-sm placeholder:text-muted-foreground backdrop-blur-sm transition-all duration-200 focus:border-primary/40 focus:outline-none focus:ring-2 focus:ring-primary/20"
           />
           <button
-            className="absolute right-1.5 top-1/2 -translate-y-1/2 h-7 w-7 rounded-full bg-[#1677f2] text-white flex items-center justify-center hover:brightness-95 transition-all duration-200"
+            className="absolute right-1.5 top-1/2 -translate-y-1/2 flex h-7 w-7 items-center justify-center rounded-full bg-primary text-primary-foreground transition-all duration-200 hover:brightness-105"
             aria-label="Search"
           >
             <Search className="h-4 w-4" />
@@ -224,7 +225,7 @@ export default function MarketplaceHeader({
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="hidden md:flex items-center gap-1.5 h-10 rounded-full border border-primary/25 bg-background px-3 text-xs font-medium text-primary hover:border-primary/45 hover:bg-accent transition-colors min-w-[96px]">
+              <button className="hidden md:flex items-center gap-1.5 h-10 rounded-full border border-primary/25 bg-background/45 px-3 text-xs font-medium text-primary backdrop-blur-sm transition-colors min-w-[96px] hover:border-primary/40 hover:bg-background/55">
                 <User className="h-4 w-4" />
                 <span className="max-w-[92px] truncate">
                   {isAuthenticated ? accountLabel : "Login"}
@@ -240,10 +241,7 @@ export default function MarketplaceHeader({
               ) : (
                 <>
                   <DropdownMenuItem onClick={() => router.push("/profile")}>
-                    Profile
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => router.push("/my-posts")}>
-                    My Posts
+                    Profile & Listings
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => void handleLogout()}>
@@ -257,11 +255,13 @@ export default function MarketplaceHeader({
           <Button
             variant="highlight"
             size="sm"
-            className="gap-1.5 rounded-full"
-            onClick={() => setPostFlowOpen(true)}
+            className="gap-1.5 rounded-full border border-highlight/55"
+            onClick={() =>
+              router.push(isAuthenticated ? "/profile" : "/login?next=/profile")
+            }
           >
-            <Plus className="h-4 w-4" />
-            <span className="hidden sm:inline">Post Listing</span>
+            <User className="h-4 w-4" />
+            <span className="hidden sm:inline">My Listings</span>
           </Button>
         </div>
       </div>
@@ -275,12 +275,11 @@ export default function MarketplaceHeader({
             placeholder="Search..."
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
-            className="w-full h-9 pl-10 pr-3 rounded-full border border-primary/35 bg-background text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/25 focus:border-primary/45 transition-all duration-200"
+            className="h-9 w-full rounded-full border border-primary/25 bg-background/50 pl-10 pr-3 text-sm placeholder:text-muted-foreground backdrop-blur-sm transition-all duration-200 focus:border-primary/40 focus:outline-none focus:ring-2 focus:ring-primary/20"
           />
         </div>
       </div>
 
-      <PostListingFlowDialog open={postFlowOpen} onOpenChange={setPostFlowOpen} />
     </header>
   );
 }

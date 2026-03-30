@@ -107,7 +107,7 @@ export async function POST(request: Request) {
     const sendResult = await resend.emails.send({
       from: getResendFromEmail(),
       to: [email],
-      subject: 'Your RentKart login OTP',
+      subject: 'Your RentHour login OTP',
 
       html: `
       <div style="background:#f5f7f6; padding:40px 0; font-family:Arial, sans-serif;">
@@ -129,7 +129,7 @@ export async function POST(request: Request) {
             color:#fff;
           ">
             <h1 style="margin:0; font-size:20px;">
-              Rent<span style="background:#facc15;color:#000;padding:2px 6px;border-radius:4px;">kart</span>
+              Rent<span style="background:#facc15;color:#000;padding:2px 6px;border-radius:4px;">hour</span>
             </h1>
             <p style="margin:6px 0 0; font-size:13px; opacity:0.9;">
               Rent anything, from anyone nearby
@@ -183,7 +183,7 @@ export async function POST(request: Request) {
       </div>
       `,
 
-      text: `Your RentKart OTP is ${otpCode}. It expires in ${OTP_EXPIRY_MINUTES} minutes.`,
+      text: `Your RentHour OTP is ${otpCode}. It expires in ${OTP_EXPIRY_MINUTES} minutes.`,
     });
 
     if (sendResult.error) {
