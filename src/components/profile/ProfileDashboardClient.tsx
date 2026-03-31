@@ -53,19 +53,28 @@ function getPrimaryRentPrice(product: Product) {
   );
 }
 
-function getProductPriceLabel(product: Product) {
+function getProductPriceParts(product: Product): { value: string; suffix: string | null } {
   if ((product.type === 'rent' || product.type === 'both') && product.rentPrices) {
     const rentPrice = getPrimaryRentPrice(product);
     if (rentPrice != null) {
-      return `${formatPrice(rentPrice)}/day`;
+      return {
+        value: formatPrice(rentPrice),
+        suffix: '/day',
+      };
     }
   }
 
   if (product.price != null) {
-    return formatPrice(product.price);
+    return {
+      value: formatPrice(product.price),
+      suffix: null,
+    };
   }
 
-  return 'Price on request';
+  return {
+    value: 'Price on request',
+    suffix: null,
+  };
 }
 
 function getListingBadge(product: Product) {
@@ -185,6 +194,7 @@ export default function ProfileDashboardClient({
           const isAvailable = availabilityById[product.id] ?? true;
           const badge = getListingBadge(product);
           const isRent = product.type === 'rent' || product.type === 'both';
+          const priceParts = getProductPriceParts(product);
           const locationSummary =
             product.distance > 0
               ? `${product.location} · ${product.distance.toFixed(1)} km`
@@ -192,7 +202,7 @@ export default function ProfileDashboardClient({
 
           return (
             <Link key={product.id} href={`/product/${product.id}`}>
-              <article className="group overflow-hidden rounded-2xl border border-border/50 bg-card shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-primary/20 hover:shadow-lg">
+              <article className="group overflow-hidden rounded-2xl border border-border/55 bg-card shadow-[0_2px_10px_-8px_hsl(var(--foreground)/0.35)] transition-all duration-300 hover:-translate-y-1 hover:border-primary/20 hover:shadow-[0_20px_32px_-22px_hsl(var(--foreground)/0.5)]">
                 <div className="relative aspect-[4/3] overflow-hidden">
                   <Image
                     src={product.image}
@@ -236,7 +246,7 @@ export default function ProfileDashboardClient({
                     </h3>
 
                     <div className="mt-1.5 flex items-center gap-1.5">
-                      <Star className="h-4 w-4 fill-current text-primary/80" />
+                      <Star className="h-4 w-4 fill-current text-primary/85" />
                       <span className="text-sm font-medium text-foreground">
                         {product.rating != null ? product.rating.toFixed(1) : '4.6'}
                       </span>
@@ -247,7 +257,10 @@ export default function ProfileDashboardClient({
                   </div>
 
                   <div className="flex items-baseline gap-1">
-                    <span className="text-xl font-bold text-primary">{getProductPriceLabel(product)}</span>
+                    <span className="text-xl font-bold text-primary">{priceParts.value}</span>
+                    {priceParts.suffix && (
+                      <span className="text-sm text-muted-foreground">{priceParts.suffix}</span>
+                    )}
                   </div>
 
                   <div className="flex items-center justify-between text-xs text-muted-foreground">
@@ -315,8 +328,8 @@ export default function ProfileDashboardClient({
 
   return (
     <main className="min-h-screen bg-background text-foreground">
-      <header className="sticky top-0 z-50 border-b border-border/50 bg-card/80 backdrop-blur-md">
-        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
+      <header className="sticky top-0 z-50 border-b border-border/50 bg-card/75 shadow-[0_6px_16px_-14px_hsl(var(--foreground)/0.35)] backdrop-blur-md">
+        <div className="mx-auto flex h-[62px] max-w-6xl items-center justify-between px-4 sm:px-6">
           <div className="flex items-center gap-4">
             <Button
               variant="ghost"
@@ -348,22 +361,22 @@ export default function ProfileDashboardClient({
             <Button
               variant="ghost"
               size="sm"
-              className="text-muted-foreground transition-all duration-200 hover:bg-accent/70 hover:text-foreground"
+              className="group text-muted-foreground transition-all duration-200 hover:bg-accent/70 hover:text-foreground"
             >
-              <Heart className="mr-1.5 h-4 w-4" />
+              <Heart className="mr-1.5 h-4 w-4 transition-colors group-hover:fill-destructive/80 group-hover:text-destructive/90" />
               <span className="hidden sm:inline">Save</span>
             </Button>
           </div>
         </div>
       </header>
 
-      <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
-        <section className="mb-6 rounded-2xl border border-border/50 bg-card p-5 shadow-sm sm:p-8">
+      <div className="mx-auto max-w-6xl px-4 py-7 sm:px-6 sm:py-9">
+        <section className="mb-6 rounded-[1.35rem] border border-border/55 bg-card p-5 shadow-[0_8px_18px_-16px_hsl(var(--foreground)/0.45)] sm:p-8">
           <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-8">
             <div className="flex flex-col items-center gap-5 sm:flex-row sm:items-start">
               <div className="group relative">
                 <div className="absolute -inset-1 rounded-full bg-gradient-to-br from-primary/30 via-accent/20 to-primary/30 blur-sm transition-all duration-300 group-hover:blur-md" />
-                <div className="relative h-28 w-28 overflow-hidden rounded-full ring-4 ring-card shadow-lg">
+                <div className="relative h-28 w-28 overflow-hidden rounded-full ring-[3px] ring-card shadow-lg">
                   <Image
                     src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&h=200&fit=crop&crop=face"
                     alt={displayName}
@@ -378,7 +391,7 @@ export default function ProfileDashboardClient({
 
               <div className="space-y-3 text-center sm:text-left">
                 <div>
-                  <h1 className="text-2xl font-semibold tracking-tight text-foreground">{displayName}</h1>
+                  <h1 className="text-[2.02rem] font-semibold leading-tight tracking-tight text-foreground">{displayName}</h1>
 
                   <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1">
                     <CheckCircle2 className="h-4 w-4 text-primary" />
@@ -413,7 +426,7 @@ export default function ProfileDashboardClient({
             </div>
 
             <div className="flex flex-wrap justify-center gap-3 lg:ml-auto lg:justify-end">
-              <div className="group flex h-28 w-28 cursor-default flex-col items-center justify-center rounded-2xl border border-border/50 bg-accent/30 transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/30 hover:bg-accent/60 hover:shadow-md">
+              <div className="group flex h-[7.25rem] w-[7.25rem] cursor-default flex-col items-center justify-center rounded-2xl border border-border/50 bg-accent/30 transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/30 hover:bg-accent/60 hover:shadow-md">
                 <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 transition-transform duration-300 group-hover:scale-110">
                   <Package className="h-5 w-5 text-primary" />
                 </div>
@@ -421,7 +434,7 @@ export default function ProfileDashboardClient({
                 <span className="mt-0.5 text-xs text-muted-foreground">Total Listings</span>
               </div>
 
-              <div className="group flex h-28 w-28 cursor-default flex-col items-center justify-center rounded-2xl border border-border/50 bg-accent/30 transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/30 hover:bg-accent/60 hover:shadow-md">
+              <div className="group flex h-[7.25rem] w-[7.25rem] cursor-default flex-col items-center justify-center rounded-2xl border border-border/50 bg-accent/30 transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/30 hover:bg-accent/60 hover:shadow-md">
                 <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 transition-transform duration-300 group-hover:scale-110">
                   <CalendarCheck className="h-5 w-5 text-primary" />
                 </div>
@@ -429,7 +442,7 @@ export default function ProfileDashboardClient({
                 <span className="mt-0.5 text-xs text-muted-foreground">Total Rentals</span>
               </div>
 
-              <div className="group flex h-28 w-28 cursor-default flex-col items-center justify-center rounded-2xl border border-border/50 bg-accent/30 transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/30 hover:bg-accent/60 hover:shadow-md">
+              <div className="group flex h-[7.25rem] w-[7.25rem] cursor-default flex-col items-center justify-center rounded-2xl border border-border/50 bg-accent/30 transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/30 hover:bg-accent/60 hover:shadow-md">
                 <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 transition-transform duration-300 group-hover:scale-110">
                   <Star className="h-5 w-5 fill-current text-primary" />
                 </div>
@@ -442,7 +455,7 @@ export default function ProfileDashboardClient({
           </div>
         </section>
 
-        <div className="mb-6">
+        <div className="mb-6 border-b border-border/55 pb-1">
           <div className="-mx-4 flex gap-1 overflow-x-auto px-4 pb-1 sm:mx-0 sm:px-0">
             {tabs.map((tab) => {
               const Icon = getTabIcon(tab.key);

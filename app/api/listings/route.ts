@@ -30,8 +30,19 @@ type CreateListingBody = {
   location?: unknown;
 };
 
-const VALID_AGE_UNITS = new Set(["days", "months", "years"]);
 const MAX_IMAGE_COUNT = 3;
+const LOCATION_MIN_LENGTH = 2;
+const LOCATION_PINCODE_PATTERN = /^[A-Za-z0-9 -]{4,12}$/;
+
+type ParsedListingLocation = {
+  line1: string;
+  city: string;
+  state: string;
+  pincode: string;
+  country: string;
+  landmark: string | null;
+  label: string | null;
+};
 
 function isDatabaseNotReachableError(error: unknown) {
   if (!error || typeof error !== "object") {
@@ -129,6 +140,64 @@ function parseNonNegativeFloat(value: unknown) {
   }
 
   return parsed;
+}
+
+function normalizeText(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function parseListingLocation(value: unknown): ParsedListingLocation | null {
+  if (typeof value === "string") {
+    const normalized = value.trim();
+    if (!normalized) {
+      return null;
+    }
+
+    return {
+      line1: normalized,
+      city: normalized,
+      state: "Unknown",
+      pincode: "000000",
+      country: "IN",
+      landmark: null,
+      label: "Listing location",
+    };
+  }
+
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const source = value as Record<string, unknown>;
+  const city = normalizeText(source.city);
+  const state = normalizeText(source.state);
+  const pincode = normalizeText(source.pincode);
+  let line1 = normalizeText(source.line1);
+  const country = normalizeText(source.country).toUpperCase() || "IN";
+  const landmark = normalizeText(source.landmark) || null;
+  const label = normalizeText(source.label) || null;
+
+  if (!line1 && city && state) {
+    line1 = `${city}, ${state}`;
+  }
+
+  if (!line1 && !city && !state && !pincode) {
+    return null;
+  }
+
+  return {
+    line1,
+    city,
+    state,
+    pincode,
+    country,
+    landmark,
+    label,
+  };
+}
+
+function isValidLocationPincode(value: string) {
+  return value.length === 0 || LOCATION_PINCODE_PATTERN.test(value);
 }
 
 function isHttpUrl(value: string) {
@@ -247,16 +316,12 @@ export async function POST(request: Request) {
     const description =
       typeof body.description === "string" ? body.description.trim() : "";
     const categories = uniqueStringArray(body.categoryIds).slice(0, 2);
-    const ageUnit =
-      typeof body.ageUnit === "string" ? body.ageUnit.trim().toLowerCase() : "";
     const purposes = parsePurposeList(body.purposes);
     const sellPrice = parseNonNegativeInt(body.sellPrice);
     const rentPrices = parseRentPrices(body.rentPrices);
     const imageUrls = uniqueStringArray(body.imageUrls).slice(0, MAX_IMAGE_COUNT);
-    const locationRaw =
-      typeof body.location === "string" ? body.location.trim() : "";
-    const location = locationRaw || "Bangalore";
     const ageValue = parseNonNegativeFloat(body.ageValue);
+    const location = parseListingLocation(body.location);
 
     if (title.length < 3) {
       return NextResponse.json(
@@ -321,7 +386,36 @@ export async function POST(request: Request) {
       );
     }
 
-    const normalizedAgeUnit = VALID_AGE_UNITS.has(ageUnit) ? ageUnit : null;
+    if (location) {
+      if (location.line1.length < LOCATION_MIN_LENGTH) {
+        return NextResponse.json(
+          { error: "Location address line must be at least 2 characters." },
+          { status: 400 }
+        );
+      }
+
+      if (location.city.length < LOCATION_MIN_LENGTH) {
+        return NextResponse.json(
+          { error: "Location city must be at least 2 characters." },
+          { status: 400 }
+        );
+      }
+
+      if (location.state.length < LOCATION_MIN_LENGTH) {
+        return NextResponse.json(
+          { error: "Location state must be at least 2 characters." },
+          { status: 400 }
+        );
+      }
+
+      if (!isValidLocationPincode(location.pincode)) {
+        return NextResponse.json(
+          { error: "Location pincode must be 4-12 letters, numbers, spaces, or hyphens." },
+          { status: 400 }
+        );
+      }
+    }
+
     const supportsSell = purposes.includes("sell");
     const supportsRent = purposes.includes("rent");
     const listingType: StoredListingType =
@@ -371,22 +465,52 @@ export async function POST(request: Request) {
     const post = await prisma.post.create({
       data: {
         title,
-        content: description,
-        published: true,
+        description,
+        status: "ACTIVE",
         authorId: user.id,
         listingType,
-        category: categories[0],
-        categories,
-        location,
-        ageValue,
-        ageUnit: normalizedAgeUnit,
-        sellPrice: supportsSell ? (sellPrice ?? null) : null,
-        rentHourly: supportsRent ? rentPrices.hourly : null,
-        rentDaily: supportsRent ? rentPrices.daily : null,
-        rentWeekly: supportsRent ? rentPrices.weekly : null,
-        rentMonthly: supportsRent ? rentPrices.monthly : null,
-        image: imageUrls[0],
-        images: imageUrls,
+        publishedAt: new Date(),
+        ...(location
+          ? {
+              address: {
+                create: {
+                  label: location.label || "Listing location",
+                  line1: location.line1,
+                  landmark: location.landmark,
+                  city: location.city,
+                  state: location.state,
+                  pincode: location.pincode || "000000",
+                  country: location.country || "IN",
+                  userId: user.id,
+                },
+              },
+            }
+          : {}),
+        sellPricePaise:
+          supportsSell && sellPrice != null ? sellPrice * 100 : null,
+        rentHourlyPaise:
+          supportsRent && rentPrices.hourly != null
+            ? rentPrices.hourly * 100
+            : null,
+        rentDailyPaise:
+          supportsRent && rentPrices.daily != null
+            ? rentPrices.daily * 100
+            : null,
+        rentWeeklyPaise:
+          supportsRent && rentPrices.weekly != null
+            ? rentPrices.weekly * 100
+            : null,
+        rentMonthlyPaise:
+          supportsRent && rentPrices.monthly != null
+            ? rentPrices.monthly * 100
+            : null,
+        images: {
+          create: imageUrls.map((url, index) => ({
+            url,
+            sortOrder: index,
+            isPrimary: index === 0,
+          })),
+        },
       },
       select: {
         id: true,

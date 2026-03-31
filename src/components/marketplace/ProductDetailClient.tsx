@@ -32,6 +32,7 @@ import {
   Calendar,
   Info,
   Shield,
+  Loader2,
 } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
@@ -41,6 +42,7 @@ import { formatPrice, type RentDuration } from '@/data/marketplaceData';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { toast } from '@/hooks/use-toast';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import { selectIsWishlisted, toggleWishlist } from '@/store/slices/wishlistSlice';
 
@@ -66,6 +68,38 @@ const DAY_IN_MS = 24 * 60 * 60 * 1000;
 
 function toDateInputValue(date: Date) {
   return date.toISOString().slice(0, 10);
+}
+
+function timeStringToMinutes(timeValue: string) {
+  const [hoursPart, minutesPart] = timeValue.split(':');
+  const hours = Number(hoursPart);
+  const minutes = Number(minutesPart);
+
+  if (!Number.isInteger(hours) || !Number.isInteger(minutes)) {
+    return null;
+  }
+
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+    return null;
+  }
+
+  return hours * 60 + minutes;
+}
+
+function getDurationUnitLabel(duration: RentDuration, units: number) {
+  if (duration === 'hourly') {
+    return units === 1 ? 'hour' : 'hours';
+  }
+
+  if (duration === 'daily') {
+    return units === 1 ? 'day' : 'days';
+  }
+
+  if (duration === 'weekly') {
+    return units === 1 ? 'week' : 'weeks';
+  }
+
+  return units === 1 ? 'month' : 'months';
 }
 
 function formatPostedAgo(postedAtIso: string) {
@@ -124,6 +158,7 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
   const [activeCategory, setActiveCategory] = useState<string>('all');
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
+  const [isOpeningChat, setIsOpeningChat] = useState(false);
 
   const images = product.images.length > 0 ? product.images : [product.image];
   const currentImage = images[activeImageIndex] ?? images[0];
@@ -160,13 +195,38 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
   );
   const [startDate, setStartDate] = useState(() => toDateInputValue(new Date()));
   const [endDate, setEndDate] = useState(() => toDateInputValue(new Date(Date.now() + DAY_IN_MS)));
+  const [startTime, setStartTime] = useState('09:00');
+  const [endTime, setEndTime] = useState('10:00');
 
   const selectedOption =
     availablePricing.find((option) => option.id === selectedPricing) ?? availablePricing[0] ?? null;
 
+  const isHourlySelected = selectedOption?.id === 'hourly';
+
+  const hourlyUnits = useMemo(() => {
+    if (!isHourlySelected) {
+      return 0;
+    }
+
+    const fromMinutes = timeStringToMinutes(startTime);
+    const toMinutes = timeStringToMinutes(endTime);
+
+    if (fromMinutes == null || toMinutes == null || toMinutes <= fromMinutes) {
+      return 0;
+    }
+
+    return Math.max(1, Math.ceil((toMinutes - fromMinutes) / 60));
+  }, [isHourlySelected, startTime, endTime]);
+
+  const isHourlyTimeRangeValid = !isHourlySelected || hourlyUnits > 0;
+
   const totalUnits = useMemo(() => {
     if (!selectedOption) {
       return 0;
+    }
+
+    if (selectedOption.id === 'hourly') {
+      return hourlyUnits;
     }
 
     const from = new Date(`${startDate}T00:00:00`);
@@ -178,10 +238,6 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
 
     const totalDays = Math.max(1, Math.ceil((to.getTime() - from.getTime()) / DAY_IN_MS));
 
-    if (selectedOption.id === 'hourly') {
-      return totalDays * 24;
-    }
-
     if (selectedOption.id === 'weekly') {
       return Math.ceil(totalDays / 7);
     }
@@ -191,9 +247,14 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
     }
 
     return totalDays;
-  }, [selectedOption, startDate, endDate]);
+  }, [selectedOption, startDate, endDate, hourlyUnits]);
 
-  const subtotal = selectedOption ? selectedOption.price * Math.max(1, totalUnits) : 0;
+  const billableUnits = selectedOption
+    ? selectedOption.id === 'hourly'
+      ? Math.max(0, totalUnits)
+      : Math.max(1, totalUnits)
+    : 0;
+  const subtotal = selectedOption ? selectedOption.price * billableUnits : 0;
   const serviceFee = Math.round(subtotal * 0.1);
   const total = subtotal + serviceFee;
 
@@ -201,6 +262,7 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
     (product.type === 'sell' || product.type === 'both') && typeof product.price === 'number';
   const hasRentalPricing =
     (product.type === 'rent' || product.type === 'both') && availablePricing.length > 0;
+  const canReserve = !hasRentalPricing || isHourlyTimeRangeValid;
 
   const categoryLabel = CATEGORIES.find((category) => category.id === product.category)?.label ?? 'Listing';
   const postedLabel = formatPostedAgo(product.postedAt);
@@ -215,6 +277,9 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
     isDescriptionExpanded || !canTruncateDescription
       ? listingDescription
       : `${listingDescription.slice(0, 300)}...`;
+  const encodedLocationQuery = encodeURIComponent(product.location);
+  const mapEmbedUrl = `https://www.google.com/maps?q=${encodedLocationQuery}&output=embed`;
+  const directionsUrl = `https://www.google.com/maps/search/?api=1&query=${encodedLocationQuery}`;
 
   const handleNextImage = () => {
     setActiveImageIndex((current) => (current + 1) % images.length);
@@ -252,6 +317,59 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
     }
 
     router.push('/home');
+  };
+
+  const handleMessageSeller = async () => {
+    if (!product.ownerId) {
+      toast({
+        title: 'Seller unavailable',
+        description: 'This listing does not have a valid seller account yet.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsOpeningChat(true);
+
+    try {
+      const response = await fetch('/api/chat/conversations', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          recipientId: product.ownerId,
+          postId: product.id,
+        }),
+      });
+
+      const payload = (await response.json()) as {
+        conversation?: { id: string };
+        error?: string;
+      };
+
+      if (response.status === 401) {
+        router.push('/login?next=/messages');
+        return;
+      }
+
+      if (!response.ok || !payload.conversation?.id) {
+        throw new Error(payload.error || 'Unable to start chat right now.');
+      }
+
+      router.push(`/messages?conversation=${encodeURIComponent(payload.conversation.id)}`);
+    } catch (error) {
+      toast({
+        title: 'Could not open chat',
+        description:
+          error instanceof Error
+            ? error.message
+            : 'Unable to open seller chat right now.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsOpeningChat(false);
+    }
   };
 
   return (
@@ -455,7 +573,7 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
               </div>
             </section>
 
-            <section className="rounded-2xl border border-border/50 bg-card p-5 shadow-sm transition-shadow duration-300 hover:shadow-md">
+            <section className="rounded-2xl border border-border/65 bg-card/95 p-5 shadow-[0_10px_22px_-18px_hsl(var(--foreground)/0.45)] transition-shadow duration-300 hover:shadow-md">
               <div className="flex items-start justify-between gap-4">
                 <div className="flex items-center gap-4">
                   <div className="relative">
@@ -501,13 +619,21 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
                 ) : null}
               </div>
 
-              <Button className="mt-4 h-11 w-full gap-2 rounded-xl bg-accent text-accent-foreground hover:bg-accent/80">
-                <MessageCircle className="h-4 w-4" />
-                Message Seller
+              <Button
+                onClick={() => void handleMessageSeller()}
+                disabled={isOpeningChat || !product.ownerId}
+                className="mt-4 h-11 w-full gap-2 rounded-xl bg-accent text-accent-foreground hover:bg-accent/80 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {isOpeningChat ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <MessageCircle className="h-4 w-4" />
+                )}
+                {isOpeningChat ? 'Opening chat...' : 'Message Seller'}
               </Button>
             </section>
 
-            <section className="rounded-2xl border border-border/50 bg-card p-5 shadow-sm">
+            <section className="rounded-2xl border border-border/65 bg-card/95 p-5 shadow-[0_10px_22px_-18px_hsl(var(--foreground)/0.45)]">
               <h2 className="mb-3 text-lg font-semibold text-foreground">About this listing</h2>
 
               <div className="space-y-3">
@@ -537,32 +663,22 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
               </div>
             </section>
 
-            <section className="rounded-2xl border border-border/50 bg-card p-5 shadow-sm">
+            <section className="rounded-2xl border border-border/65 bg-card/95 p-5 shadow-[0_10px_22px_-18px_hsl(var(--foreground)/0.45)]">
               <h2 className="mb-3 text-lg font-semibold text-foreground">Location</h2>
 
-              <div className="relative aspect-[16/9] overflow-hidden rounded-xl bg-gradient-to-br from-accent/65 to-muted">
-                <div className="absolute inset-0 opacity-30">
-                  <svg className="h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none">
-                    <defs>
-                      <pattern id="map-grid" width="10" height="10" patternUnits="userSpaceOnUse">
-                        <path d="M 10 0 L 0 0 0 10" fill="none" stroke="currentColor" strokeWidth="0.5" className="text-primary/20" />
-                      </pattern>
-                    </defs>
-                    <rect width="100" height="100" fill="url(#map-grid)" />
-                  </svg>
-                </div>
-
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="relative">
-                    <div className="absolute inset-0 animate-ping rounded-full bg-primary/20" />
-                    <div className="relative flex h-12 w-12 items-center justify-center rounded-full bg-primary shadow-lg shadow-primary/30">
-                      <MapPin className="h-6 w-6 text-primary-foreground" />
-                    </div>
-                  </div>
-                </div>
+              <div className="relative aspect-[16/9] overflow-hidden rounded-xl border border-border/60 bg-muted">
+                <iframe
+                  title={`Map for ${product.location}`}
+                  src={mapEmbedUrl}
+                  className="absolute inset-0 h-full w-full"
+                  loading="lazy"
+                  referrerPolicy="no-referrer-when-downgrade"
+                  allowFullScreen
+                />
+                <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-background/15 via-transparent to-transparent" />
 
                 <div className="absolute bottom-4 left-4 right-4">
-                  <div className="flex items-center justify-between gap-3 rounded-xl bg-card/95 p-3 shadow-lg backdrop-blur-sm">
+                  <div className="flex items-center justify-between gap-3 rounded-xl border border-border/55 bg-card/95 p-3 shadow-lg backdrop-blur-sm">
                     <div className="flex min-w-0 items-center gap-2">
                       <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
                         <MapPin className="h-4 w-4 text-primary" />
@@ -573,9 +689,11 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
                       </div>
                     </div>
 
-                    <Button size="sm" variant="outline" className="shrink-0 gap-1.5 rounded-lg">
-                      <Navigation className="h-3.5 w-3.5" />
-                      <span className="hidden sm:inline">Directions</span>
+                    <Button asChild size="sm" variant="outline" className="shrink-0 gap-1.5 rounded-lg">
+                      <a href={directionsUrl} target="_blank" rel="noreferrer">
+                        <Navigation className="h-3.5 w-3.5" />
+                        <span className="hidden sm:inline">Directions</span>
+                      </a>
                     </Button>
                   </div>
                 </div>
@@ -585,75 +703,135 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
 
           <div className="hidden lg:col-span-5 lg:block">
             <div className="sticky top-24">
-              <aside className="rounded-2xl border border-border/50 bg-card p-6 shadow-lg">
+              <aside className="space-y-4 rounded-2xl border border-border/70 bg-card/95 p-6 shadow-[0_18px_34px_-24px_hsl(var(--foreground)/0.45)]">
                 {hasBuyPrice && (
-                  <div className="mb-6 flex items-baseline gap-2">
-                    <span className="rounded-full bg-primary/10 px-2 py-1 text-xs font-medium uppercase tracking-wide text-primary">
-                      Buy Price
-                    </span>
-                    <span className="text-3xl font-bold text-foreground">{formatPrice(product.price!)}</span>
+                  <div className="rounded-xl border border-border/60 bg-background/60 p-4">
+                    <div className="flex items-baseline gap-2">
+                      <span className="rounded-full bg-primary/10 px-2 py-1 text-xs font-medium uppercase tracking-wide text-primary">
+                        Buy Price
+                      </span>
+                      <span className="text-3xl font-bold text-foreground">{formatPrice(product.price!)}</span>
+                    </div>
                   </div>
                 )}
 
                 {hasRentalPricing && (
                   <>
-                    <div className="mb-6 grid grid-cols-2 gap-2">
-                      {availablePricing.map((option) => (
-                        <button
-                          key={option.id}
-                          type="button"
-                          onClick={() => setSelectedPricing(option.id)}
-                          className={cn(
-                            'relative rounded-xl border-2 p-3 text-left transition-all duration-200',
-                            selectedOption?.id === option.id
-                              ? 'border-primary bg-primary/5 shadow-sm'
-                              : 'border-border/50 hover:border-border hover:bg-accent/45'
-                          )}
-                        >
-                          <p className="text-xs font-medium text-muted-foreground">{option.label}</p>
-                          <p className={cn('text-lg font-bold', selectedOption?.id === option.id ? 'text-primary' : 'text-foreground')}>
-                            {formatPrice(option.price)}
-                            <span className="text-sm font-normal text-muted-foreground">{option.suffix}</span>
-                          </p>
-                          {selectedOption?.id === option.id && (
-                            <div className="absolute right-2 top-2 h-2 w-2 rounded-full bg-primary" />
-                          )}
-                        </button>
-                      ))}
+                    <div className="rounded-xl border border-border/60 bg-background/45 p-3">
+                      <div className="grid grid-cols-2 gap-2">
+                        {availablePricing.map((option) => (
+                          <button
+                            key={option.id}
+                            type="button"
+                            onClick={() => setSelectedPricing(option.id)}
+                            className={cn(
+                              'relative rounded-xl border-2 p-3 text-left transition-all duration-200',
+                              selectedOption?.id === option.id
+                                ? 'border-primary bg-primary/5 shadow-sm'
+                                : 'border-border/60 hover:border-border hover:bg-accent/45'
+                            )}
+                          >
+                            <p className="text-xs font-medium text-muted-foreground">{option.label}</p>
+                            <p className={cn('text-lg font-bold', selectedOption?.id === option.id ? 'text-primary' : 'text-foreground')}>
+                              {formatPrice(option.price)}
+                              <span className="text-sm font-normal text-muted-foreground">{option.suffix}</span>
+                            </p>
+                            {selectedOption?.id === option.id && (
+                              <div className="absolute right-2 top-2 h-2 w-2 rounded-full bg-primary" />
+                            )}
+                          </button>
+                        ))}
+                      </div>
                     </div>
 
-                    <div className="mb-6 grid grid-cols-2 gap-3">
-                      <label className="block">
-                        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Rent From</span>
-                        <div className="relative mt-1.5">
-                          <input
-                            type="date"
-                            value={startDate}
-                            onChange={(event) => setStartDate(event.target.value)}
-                            className="w-full rounded-xl border border-border/50 bg-accent/45 px-3 py-2.5 text-sm font-medium transition-all focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-                          />
-                          <Calendar className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                        </div>
-                      </label>
+                    <div className="rounded-xl border border-border/60 bg-background/45 p-3">
+                      {isHourlySelected ? (
+                        <div className="space-y-3">
+                          <label className="block">
+                            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Reservation Date</span>
+                            <div className="relative mt-1.5">
+                              <input
+                                type="date"
+                                value={startDate}
+                                onChange={(event) => setStartDate(event.target.value)}
+                                className="w-full rounded-xl border border-border/60 bg-accent/45 px-3 py-2.5 text-sm font-medium transition-all focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                              />
+                              <Calendar className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                            </div>
+                          </label>
 
-                      <label className="block">
-                        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Rent To</span>
-                        <div className="relative mt-1.5">
-                          <input
-                            type="date"
-                            value={endDate}
-                            onChange={(event) => setEndDate(event.target.value)}
-                            className="w-full rounded-xl border border-border/50 bg-accent/45 px-3 py-2.5 text-sm font-medium transition-all focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-                          />
-                          <Calendar className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                          <div className="grid grid-cols-2 gap-3">
+                            <label className="block">
+                              <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">From Time</span>
+                              <div className="relative mt-1.5">
+                                <input
+                                  type="time"
+                                  value={startTime}
+                                  onChange={(event) => setStartTime(event.target.value)}
+                                  className="w-full rounded-xl border border-border/60 bg-accent/45 px-3 py-2.5 text-sm font-medium transition-all focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                                />
+                                <Clock className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                              </div>
+                            </label>
+
+                            <label className="block">
+                              <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">To Time</span>
+                              <div className="relative mt-1.5">
+                                <input
+                                  type="time"
+                                  value={endTime}
+                                  min={startTime}
+                                  onChange={(event) => setEndTime(event.target.value)}
+                                  className="w-full rounded-xl border border-border/60 bg-accent/45 px-3 py-2.5 text-sm font-medium transition-all focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                                />
+                                <Clock className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                              </div>
+                            </label>
+                          </div>
+
+                          {!isHourlyTimeRangeValid && (
+                            <p className="text-xs font-medium text-destructive">
+                              Choose a valid time window. The end time must be later than the start time.
+                            </p>
+                          )}
                         </div>
-                      </label>
+                      ) : (
+                        <div className="grid grid-cols-2 gap-3">
+                          <label className="block">
+                            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Rent From</span>
+                            <div className="relative mt-1.5">
+                              <input
+                                type="date"
+                                value={startDate}
+                                onChange={(event) => setStartDate(event.target.value)}
+                                className="w-full rounded-xl border border-border/60 bg-accent/45 px-3 py-2.5 text-sm font-medium transition-all focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                              />
+                              <Calendar className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                            </div>
+                          </label>
+
+                          <label className="block">
+                            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Rent To</span>
+                            <div className="relative mt-1.5">
+                              <input
+                                type="date"
+                                value={endDate}
+                                onChange={(event) => setEndDate(event.target.value)}
+                                className="w-full rounded-xl border border-border/60 bg-accent/45 px-3 py-2.5 text-sm font-medium transition-all focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                              />
+                              <Calendar className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                            </div>
+                          </label>
+                        </div>
+                      )}
                     </div>
 
-                    <div className="mb-6 space-y-3 border-y border-border/50 py-4">
+                    <div className="space-y-3 rounded-xl border border-border/60 bg-background/35 p-4">
                       <div className="flex items-center justify-between text-sm">
                         <span className="text-muted-foreground">
-                          {selectedOption ? `${formatPrice(selectedOption.price)} x ${Math.max(1, totalUnits)} ${selectedOption.id}` : 'Pricing unavailable'}
+                          {selectedOption
+                            ? `${formatPrice(selectedOption.price)} x ${billableUnits} ${getDurationUnitLabel(selectedOption.id, billableUnits)}`
+                            : 'Pricing unavailable'}
                         </span>
                         <span className="font-medium">{formatPrice(subtotal)}</span>
                       </div>
@@ -672,7 +850,10 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
                   </>
                 )}
 
-                <Button className="h-12 w-full rounded-xl bg-gradient-to-r from-primary to-primary/90 text-base font-semibold text-primary-foreground shadow-lg shadow-primary/25 transition-all duration-200 hover:from-primary/95 hover:to-primary/85 hover:shadow-xl hover:shadow-primary/30 active:scale-[0.98]">
+                <Button
+                  disabled={!canReserve}
+                  className="h-12 w-full rounded-xl bg-gradient-to-r from-primary to-primary/90 text-base font-semibold text-primary-foreground shadow-lg shadow-primary/25 transition-all duration-200 hover:from-primary/95 hover:to-primary/85 hover:shadow-xl hover:shadow-primary/30 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-70"
+                >
                   {hasRentalPricing ? 'Reserve' : 'Contact Seller'}
                 </Button>
 
@@ -680,7 +861,7 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
                   <p className="mt-3 text-center text-sm text-muted-foreground">You won&apos;t be charged yet</p>
                 )}
 
-                <div className="mt-4 flex items-center gap-2 rounded-xl bg-accent/45 p-3">
+                <div className="mt-4 flex items-center gap-2 rounded-xl border border-border/60 bg-accent/45 p-3">
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
                     <Shield className="h-4 w-4 text-primary" />
                   </div>
@@ -690,7 +871,7 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
                   </div>
                 </div>
 
-                <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
+                <div className="mt-4 flex items-center gap-2 border-t border-border/60 pt-4 text-sm text-muted-foreground">
                   <Clock className="h-4 w-4" />
                   <span>Response time: within a few hours</span>
                 </div>

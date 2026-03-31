@@ -19,7 +19,7 @@ import { cn } from "@/lib/utils";
 import { useAppSelector } from "@/store/hooks";
 import { selectLocation } from "@/store/slices/marketplaceSlice";
 
-type PostStep = "category" | "details" | "photos" | "purpose";
+type PostStep = "category" | "details" | "photos" | "location" | "purpose";
 type AgeUnit = "days" | "months" | "years";
 type ListingPurpose = "sell" | "rent";
 type RentDurationOption = "hourly" | "daily" | "weekly" | "monthly";
@@ -83,6 +83,7 @@ const INITIAL_RENT_PRICES: Record<RentDurationOption, string> = {
   weekly: "",
   monthly: "",
 };
+const LOCATION_PINCODE_PATTERN = /^[A-Za-z0-9 -]{4,12}$/;
 const FIELD_BORDER_CLASS =
   "border-primary/40 focus-visible:border-primary/70 focus-visible:ring-primary/20";
 const ACTION_BUTTON_BORDER_CLASS =
@@ -189,6 +190,10 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
   const [selectedRentDurations, setSelectedRentDurations] = useState<RentDurationOption[]>([]);
   const [rentPrices, setRentPrices] = useState<Record<RentDurationOption, string>>(INITIAL_RENT_PRICES);
   const [sellPrice, setSellPrice] = useState("");
+  const [locationLine1, setLocationLine1] = useState("");
+  const [locationCity, setLocationCity] = useState("");
+  const [locationState, setLocationState] = useState("");
+  const [locationPincode, setLocationPincode] = useState("");
   const [selectedPhotoFiles, setSelectedPhotoFiles] = useState<File[]>([]);
   const [isPreparingPhotos, setIsPreparingPhotos] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -246,6 +251,22 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
       return rawValue.trim() !== "" && Number.isFinite(parsedValue) && parsedValue >= 0;
     });
   const hasPhotoSelection = selectedPhotoFiles.length > 0;
+  const normalizedLocationLine1 = locationLine1.trim();
+  const normalizedLocationCity = locationCity.trim();
+  const normalizedLocationState = locationState.trim();
+  const normalizedLocationPincode = locationPincode.trim();
+  const hasLocationInput =
+    normalizedLocationLine1.length > 0 ||
+    normalizedLocationCity.length > 0 ||
+    normalizedLocationState.length > 0 ||
+    normalizedLocationPincode.length > 0;
+  const hasValidLocation =
+    !hasLocationInput ||
+    (normalizedLocationLine1.length >= 3 &&
+      normalizedLocationCity.length >= 2 &&
+      normalizedLocationState.length >= 2 &&
+      (normalizedLocationPincode.length === 0 ||
+        LOCATION_PINCODE_PATTERN.test(normalizedLocationPincode)));
   const canSubmit =
     selectedCategoryIds.length > 0 &&
     hasValidDetails &&
@@ -253,7 +274,8 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
     hasPurposeSelection &&
     hasValidSellPrice &&
     hasRentDurationSelection &&
-    hasValidRentPrices;
+    hasValidRentPrices &&
+    hasValidLocation;
 
   const resetFlow = () => {
     setStep("category");
@@ -267,6 +289,10 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
     setSelectedRentDurations([]);
     setRentPrices(INITIAL_RENT_PRICES);
     setSellPrice("");
+    setLocationLine1("");
+    setLocationCity("");
+    setLocationState("");
+    setLocationPincode("");
     setSelectedPhotoFiles([]);
     setIsSubmitting(false);
   };
@@ -306,8 +332,13 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
     setStep("photos");
   };
 
-  const goToPurpose = () => {
+  const goToLocation = () => {
     if (!hasPhotoSelection || isPreparingPhotos) return;
+    setStep("location");
+  };
+
+  const goToPurpose = () => {
+    if (!hasValidLocation) return;
     setStep("purpose");
   };
 
@@ -471,6 +502,20 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
         },
         {} as Partial<Record<RentDurationOption, string>>
       );
+      const fallbackLocation = selectedLocation?.trim();
+      const locationPayload = hasLocationInput
+        ? {
+            line1:
+              normalizedLocationLine1 ||
+              [normalizedLocationCity, normalizedLocationState]
+                .filter((value) => value.length > 0)
+                .join(", "),
+            city: normalizedLocationCity,
+            state: normalizedLocationState,
+            pincode: normalizedLocationPincode || "000000",
+            country: "IN",
+          }
+        : null;
 
       const saveListingResponse = await fetch("/api/listings", {
         method: "POST",
@@ -487,7 +532,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
           sellPrice,
           rentPrices: selectedRentPricePayload,
           imageUrls: uploadedImageUrls,
-          location: selectedLocation ?? "Bangalore",
+          location: locationPayload ?? (fallbackLocation ? fallbackLocation : undefined),
         }),
       });
 
@@ -510,6 +555,9 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
       const selectedRentSummary = selectedRentDurationOptions
         .map((option) => `${option.label}: INR ${rentPrices[option.value]}`)
         .join(", ");
+      const listingLocationSummary = locationPayload
+        ? `${locationPayload.city}, ${locationPayload.state}`
+        : fallbackLocation || "Not specified";
 
       toast({
         title: "Listing saved",
@@ -517,7 +565,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
           `${name.trim()} in ${selectedLabels}. Purpose: ${selectedPurposeLabels}. ` +
           `${isSellSelected ? `Sell price INR ${sellPrice}. ` : ""}` +
           `${isRentSelected ? `Rent: ${selectedRentSummary}. ` : ""}` +
-            `Condition age: ${ageValue} ${ageUnit} old. Uploaded ${uploadedImageUrls.length} photo${uploadedImageUrls.length > 1 ? "s" : ""} to Cloudflare R2. Listing ID: ${saveListingPayload.id}.`,
+          `Condition age: ${ageValue} ${ageUnit} old. Location: ${listingLocationSummary}. Uploaded ${uploadedImageUrls.length} photo${uploadedImageUrls.length > 1 ? "s" : ""} to Cloudflare R2. Listing ID: ${saveListingPayload.id}.`,
       });
 
       handleOpenChange(false);
@@ -544,11 +592,11 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
               Post a new listing
             </DialogTitle>
             <DialogDescription>
-              Visual flow: select categories, add product details, upload photos, then choose rent/sell purpose.
+              Visual flow: select categories, add product details, upload photos, add location, then choose rent/sell purpose.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="mt-4 grid gap-2 md:grid-cols-[1fr_auto_1fr_auto_1fr_auto_1fr] md:items-center">
+          <div className="mt-4 grid gap-2 md:grid-cols-[1fr_auto_1fr_auto_1fr_auto_1fr_auto_1fr] md:items-center">
             <FlowStepCard
               active={step === "category"}
               complete={step !== "category"}
@@ -563,7 +611,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
 
             <FlowStepCard
               active={step === "details"}
-              complete={step === "photos" || step === "purpose"}
+              complete={step === "photos" || step === "location" || step === "purpose"}
               stepNumber={2}
               title="Window 2"
               subtitle="Product name, description, and age"
@@ -575,7 +623,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
 
             <FlowStepCard
               active={step === "photos"}
-              complete={step === "purpose"}
+              complete={step === "location" || step === "purpose"}
               stepNumber={3}
               title="Window 3"
               subtitle="Upload up to 3 photos"
@@ -586,10 +634,22 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
             </div>
 
             <FlowStepCard
-              active={step === "purpose"}
-              complete={false}
+              active={step === "location"}
+              complete={step === "purpose"}
               stepNumber={4}
               title="Window 4"
+              subtitle="Add product pickup location"
+            />
+
+            <div className="hidden md:flex items-center justify-center text-muted-foreground">
+              <ArrowRight className="h-4 w-4" />
+            </div>
+
+            <FlowStepCard
+              active={step === "purpose"}
+              complete={false}
+              stepNumber={5}
+              title="Window 5"
               subtitle="Purpose, durations, and pricing"
             />
           </div>
@@ -835,8 +895,93 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
               <Button
                 type="button"
                 variant="highlight"
-                onClick={goToPurpose}
+                onClick={goToLocation}
                 disabled={!hasPhotoSelection || isPreparingPhotos}
+                className={cn("gap-2", ACTION_BUTTON_BORDER_CLASS)}
+              >
+                Continue to next window
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </section>
+        ) : step === "location" ? (
+          <section key="post-step-location" className="flex max-h-[62vh] flex-col">
+            <div className="space-y-4 overflow-y-auto p-6">
+              <h3 className="font-heading text-lg">Step 4: Product location (optional)</h3>
+
+              <p className="text-xs text-muted-foreground">
+                Add pickup location details so buyers can see where this product is available.
+              </p>
+
+              <div className="space-y-2">
+                <Label htmlFor="post-listing-location-line1">Address line</Label>
+                <Input
+                  id="post-listing-location-line1"
+                  value={locationLine1}
+                  onChange={(event) => setLocationLine1(event.target.value)}
+                  placeholder="Street, area, or landmark"
+                  maxLength={120}
+                  className={FIELD_BORDER_CLASS}
+                />
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="post-listing-location-city">City</Label>
+                  <Input
+                    id="post-listing-location-city"
+                    value={locationCity}
+                    onChange={(event) => setLocationCity(event.target.value)}
+                    placeholder={selectedLocation?.trim() || "e.g. Bengaluru"}
+                    maxLength={80}
+                    className={FIELD_BORDER_CLASS}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="post-listing-location-state">State</Label>
+                  <Input
+                    id="post-listing-location-state"
+                    value={locationState}
+                    onChange={(event) => setLocationState(event.target.value)}
+                    placeholder="e.g. Karnataka"
+                    maxLength={80}
+                    className={FIELD_BORDER_CLASS}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="post-listing-location-pincode">Pincode (optional)</Label>
+                <Input
+                  id="post-listing-location-pincode"
+                  value={locationPincode}
+                  onChange={(event) => setLocationPincode(event.target.value)}
+                  placeholder="e.g. 560001"
+                  maxLength={12}
+                  className={FIELD_BORDER_CLASS}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Use 4-12 letters, numbers, spaces, or hyphens.
+                </p>
+              </div>
+
+              {!hasValidLocation && (
+                <p className="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+                  If you add location details, include address line, city, and state. Pincode is optional but must be valid.
+                </p>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-3 border-t border-primary/10 bg-background px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+              <Button type="button" variant="outline" onClick={() => setStep("photos")} className="border-primary/45">
+                Back to photos
+              </Button>
+              <Button
+                type="button"
+                variant="highlight"
+                onClick={goToPurpose}
+                disabled={!hasValidLocation}
                 className={cn("gap-2", ACTION_BUTTON_BORDER_CLASS)}
               >
                 Continue to next window
@@ -847,7 +992,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
         ) : (
           <form key="post-step-purpose" onSubmit={handleSubmit} className="flex max-h-[62vh] flex-col">
             <div className="space-y-4 overflow-y-auto p-6">
-              <h3 className="font-heading text-lg">Step 4: Purpose and pricing</h3>
+              <h3 className="font-heading text-lg">Step 5: Purpose and pricing</h3>
 
               <div className="space-y-2">
                 <Label>Purpose of listing</Label>
@@ -966,11 +1111,11 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setStep("photos")}
+                onClick={() => setStep("location")}
                 className="border-primary/45"
                 disabled={isSubmitting}
               >
-                Back to photos
+                Back to location
               </Button>
               <Button
                 type="submit"

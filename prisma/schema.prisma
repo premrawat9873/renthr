@@ -8,63 +8,316 @@ datasource db {
 }
 
 enum ListingType {
-  SELL
   RENT
+  SELL
   BOTH
 }
 
+enum PostStatus {
+  DRAFT
+  ACTIVE
+  INACTIVE
+  SOLD
+  RENTED
+  ARCHIVED
+}
+
+enum VerificationStatus {
+  UNVERIFIED
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum ConversationType {
+  DIRECT
+  LISTING
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  SYSTEM
+}
+
+enum RentUnit {
+  HOURLY
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  ACTIVE
+  COMPLETED
+  CANCELLED
+  REJECTED
+  EXPIRED
+}
+
 model User {
-  id           Int    @id @default(autoincrement())
-  email        String @unique
-  name         String?
-  passwordHash String?
-  otpCodeHash  String?
-  otpExpiresAt DateTime?
-  otpRequestedAt DateTime?
-  posts        Post[]
-  addresses    Address[]
+  id                 Int                @id @default(autoincrement())
+  email              String             @unique
+  phone              String?            @unique
+  name               String?
+  avatarUrl          String?
+  passwordHash       String?
+  otpCodeHash        String?
+  otpExpiresAt       DateTime?
+  otpRequestedAt     DateTime?
+
+  isVerified         Boolean            @default(false)
+  verificationStatus VerificationStatus @default(UNVERIFIED)
+
+  // Derived trust metrics (update from review writes)
+  rating             Decimal            @default(0) @db.Decimal(3,2)
+  reviewCount        Int                @default(0)
+
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @default(now()) @updatedAt
+
+  posts              Post[]
+  addresses          Address[]
+  reviewsWritten     Review[]           @relation("ReviewerReviews")
+  reviewsReceived    Review[]           @relation("RevieweeReviews")
+  sentMessages       Message[]          @relation("MessageSender")
+  conversationParts  ConversationParticipant[]
+  bookings           Booking[]          @relation("RenterBookings")
+  wishlistItems      WishlistItem[]
 }
 
 model Address {
-  id        Int      @id @default(autoincrement())
-  address   String
-  state     String
-  city      String
-  pincode   String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId    Int
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
+  id         Int      @id @default(autoincrement())
+  label      String?
+  line1      String
+  line2      String?
+  landmark   String?
+  city       String
+  state      String
+  pincode    String
+  country    String   @default("IN")
+  latitude   Decimal? @db.Decimal(10,7)
+  longitude  Decimal? @db.Decimal(10,7)
+
+  userId     Int?
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  posts      Post[]
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   @@index([userId])
+  @@index([city, state])
+}
+
+model Category {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  slug      String   @unique
+  icon      String?
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+
+  posts     Post[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Post {
-  id         Int         @id @default(autoincrement())
-  title      String
-  content    String?
-  published  Boolean     @default(false)
-  author     User        @relation(fields: [authorId], references: [id])
-  authorId   Int
-  listingType ListingType?
-  category   String      @default("electronics")
-  categories String[]    @default([])
-  location   String      @default("Bangalore")
-  ageValue   Float?
-  ageUnit    String?
-  sellPrice  Int?
-  rentHourly Int?
-  rentDaily  Int?
-  rentWeekly Int?
-  rentMonthly Int?
-  image      String?
-  images     String[]    @default([])
-  features   String[]    @default([])
-  featured   Boolean     @default(false)
-  rating     Float?
-  reviewCount Int?
-  createdAt  DateTime    @default(now())
-  updatedAt  DateTime    @default(now()) @updatedAt
+  id                   Int          @id @default(autoincrement())
+  title                String
+  description          String?
 
-  @@index([listingType, createdAt])
+  status               PostStatus   @default(DRAFT)
+  listingType          ListingType
+
+  authorId             Int
+  author               User         @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  // Keep optional initially for migration safety, enforce required after backfill
+  categoryId           Int?
+  category             Category?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  // Keep optional initially for migration safety, enforce required after backfill
+  addressId            Int?
+  address              Address?     @relation(fields: [addressId], references: [id], onDelete: SetNull)
+
+  // Store money in paise
+  sellPricePaise       Int?
+  rentHourlyPaise      Int?
+  rentDailyPaise       Int?
+  rentWeeklyPaise      Int?
+  rentMonthlyPaise     Int?
+  securityDepositPaise Int?
+  currency             String       @default("INR")
+
+  featured             Boolean      @default(false)
+  viewCount            Int          @default(0)
+  favoriteCount        Int          @default(0)
+
+  publishedAt          DateTime?
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+
+  images               Image[]
+  reviews              Review[]
+  conversations        Conversation[]
+  bookings             Booking[]
+  wishlistItems        WishlistItem[]
+
+  @@index([authorId, createdAt])
+  @@index([listingType, status, createdAt])
+  @@index([categoryId, status, createdAt])
+  @@index([status, createdAt])
+}
+
+model Image {
+  id         Int      @id @default(autoincrement())
+  postId     Int
+  post       Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  url        String
+  provider   String?  // r2, s3, etc
+  storageKey String?  @unique
+
+  width      Int?
+  height     Int?
+  alt        String?
+  sortOrder  Int      @default(0)
+  isPrimary  Boolean  @default(false)
+
+  createdAt  DateTime @default(now())
+
+  @@unique([postId, sortOrder])
+  @@index([postId, isPrimary])
+}
+
+model Review {
+  id         Int      @id @default(autoincrement())
+  postId     Int
+  post       Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  reviewerId Int
+  reviewer   User     @relation("ReviewerReviews", fields: [reviewerId], references: [id], onDelete: Cascade)
+
+  revieweeId Int
+  reviewee   User     @relation("RevieweeReviews", fields: [revieweeId], references: [id], onDelete: Cascade)
+
+  // 1.0 to 5.0 (enforce range in app logic)
+  rating     Decimal  @db.Decimal(2,1)
+  comment    String?
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  // Anti-spam: one review per user per listing
+  @@unique([postId, reviewerId])
+  @@index([revieweeId, createdAt])
+  @@index([postId, createdAt])
+}
+
+model Conversation {
+  id            Int               @id @default(autoincrement())
+  type          ConversationType  @default(DIRECT)
+
+  postId        Int?
+  post          Post?             @relation(fields: [postId], references: [id], onDelete: SetNull)
+
+  lastMessageAt DateTime?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  participants  ConversationParticipant[]
+  messages      Message[]
+
+  @@index([postId, lastMessageAt])
+  @@index([lastMessageAt])
+}
+
+model ConversationParticipant {
+  id             Int          @id @default(autoincrement())
+  conversationId Int
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  userId         Int
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  joinedAt       DateTime     @default(now())
+  lastReadAt     DateTime?
+  isMuted        Boolean      @default(false)
+
+  @@unique([conversationId, userId])
+  @@index([userId, lastReadAt])
+}
+
+model Message {
+  id             Int         @id @default(autoincrement())
+  conversationId Int
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  senderId       Int
+  sender         User        @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+
+  type           MessageType @default(TEXT)
+  content        String
+  imageUrl       String?
+
+  createdAt      DateTime    @default(now())
+  editedAt       DateTime?
+  deletedAt      DateTime?
+
+  @@index([conversationId, createdAt])
+  @@index([senderId, createdAt])
+}
+
+model Booking {
+  id              Int           @id @default(autoincrement())
+  postId          Int
+  post            Post          @relation(fields: [postId], references: [id], onDelete: Restrict)
+
+  renterId        Int
+  renter          User          @relation("RenterBookings", fields: [renterId], references: [id], onDelete: Cascade)
+
+  unit            RentUnit
+  startAt         DateTime
+  endAt           DateTime
+  status          BookingStatus @default(PENDING)
+
+  // Snapshot pricing at booking time
+  unitPricePaise  Int
+  totalUnits      Int
+  subtotalPaise   Int
+  serviceFeePaise Int           @default(0)
+  totalPricePaise Int
+  currency        String        @default("INR")
+
+  notes           String?
+
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  confirmedAt     DateTime?
+  cancelledAt     DateTime?
+  completedAt     DateTime?
+
+  @@index([postId, status, startAt])
+  @@index([renterId, status, createdAt])
+  @@index([status, startAt])
+}
+
+model WishlistItem {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  postId    Int
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, postId])
+  @@index([postId])
 }

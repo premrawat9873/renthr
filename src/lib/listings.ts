@@ -17,22 +17,37 @@ const DEFAULT_IMAGE_URL =
 const listingSelect = {
   id: true,
   title: true,
-  content: true,
-  category: true,
-  categories: true,
+  description: true,
+  category: {
+    select: {
+      name: true,
+    },
+  },
+  address: {
+    select: {
+      city: true,
+      state: true,
+    },
+  },
   listingType: true,
-  sellPrice: true,
-  rentHourly: true,
-  rentDaily: true,
-  rentWeekly: true,
-  rentMonthly: true,
-  image: true,
-  images: true,
-  location: true,
-  features: true,
+  sellPricePaise: true,
+  rentHourlyPaise: true,
+  rentDailyPaise: true,
+  rentWeeklyPaise: true,
+  rentMonthlyPaise: true,
+  images: {
+    select: {
+      url: true,
+      sortOrder: true,
+      isPrimary: true,
+    },
+  },
   featured: true,
-  rating: true,
-  reviewCount: true,
+  _count: {
+    select: {
+      reviews: true,
+    },
+  },
   createdAt: true,
   author: {
     select: {
@@ -156,12 +171,36 @@ function parseListingCursor(cursor: number | string | null | undefined) {
   return parsed;
 }
 
-function normalizeImageList(input: { image: string | null; images: string[] }) {
-  const ordered = [
-    ...(typeof input.image === "string" ? [input.image] : []),
-    ...input.images,
-  ]
+function convertPaiseToAmount(value: number | null) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return null;
+  }
+
+  return value / 100;
+}
+
+function formatListingLocation(address: ListingRecord["address"]) {
+  if (!address) {
+    return "Location not specified";
+  }
+
+  const parts = [address.city, address.state]
     .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+
+  return parts.length > 0 ? parts.join(", ") : "Location not specified";
+}
+
+function normalizeImageList(input: ListingRecord["images"]) {
+  const ordered = [...input]
+    .sort((left, right) => {
+      if (left.isPrimary !== right.isPrimary) {
+        return Number(right.isPrimary) - Number(left.isPrimary);
+      }
+
+      return left.sortOrder - right.sortOrder;
+    })
+    .map((value) => value.url.trim())
     .filter((value) => value.length > 0);
 
   const unique = Array.from(new Set(ordered));
@@ -180,40 +219,39 @@ function mapListingRecordToProduct(record: ListingRecord): Product {
     record.listingType === "SELL" || record.listingType === "BOTH";
   const listingType: Product["type"] =
     supportsRent && supportsSell ? "both" : supportsRent ? "rent" : "sell";
-  const normalizedImages = normalizeImageList({
-    image: record.image,
-    images: record.images,
-  });
+  const normalizedImages = normalizeImageList(record.images);
   const ownerName =
     record.author.name?.trim() ||
     record.author.email.split("@")[0] ||
     "User";
+  const categoryName = record.category?.name?.trim() || "Uncategorized";
 
   return {
     id: String(record.id),
     title: record.title,
     type: listingType,
-    price: supportsSell ? (record.sellPrice ?? null) : null,
+    price: supportsSell ? convertPaiseToAmount(record.sellPricePaise) : null,
     rentPrices:
       supportsRent
         ? {
-            hourly: record.rentHourly ?? null,
-            daily: record.rentDaily ?? null,
-            weekly: record.rentWeekly ?? null,
-            monthly: record.rentMonthly ?? null,
+            hourly: convertPaiseToAmount(record.rentHourlyPaise),
+            daily: convertPaiseToAmount(record.rentDailyPaise),
+            weekly: convertPaiseToAmount(record.rentWeeklyPaise),
+            monthly: convertPaiseToAmount(record.rentMonthlyPaise),
           }
         : null,
-    category: record.category,
+    category: categoryName,
     image: normalizedImages.primaryImage,
     images: normalizedImages.images,
-    location: record.location,
+    location: formatListingLocation(record.address),
     distance: 0,
     postedAt: record.createdAt,
     featured: record.featured,
-    rating: record.rating ?? undefined,
-    reviewCount: record.reviewCount ?? undefined,
-    description: record.content ?? undefined,
-    features: record.features.length > 0 ? record.features : undefined,
+    reviewCount:
+      record._count.reviews > 0
+        ? record._count.reviews
+        : undefined,
+    description: record.description ?? undefined,
     ownerId: String(record.author.id),
     ownerName,
     ownerTag: "Verified Seller",
@@ -223,8 +261,8 @@ function mapListingRecordToProduct(record: ListingRecord): Product {
 async function findManyListings() {
   return prisma.post.findMany({
     where: {
-      published: true,
-      listingType: {
+      status: "ACTIVE",
+      publishedAt: {
         not: null,
       },
     },
@@ -241,8 +279,8 @@ async function findManyListingsPage({
 }: FindManyListingsPageOptions) {
   return prisma.post.findMany({
     where: {
-      published: true,
-      listingType: {
+      status: "ACTIVE",
+      publishedAt: {
         not: null,
       },
       ...(cursorId
@@ -265,8 +303,8 @@ async function findManyListingsByAuthorId(authorId: number) {
   return prisma.post.findMany({
     where: {
       authorId,
-      published: true,
-      listingType: {
+      status: "ACTIVE",
+      publishedAt: {
         not: null,
       },
     },
@@ -396,8 +434,8 @@ export async function getListingProductById(id: string) {
       prisma.post.findFirst({
         where: {
           id: listingId,
-          published: true,
-          listingType: {
+          status: "ACTIVE",
+          publishedAt: {
             not: null,
           },
         },
