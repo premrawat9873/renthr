@@ -44,12 +44,12 @@ const listingSelect = {
       isPrimary: true,
     },
   },
-  featured: true,
-  _count: {
+  reviews: {
     select: {
-      reviews: true,
+      rating: true,
     },
   },
+  featured: true,
   createdAt: true,
   author: {
     select: {
@@ -185,6 +185,40 @@ function convertPaiseToAmount(value: number | null) {
   return value / 100;
 }
 
+function convertDecimalToNumber(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const parsed = Number.parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  if (value && typeof value === "object") {
+    const candidate = value as {
+      toNumber?: () => number;
+      toString?: () => string;
+    };
+
+    if (typeof candidate.toNumber === "function") {
+      const parsed = candidate.toNumber();
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+
+    if (typeof candidate.toString === "function") {
+      const parsed = Number.parseFloat(candidate.toString());
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+  }
+
+  return null;
+}
+
 function formatListingLocation(address: ListingRecord["address"]) {
   if (!address) {
     return "Location not specified";
@@ -254,6 +288,18 @@ function mapListingRecordToProduct(record: ListingRecord): Product {
     record.author.email.split("@")[0] ||
     "User";
   const categoryId = resolveCategoryId(record.category);
+  const reviewRatings = record.reviews
+    .map((review) => convertDecimalToNumber(review.rating))
+    .filter((rating): rating is number => typeof rating === "number");
+  const reviewCount = reviewRatings.length;
+  const rating =
+    reviewCount > 0
+      ? Number(
+          (
+            reviewRatings.reduce((sum, value) => sum + value, 0) / reviewCount
+          ).toFixed(1)
+        )
+      : undefined;
 
   return {
     id: String(record.id),
@@ -276,11 +322,9 @@ function mapListingRecordToProduct(record: ListingRecord): Product {
     distance: -1,
     isAvailable: record.status === "ACTIVE",
     postedAt: record.createdAt,
+    rating,
     featured: record.featured,
-    reviewCount:
-      record._count.reviews > 0
-        ? record._count.reviews
-        : undefined,
+    reviewCount: reviewCount > 0 ? reviewCount : undefined,
     description: record.description ?? undefined,
     ownerId: String(record.author.id),
     ownerName,

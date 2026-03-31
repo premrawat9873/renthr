@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -44,6 +44,7 @@ import { formatPrice, type RentDuration } from '@/data/marketplaceData';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/hooks/use-toast';
 import { useWishlistBootstrap } from '@/hooks/use-wishlist';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
@@ -162,6 +163,70 @@ function getOwnerInitials(name: string) {
   return parts.map((part) => part[0]?.toUpperCase() ?? '').join('');
 }
 
+type ListingReview = {
+  id: string;
+  rating: number;
+  comment: string | null;
+  createdAt: string;
+  isCurrentUser: boolean;
+  reviewer: {
+    id: string;
+    name: string;
+    avatarUrl: string | null;
+  };
+};
+
+type ReviewsAuthState = {
+  isAuthenticated: boolean;
+  isOwner: boolean;
+  hasReviewed: boolean;
+  canSubmitReview: boolean;
+};
+
+type ReviewSummary = {
+  reviewCount: number;
+  averageRating: number | null;
+  ratingBreakdown: {
+    '1': number;
+    '2': number;
+    '3': number;
+    '4': number;
+    '5': number;
+  };
+};
+
+const EMPTY_REVIEW_SUMMARY: ReviewSummary = {
+  reviewCount: 0,
+  averageRating: null,
+  ratingBreakdown: {
+    '1': 0,
+    '2': 0,
+    '3': 0,
+    '4': 0,
+    '5': 0,
+  },
+};
+
+const EMPTY_REVIEW_AUTH: ReviewsAuthState = {
+  isAuthenticated: false,
+  isOwner: false,
+  hasReviewed: false,
+  canSubmitReview: false,
+};
+
+function formatReviewDate(value: string) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return 'Recently';
+  }
+
+  return parsed.toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
 export default function ProductDetailClient({ product }: { product: ListingProductPayload }) {
   const router = useRouter();
   const dispatch = useAppDispatch();
@@ -177,6 +242,14 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
   const [headerLocation, setHeaderLocation] = useState<string | null>(null);
   const [headerSearchQuery, setHeaderSearchQuery] = useState('');
   const [isPostFlowOpen, setIsPostFlowOpen] = useState(false);
+  const [reviews, setReviews] = useState<ListingReview[]>([]);
+  const [reviewSummary, setReviewSummary] = useState<ReviewSummary>(EMPTY_REVIEW_SUMMARY);
+  const [reviewAuth, setReviewAuth] = useState<ReviewsAuthState>(EMPTY_REVIEW_AUTH);
+  const [isLoadingReviews, setIsLoadingReviews] = useState(true);
+  const [reviewsError, setReviewsError] = useState<string | null>(null);
+  const [reviewRating, setReviewRating] = useState(0);
+  const [reviewComment, setReviewComment] = useState('');
+  const [isSubmittingReview, setIsSubmittingReview] = useState(false);
 
   const images = product.images.length > 0 ? product.images : [product.image];
   const currentImage = images[activeImageIndex] ?? images[0];
@@ -460,6 +533,121 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
       }
     );
   }, []);
+
+  const loadReviews = useCallback(async () => {
+    setIsLoadingReviews(true);
+    setReviewsError(null);
+
+    try {
+      const response = await fetch(`/api/listings/${product.id}/reviews`, {
+        cache: 'no-store',
+        credentials: 'include',
+      });
+
+      const payload = (await response.json().catch(() => null)) as
+        | {
+            reviews?: ListingReview[];
+            summary?: ReviewSummary;
+            auth?: ReviewsAuthState;
+            error?: string;
+          }
+        | null;
+
+      if (!response.ok) {
+        throw new Error(payload?.error || 'Unable to load reviews right now.');
+      }
+
+      setReviews(payload?.reviews ?? []);
+      setReviewSummary(payload?.summary ?? EMPTY_REVIEW_SUMMARY);
+      setReviewAuth(payload?.auth ?? EMPTY_REVIEW_AUTH);
+    } catch (error) {
+      setReviewsError(
+        error instanceof Error ? error.message : 'Unable to load reviews right now.'
+      );
+      setReviewSummary(EMPTY_REVIEW_SUMMARY);
+      setReviewAuth(EMPTY_REVIEW_AUTH);
+      setReviews([]);
+    } finally {
+      setIsLoadingReviews(false);
+    }
+  }, [product.id]);
+
+  useEffect(() => {
+    void loadReviews();
+  }, [loadReviews]);
+
+  const currentUserReview = useMemo(
+    () => reviews.find((review) => review.isCurrentUser) ?? null,
+    [reviews]
+  );
+
+  const handleSubmitReview = async () => {
+    if (isSubmittingReview) {
+      return;
+    }
+
+    if (reviewRating < 1 || reviewRating > 5) {
+      toast({
+        title: 'Select a rating',
+        description: 'Choose a star rating before submitting your review.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsSubmittingReview(true);
+
+    try {
+      const response = await fetch(`/api/listings/${product.id}/reviews`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          rating: reviewRating,
+          comment: reviewComment,
+        }),
+      });
+
+      const payload = (await response.json().catch(() => null)) as
+        | {
+            error?: string;
+          }
+        | null;
+
+      if (response.status === 401) {
+        const nextPath = `/product/${product.id}`;
+        router.push(`/login?next=${encodeURIComponent(nextPath)}`);
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(payload?.error || 'Unable to submit review right now.');
+      }
+
+      toast({
+        title: 'Review submitted',
+        description: 'Your rating and review have been posted.',
+      });
+
+      setReviewRating(0);
+      setReviewComment('');
+      await loadReviews();
+      router.refresh();
+    } catch (error) {
+      toast({
+        title: 'Could not submit review',
+        description:
+          error instanceof Error
+            ? error.message
+            : 'Unable to submit review right now.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSubmittingReview(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -775,6 +963,215 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
                     )}
                   </button>
                 )}
+              </div>
+            </section>
+
+            <section className="rounded-2xl border border-border/65 bg-card/95 p-5 shadow-[0_10px_22px_-18px_hsl(var(--foreground)/0.45)]">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-semibold text-foreground">Ratings & Reviews</h2>
+                  <div className="mt-2 flex items-center gap-2">
+                    <Star className="h-4 w-4 fill-primary text-primary" />
+                    <span className="text-base font-semibold text-foreground">
+                      {reviewSummary.averageRating != null
+                        ? reviewSummary.averageRating.toFixed(1)
+                        : 'No ratings yet'}
+                    </span>
+                    <span className="text-sm text-muted-foreground">
+                      ({reviewSummary.reviewCount} reviews)
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-5 grid gap-5 lg:grid-cols-[220px_1fr]">
+                <div className="space-y-2">
+                  {[5, 4, 3, 2, 1].map((stars) => {
+                    const key = String(stars) as keyof ReviewSummary['ratingBreakdown'];
+                    const count = reviewSummary.ratingBreakdown[key] ?? 0;
+                    const ratio =
+                      reviewSummary.reviewCount > 0
+                        ? Math.round((count / reviewSummary.reviewCount) * 100)
+                        : 0;
+
+                    return (
+                      <div key={stars} className="flex items-center gap-2 text-sm">
+                        <span className="w-2 text-muted-foreground">{stars}</span>
+                        <Star className="h-3.5 w-3.5 fill-primary/80 text-primary" />
+                        <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
+                          <div
+                            className="h-full rounded-full bg-primary"
+                            style={{ width: `${ratio}%` }}
+                          />
+                        </div>
+                        <span className="w-7 text-right text-xs text-muted-foreground">{count}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="space-y-4">
+                  {isLoadingReviews ? (
+                    <p className="text-sm text-muted-foreground">Loading reviews...</p>
+                  ) : (
+                    <>
+                      {reviewAuth.canSubmitReview ? (
+                        <div className="rounded-xl border border-border/60 bg-background/35 p-4">
+                          <h3 className="text-sm font-semibold text-foreground">Write a review</h3>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            You can submit one review for this listing.
+                          </p>
+
+                          <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                            {[1, 2, 3, 4, 5].map((value) => (
+                              <button
+                                key={value}
+                                type="button"
+                                onClick={() => setReviewRating(value)}
+                                className="rounded-md p-1 transition-colors hover:bg-accent"
+                                aria-label={`Set rating ${value}`}
+                              >
+                                <Star
+                                  className={cn(
+                                    'h-5 w-5 transition-colors',
+                                    reviewRating >= value
+                                      ? 'fill-primary text-primary'
+                                      : 'text-muted-foreground/70'
+                                  )}
+                                />
+                              </button>
+                            ))}
+                            <span className="ml-1 text-xs text-muted-foreground">
+                              {reviewRating > 0 ? `${reviewRating}/5` : 'Select rating'}
+                            </span>
+                          </div>
+
+                          <div className="mt-3 space-y-2">
+                            <Textarea
+                              value={reviewComment}
+                              onChange={(event) => setReviewComment(event.target.value)}
+                              placeholder="Share your experience with this listing..."
+                              maxLength={1000}
+                              rows={4}
+                            />
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs text-muted-foreground">
+                                {reviewComment.length}/1000
+                              </span>
+                              <Button
+                                type="button"
+                                onClick={() => void handleSubmitReview()}
+                                disabled={isSubmittingReview || reviewRating === 0}
+                                className="gap-2"
+                              >
+                                {isSubmittingReview ? (
+                                  <>
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                    Submitting...
+                                  </>
+                                ) : (
+                                  'Submit review'
+                                )}
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      ) : isLoadingReviews ? null : !reviewAuth.isAuthenticated ? (
+                        <div className="rounded-xl border border-border/60 bg-background/35 p-4">
+                          <p className="text-sm text-muted-foreground">
+                            Log in to rate and review this listing.
+                          </p>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="mt-3"
+                            onClick={() =>
+                              router.push(
+                                `/login?next=${encodeURIComponent(`/product/${product.id}`)}`
+                              )
+                            }
+                          >
+                            Log in to review
+                          </Button>
+                        </div>
+                      ) : reviewAuth.isOwner ? (
+                        <div className="rounded-xl border border-border/60 bg-background/35 p-4">
+                          <p className="text-sm text-muted-foreground">
+                            You cannot review your own listing.
+                          </p>
+                        </div>
+                      ) : currentUserReview ? (
+                        <div className="rounded-xl border border-border/60 bg-background/35 p-4">
+                          <p className="text-sm font-medium text-foreground">
+                            You already reviewed this listing.
+                          </p>
+                          <p className="mt-1 text-sm text-muted-foreground">
+                            One review per user is allowed for each listing.
+                          </p>
+                        </div>
+                      ) : null}
+
+                      {reviewsError ? (
+                        <p className="text-sm text-destructive">{reviewsError}</p>
+                      ) : reviews.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">
+                          No reviews yet. Be the first to review this listing.
+                        </p>
+                      ) : (
+                        <div className="space-y-3">
+                          {reviews.map((review) => (
+                            <article
+                              key={review.id}
+                              className="rounded-xl border border-border/55 bg-background/30 p-3"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="flex items-center gap-2.5">
+                                  <Avatar className="h-9 w-9">
+                                    {review.reviewer.avatarUrl ? (
+                                      <AvatarImage src={review.reviewer.avatarUrl} />
+                                    ) : null}
+                                    <AvatarFallback className="bg-primary/10 text-primary">
+                                      {getOwnerInitials(review.reviewer.name)}
+                                    </AvatarFallback>
+                                  </Avatar>
+                                  <div>
+                                    <p className="text-sm font-medium text-foreground">
+                                      {review.reviewer.name}
+                                      {review.isCurrentUser ? ' (You)' : ''}
+                                    </p>
+                                    <p className="text-xs text-muted-foreground">
+                                      {formatReviewDate(review.createdAt)}
+                                    </p>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-0.5">
+                                  {[1, 2, 3, 4, 5].map((value) => (
+                                    <Star
+                                      key={`${review.id}-${value}`}
+                                      className={cn(
+                                        'h-4 w-4',
+                                        review.rating >= value
+                                          ? 'fill-primary text-primary'
+                                          : 'text-muted-foreground/40'
+                                      )}
+                                    />
+                                  ))}
+                                </div>
+                              </div>
+
+                              {review.comment ? (
+                                <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-muted-foreground">
+                                  {review.comment}
+                                </p>
+                              ) : null}
+                            </article>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
               </div>
             </section>
 

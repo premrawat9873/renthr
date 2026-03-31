@@ -632,7 +632,7 @@ export default function ProfileDashboardClient({
                     <div className="mt-1.5 flex items-center gap-1.5">
                       <Star className="h-4 w-4 fill-current text-primary/85" />
                       <span className="text-sm font-medium text-foreground">
-                        {product.rating != null ? product.rating.toFixed(1) : '4.6'}
+                        {product.rating != null ? product.rating.toFixed(1) : 'No ratings'}
                       </span>
                       <span className="text-sm text-muted-foreground">
                         ({product.reviewCount ?? 0} reviews)

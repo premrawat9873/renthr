@@ -111,7 +111,7 @@ export default function ProductCard({ product, rentDurations, priority = false }
         {isRentAvailable && product.rating != null && (
           <div className="flex items-center gap-1.5">
             <Star className="h-3.5 w-3.5 fill-star text-star" />
-            <span className="text-xs font-medium text-foreground">{product.rating}</span>
+            <span className="text-xs font-medium text-foreground">{product.rating.toFixed(1)}</span>
             {product.reviewCount != null && (
               <span className="text-xs text-muted-foreground">({product.reviewCount} reviews)</span>
             )}
