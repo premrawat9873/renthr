@@ -1,7 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
-import { ArrowRight, Check, Search } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ArrowRight, Check, Loader2, MapPin, Search } from "lucide-react";
 import Image from "next/image";
 
+import LocationMapPicker, {
+  type MapCoordinates,
+} from "@/components/marketplace/LocationMapPicker";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -18,7 +21,10 @@ import { CATEGORIES } from "@/data/mockData";
 import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { useAppSelector } from "@/store/hooks";
-import { selectLocation } from "@/store/slices/marketplaceSlice";
+import {
+  selectLocation,
+  selectUserCoords,
+} from "@/store/slices/marketplaceSlice";
 
 type PostStep = "category" | "details" | "photos" | "location" | "purpose";
 type AgeUnit = "days" | "months" | "years";
@@ -89,6 +95,17 @@ const FIELD_BORDER_CLASS =
   "border-primary/40 focus-visible:border-primary/70 focus-visible:ring-primary/20";
 const ACTION_BUTTON_BORDER_CLASS =
   "border border-primary/45 disabled:opacity-100 disabled:border-primary/45";
+const DEFAULT_MAP_CENTER: MapCoordinates = {
+  latitude: 20.5937,
+  longitude: 78.9629,
+};
+
+type ReverseGeocodeAddress = {
+  line1: string;
+  city: string;
+  state: string;
+  pincode: string;
+};
 
 function toJpegFileName(name: string) {
   const baseName = name.replace(/\.[^.]+$/, "");
@@ -178,8 +195,71 @@ async function prepareImageForUpload(file: File) {
   });
 }
 
+async function reverseGeocodeCoordinates(
+  coordinates: MapCoordinates,
+): Promise<ReverseGeocodeAddress | null> {
+  try {
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?lat=${coordinates.latitude}&lon=${coordinates.longitude}&format=json`,
+    );
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const payload = (await response.json()) as {
+      display_name?: string;
+      address?: {
+        house_number?: string;
+        road?: string;
+        neighbourhood?: string;
+        suburb?: string;
+        city?: string;
+        town?: string;
+        village?: string;
+        county?: string;
+        state?: string;
+        postcode?: string;
+      };
+    };
+
+    const address = payload.address ?? {};
+    const city =
+      address.city ??
+      address.town ??
+      address.village ??
+      address.county ??
+      "Unknown";
+    const state = address.state ?? "Unknown";
+    const pincode = address.postcode ?? "";
+    const lineParts = [
+      address.house_number,
+      address.road,
+      address.neighbourhood,
+      address.suburb,
+    ]
+      .map((value) => (typeof value === "string" ? value.trim() : ""))
+      .filter((value) => value.length > 0);
+    const line1 =
+      lineParts.join(", ") ||
+      (typeof payload.display_name === "string" && payload.display_name.trim().length > 0
+        ? payload.display_name.trim().split(",").slice(0, 2).join(", ")
+        : `${city}, ${state}`);
+
+    return {
+      line1,
+      city,
+      state,
+      pincode,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export default function PostListingFlowDialog({ open, onOpenChange }: PostListingFlowDialogProps) {
   const selectedLocation = useAppSelector(selectLocation);
+  const selectedUserCoords = useAppSelector(selectUserCoords);
   const [step, setStep] = useState<PostStep>("category");
   const [categorySearch, setCategorySearch] = useState("");
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
@@ -196,6 +276,8 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
   const [locationCity, setLocationCity] = useState("");
   const [locationState, setLocationState] = useState("");
   const [locationPincode, setLocationPincode] = useState("");
+  const [locationCoordinates, setLocationCoordinates] = useState<MapCoordinates | null>(null);
+  const [isResolvingPinAddress, setIsResolvingPinAddress] = useState(false);
   const [selectedPhotoFiles, setSelectedPhotoFiles] = useState<File[]>([]);
   const [isPreparingPhotos, setIsPreparingPhotos] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -216,6 +298,21 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
     () => RENT_DURATION_OPTIONS.filter((option) => selectedRentDurations.includes(option.value)),
     [selectedRentDurations],
   );
+
+  const mapDefaultCenter = useMemo<MapCoordinates>(() => {
+    if (
+      selectedUserCoords &&
+      Number.isFinite(selectedUserCoords.latitude) &&
+      Number.isFinite(selectedUserCoords.longitude)
+    ) {
+      return {
+        latitude: selectedUserCoords.latitude,
+        longitude: selectedUserCoords.longitude,
+      };
+    }
+
+    return DEFAULT_MAP_CENTER;
+  }, [selectedUserCoords]);
 
   const photoPreviews = useMemo(
     () => selectedPhotoFiles.map((file) => ({ file, previewUrl: URL.createObjectURL(file) })),
@@ -257,18 +354,23 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
   const normalizedLocationCity = locationCity.trim();
   const normalizedLocationState = locationState.trim();
   const normalizedLocationPincode = locationPincode.trim();
-  const hasLocationInput =
+  const hasPinnedCoordinates = locationCoordinates != null;
+  const hasManualLocationInput =
     normalizedLocationLine1.length > 0 ||
     normalizedLocationCity.length > 0 ||
     normalizedLocationState.length > 0 ||
     normalizedLocationPincode.length > 0;
+  const hasLocationInput = hasManualLocationInput || hasPinnedCoordinates;
+  const hasValidPincode =
+    normalizedLocationPincode.length === 0 ||
+    LOCATION_PINCODE_PATTERN.test(normalizedLocationPincode);
+  const hasCompleteManualLocation =
+    normalizedLocationLine1.length >= 3 &&
+    normalizedLocationCity.length >= 2 &&
+    normalizedLocationState.length >= 2;
   const hasValidLocation =
     !hasLocationInput ||
-    (normalizedLocationLine1.length >= 3 &&
-      normalizedLocationCity.length >= 2 &&
-      normalizedLocationState.length >= 2 &&
-      (normalizedLocationPincode.length === 0 ||
-        LOCATION_PINCODE_PATTERN.test(normalizedLocationPincode)));
+    ((hasCompleteManualLocation || hasPinnedCoordinates) && hasValidPincode);
   const canSubmit =
     selectedCategoryIds.length > 0 &&
     hasValidDetails &&
@@ -296,6 +398,8 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
     setLocationCity("");
     setLocationState("");
     setLocationPincode("");
+    setLocationCoordinates(null);
+    setIsResolvingPinAddress(false);
     setSelectedPhotoFiles([]);
     setIsSubmitting(false);
   };
@@ -459,6 +563,45 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
     }));
   };
 
+  const handlePinLocationChange = useCallback((nextCoordinates: MapCoordinates) => {
+    setLocationCoordinates(nextCoordinates);
+  }, []);
+
+  const clearPinnedLocation = () => {
+    setLocationCoordinates(null);
+  };
+
+  const autoFillAddressFromPin = useCallback(async () => {
+    if (!locationCoordinates || isResolvingPinAddress) {
+      return;
+    }
+
+    setIsResolvingPinAddress(true);
+    try {
+      const resolvedAddress = await reverseGeocodeCoordinates(locationCoordinates);
+      if (!resolvedAddress) {
+        toast({
+          title: "Could not fetch address",
+          description: "Pin was saved, but address details could not be fetched. You can enter them manually.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setLocationLine1((current) => current.trim() || resolvedAddress.line1);
+      setLocationCity((current) => current.trim() || resolvedAddress.city);
+      setLocationState((current) => current.trim() || resolvedAddress.state);
+      setLocationPincode((current) => current.trim() || resolvedAddress.pincode);
+
+      toast({
+        title: "Location pinned",
+        description: `${resolvedAddress.city}, ${resolvedAddress.state} captured from map pin.`,
+      });
+    } finally {
+      setIsResolvingPinAddress(false);
+    }
+  }, [isResolvingPinAddress, locationCoordinates]);
+
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!canSubmit || isSubmitting) return;
@@ -512,11 +655,18 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
               normalizedLocationLine1 ||
               [normalizedLocationCity, normalizedLocationState]
                 .filter((value) => value.length > 0)
-                .join(", "),
-            city: normalizedLocationCity,
-            state: normalizedLocationState,
+                .join(", ") ||
+              "Pinned location",
+            city: normalizedLocationCity || "Unknown",
+            state: normalizedLocationState || "Unknown",
             pincode: normalizedLocationPincode || "000000",
             country: "IN",
+            ...(locationCoordinates
+              ? {
+                  latitude: locationCoordinates.latitude,
+                  longitude: locationCoordinates.longitude,
+                }
+              : {}),
           }
         : null;
 
@@ -560,7 +710,9 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
         .map((option) => `${option.label}: INR ${rentPrices[option.value]}`)
         .join(", ");
       const listingLocationSummary = locationPayload
-        ? `${locationPayload.city}, ${locationPayload.state}`
+        ? locationCoordinates
+          ? `${locationPayload.city}, ${locationPayload.state} (${locationCoordinates.latitude.toFixed(5)}, ${locationCoordinates.longitude.toFixed(5)})`
+          : `${locationPayload.city}, ${locationPayload.state}`
         : fallbackLocation || "Not specified";
 
       toast({
@@ -918,6 +1070,54 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
               </p>
 
               <div className="space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <Label>Pin exact location on map</Label>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={autoFillAddressFromPin}
+                      disabled={!locationCoordinates || isResolvingPinAddress}
+                      className="h-8 border-primary/45 text-xs"
+                    >
+                      {isResolvingPinAddress ? (
+                        <>
+                          <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                          Resolving...
+                        </>
+                      ) : (
+                        "Auto-fill address"
+                      )}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={clearPinnedLocation}
+                      disabled={!locationCoordinates}
+                      className="h-8 border-primary/45 text-xs"
+                    >
+                      Clear pin
+                    </Button>
+                  </div>
+                </div>
+
+                <LocationMapPicker
+                  value={locationCoordinates}
+                  onChange={handlePinLocationChange}
+                  defaultCenter={mapDefaultCenter}
+                  disabled={isSubmitting}
+                />
+
+                {!locationCoordinates && (
+                  <p className="text-xs text-muted-foreground">
+                    Optional: click the map to pinpoint your product pickup spot.
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-2">
                 <Label htmlFor="post-listing-location-line1">Address line</Label>
                 <Input
                   id="post-listing-location-line1"
@@ -972,7 +1172,14 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
 
               {!hasValidLocation && (
                 <p className="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-                  If you add location details, include address line, city, and state. Pincode is optional but must be valid.
+                  Add full address fields or pin on map. Pincode is optional but must be valid when provided.
+                </p>
+              )}
+
+              {locationCoordinates && (
+                <p className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-accent/30 px-2.5 py-1 text-xs text-foreground">
+                  <MapPin className="h-3.5 w-3.5 text-primary" />
+                  Exact pin selected
                 </p>
               )}
             </div>

@@ -68,6 +68,8 @@ type ParsedListingLocation = {
   country: string;
   landmark: string | null;
   label: string | null;
+  latitude: number | null;
+  longitude: number | null;
 };
 
 function isDatabaseNotReachableError(error: unknown) {
@@ -191,6 +193,20 @@ function normalizeText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function parseCoordinate(value: unknown, min: number, max: number) {
+  if (value == null || value === "") {
+    return null;
+  }
+
+  const parsed =
+    typeof value === "number" ? value : Number.parseFloat(String(value));
+  if (!Number.isFinite(parsed) || parsed < min || parsed > max) {
+    return null;
+  }
+
+  return Number(parsed.toFixed(7));
+}
+
 function parseListingLocation(value: unknown): ParsedListingLocation | null {
   if (typeof value === "string") {
     const normalized = value.trim();
@@ -206,6 +222,8 @@ function parseListingLocation(value: unknown): ParsedListingLocation | null {
       country: "IN",
       landmark: null,
       label: "Listing location",
+      latitude: null,
+      longitude: null,
     };
   }
 
@@ -221,23 +239,36 @@ function parseListingLocation(value: unknown): ParsedListingLocation | null {
   const country = normalizeText(source.country).toUpperCase() || "IN";
   const landmark = normalizeText(source.landmark) || null;
   const label = normalizeText(source.label) || null;
+  const latitude = parseCoordinate(source.latitude ?? source.lat, -90, 90);
+  const longitude = parseCoordinate(source.longitude ?? source.lng, -180, 180);
+  const hasCoordinates = latitude != null && longitude != null;
 
   if (!line1 && city && state) {
     line1 = `${city}, ${state}`;
   }
 
-  if (!line1 && !city && !state && !pincode) {
+  if (!line1 && hasCoordinates) {
+    line1 = "Pinned location";
+  }
+
+  const normalizedCity = city || (hasCoordinates ? "Unknown" : "");
+  const normalizedState = state || (hasCoordinates ? "Unknown" : "");
+  const normalizedPincode = pincode || (hasCoordinates ? "000000" : "");
+
+  if (!line1 && !normalizedCity && !normalizedState && !normalizedPincode && !hasCoordinates) {
     return null;
   }
 
   return {
     line1,
-    city,
-    state,
-    pincode,
+    city: normalizedCity,
+    state: normalizedState,
+    pincode: normalizedPincode,
     country,
     landmark,
     label,
+    latitude: hasCoordinates ? latitude : null,
+    longitude: hasCoordinates ? longitude : null,
   };
 }
 
@@ -570,6 +601,8 @@ export async function POST(request: Request) {
                   state: location.state,
                   pincode: location.pincode || "000000",
                   country: location.country || "IN",
+                  latitude: location.latitude,
+                  longitude: location.longitude,
                   userId: user.id,
                 },
               },
