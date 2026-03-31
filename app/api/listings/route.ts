@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 
 import {
@@ -28,11 +29,36 @@ type CreateListingBody = {
   rentPrices?: unknown;
   imageUrls?: unknown;
   location?: unknown;
+  featured?: unknown;
 };
 
 const MAX_IMAGE_COUNT = 3;
 const LOCATION_MIN_LENGTH = 2;
 const LOCATION_PINCODE_PATTERN = /^[A-Za-z0-9 -]{4,12}$/;
+
+function normalizeCategorySlug(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function formatCategoryName(slug: string) {
+  const words = slug
+    .split("-")
+    .map((word) => word.trim())
+    .filter((word) => word.length > 0);
+
+  if (words.length === 0) {
+    return "Uncategorized";
+  }
+
+  return words
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
 
 type ParsedListingLocation = {
   line1: string;
@@ -140,6 +166,25 @@ function parseNonNegativeFloat(value: unknown) {
   }
 
   return parsed;
+}
+
+function parseBoolean(value: unknown, fallback = false) {
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true") {
+      return true;
+    }
+
+    if (normalized === "false") {
+      return false;
+    }
+  }
+
+  return fallback;
 }
 
 function normalizeText(value: unknown) {
@@ -322,6 +367,7 @@ export async function POST(request: Request) {
     const imageUrls = uniqueStringArray(body.imageUrls).slice(0, MAX_IMAGE_COUNT);
     const ageValue = parseNonNegativeFloat(body.ageValue);
     const location = parseListingLocation(body.location);
+    const featured = parseBoolean(body.featured, false);
 
     if (title.length < 3) {
       return NextResponse.json(
@@ -444,6 +490,39 @@ export async function POST(request: Request) {
       );
     }
 
+    const primaryCategoryInput = categories[0] ?? "";
+    const primaryCategorySlug = normalizeCategorySlug(primaryCategoryInput);
+    if (!primaryCategorySlug) {
+      return NextResponse.json(
+        { error: "Select a valid category." },
+        { status: 400 }
+      );
+    }
+
+    const primaryCategoryName = formatCategoryName(primaryCategorySlug);
+    const categoryBySlug = await prisma.category.findUnique({
+      where: { slug: primaryCategorySlug },
+      select: { id: true },
+    });
+
+    const categoryByName =
+      categoryBySlug ??
+      (await prisma.category.findUnique({
+        where: { name: primaryCategoryName },
+        select: { id: true },
+      }));
+
+    const category =
+      categoryByName ??
+      (await prisma.category.create({
+        data: {
+          name: primaryCategoryName,
+          slug: primaryCategorySlug,
+          isActive: true,
+        },
+        select: { id: true },
+      }));
+
     const user = await prisma.user.upsert({
       where: {
         email: identity.email,
@@ -472,7 +551,13 @@ export async function POST(request: Request) {
             id: user.id,
           },
         },
+        category: {
+          connect: {
+            id: category.id,
+          },
+        },
         listingType,
+        featured,
         publishedAt: new Date(),
         ...(location
           ? {
@@ -520,6 +605,12 @@ export async function POST(request: Request) {
         id: true,
       },
     });
+
+    revalidatePath("/home");
+    revalidatePath("/profile");
+    revalidatePath("/my-posts");
+    revalidatePath(`/profile/${user.id}`);
+    revalidatePath(`/product/${post.id}`);
 
     return NextResponse.json(
       {

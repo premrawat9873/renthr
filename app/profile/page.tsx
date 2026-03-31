@@ -17,7 +17,20 @@ export const metadata: Metadata = {
   },
 };
 
-export default async function ProfilePage() {
+type ProfilePageSearchParams = {
+  openPost?: string;
+};
+
+export default async function ProfilePage({
+  searchParams,
+}: {
+  searchParams: Promise<ProfilePageSearchParams>;
+}) {
+  const params = await searchParams;
+  const shouldOpenPostFlow =
+    params.openPost === '1' ||
+    params.openPost === 'true' ||
+    params.openPost === 'yes';
   const currentUser = await getCurrentUserInfo();
 
   if (!currentUser) {
@@ -61,6 +74,7 @@ export default async function ProfilePage() {
       joinedLabel={joinedLabel}
       products={products}
       wishlistProducts={wishlistProducts}
+      initialPostFlowOpen={shouldOpenPostFlow}
     />
   );
 }

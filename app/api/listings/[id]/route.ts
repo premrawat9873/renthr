@@ -1,3 +1,4 @@
+import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 
 import { resolveAuthenticatedUserId } from "@/lib/address-utils";
@@ -11,6 +12,7 @@ type UpdateListingRequestBody = {
   location?: unknown;
   sellPrice?: unknown;
   rentDailyPrice?: unknown;
+  featured?: unknown;
 };
 
 function parseListingId(value: string | string[] | undefined) {
@@ -165,10 +167,25 @@ export async function PATCH(
     const hasLocation = Object.prototype.hasOwnProperty.call(body, "location");
     const hasSellPrice = Object.prototype.hasOwnProperty.call(body, "sellPrice");
     const hasRentDailyPrice = Object.prototype.hasOwnProperty.call(body, "rentDailyPrice");
+    const hasFeatured = Object.prototype.hasOwnProperty.call(body, "featured");
 
-    if (!hasTitle && !hasDescription && !hasLocation && !hasSellPrice && !hasRentDailyPrice) {
+    if (
+      !hasTitle &&
+      !hasDescription &&
+      !hasLocation &&
+      !hasSellPrice &&
+      !hasRentDailyPrice &&
+      !hasFeatured
+    ) {
       return NextResponse.json(
         { error: "At least one field is required to update the listing." },
+        { status: 400 }
+      );
+    }
+
+    if (hasFeatured && typeof body.featured !== "boolean") {
+      return NextResponse.json(
+        { error: "Featured flag must be true or false." },
         { status: 400 }
       );
     }
@@ -267,6 +284,7 @@ export async function PATCH(
         sellPricePaise?: number | null;
         rentDailyPaise?: number | null;
         addressId?: number | null;
+        featured?: boolean;
       } = {};
 
       if (hasTitle) {
@@ -283,6 +301,10 @@ export async function PATCH(
 
       if (hasRentDailyPrice) {
         updateData.rentDailyPaise = toPaise(parsedRentDailyPrice);
+      }
+
+      if (hasFeatured) {
+        updateData.featured = Boolean(body.featured);
       }
 
       if (hasLocation) {
@@ -335,6 +357,7 @@ export async function PATCH(
           rentDailyPaise: true,
           rentWeeklyPaise: true,
           rentMonthlyPaise: true,
+          featured: true,
           address: {
             select: {
               city: true,
@@ -354,12 +377,19 @@ export async function PATCH(
     const supportsRent =
       updatedListing.listingType === "RENT" || updatedListing.listingType === "BOTH";
 
+    revalidatePath("/home");
+    revalidatePath("/profile");
+    revalidatePath("/my-posts");
+    revalidatePath(`/profile/${userId}`);
+    revalidatePath(`/product/${updatedListing.id}`);
+
     return NextResponse.json({
       listing: {
         id: String(updatedListing.id),
         title: updatedListing.title,
         description: updatedListing.description || "",
         location: formatLocationLabel(updatedListing.address),
+        featured: updatedListing.featured,
         price: supportsSell ? fromPaise(updatedListing.sellPricePaise) : null,
         rentPrices: supportsRent
           ? {

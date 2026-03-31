@@ -15,6 +15,26 @@ const initialState: WishlistState = {
   lastError: null,
 };
 
+function ensureStateIds(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return dedupeIds(value.map((entry) => String(entry)));
+}
+
+function getPendingIds(state: WishlistState) {
+  const normalized = ensureStateIds(state.pendingIds);
+  state.pendingIds = normalized;
+  return normalized;
+}
+
+function getLikedProductIds(state: WishlistState) {
+  const normalized = ensureStateIds(state.likedProductIds);
+  state.likedProductIds = normalized;
+  return normalized;
+}
+
 function dedupeIds(ids: string[]) {
   return Array.from(new Set(ids.map((id) => id.trim()).filter(Boolean)));
 }
@@ -92,6 +112,7 @@ const wishlistSlice = createSlice({
   reducers: {
     setWishlist(state, action: PayloadAction<string[]>) {
       state.likedProductIds = dedupeIds(action.payload);
+      state.pendingIds = getPendingIds(state);
       state.initialized = true;
       state.lastError = null;
     },
@@ -105,39 +126,47 @@ const wishlistSlice = createSlice({
   extraReducers: (builder) => {
     builder
       .addCase(fetchWishlist.fulfilled, (state, action) => {
-        state.likedProductIds = action.payload;
+        state.likedProductIds = dedupeIds(action.payload);
+        state.pendingIds = getPendingIds(state);
         state.initialized = true;
         state.lastError = null;
       })
       .addCase(fetchWishlist.rejected, (state, action) => {
+        state.pendingIds = getPendingIds(state);
+        state.likedProductIds = getLikedProductIds(state);
         state.initialized = true;
         state.lastError = action.payload ?? action.error.message ?? null;
       })
       .addCase(toggleWishlistOnServer.pending, (state, action) => {
         const targetId = action.meta.arg.productId;
-        if (!state.pendingIds.includes(targetId)) {
-          state.pendingIds.push(targetId);
+        const pendingIds = getPendingIds(state);
+        if (!pendingIds.includes(targetId)) {
+          pendingIds.push(targetId);
         }
       })
       .addCase(toggleWishlistOnServer.fulfilled, (state, action) => {
         const { productId, liked } = action.payload;
-        state.pendingIds = state.pendingIds.filter((id) => id !== productId);
+        const pendingIds = getPendingIds(state);
+        state.pendingIds = pendingIds.filter((id) => id !== productId);
         state.initialized = true;
         state.lastError = null;
 
+        const likedProductIds = getLikedProductIds(state);
         if (liked) {
-          if (!state.likedProductIds.includes(productId)) {
-            state.likedProductIds.push(productId);
+          if (!likedProductIds.includes(productId)) {
+            likedProductIds.push(productId);
           }
         } else {
-          state.likedProductIds = state.likedProductIds.filter(
+          state.likedProductIds = likedProductIds.filter(
             (id) => id !== productId
           );
         }
       })
       .addCase(toggleWishlistOnServer.rejected, (state, action) => {
         const productId = action.payload?.productId ?? action.meta.arg.productId;
-        state.pendingIds = state.pendingIds.filter((id) => id !== productId);
+        const pendingIds = getPendingIds(state);
+        state.pendingIds = pendingIds.filter((id) => id !== productId);
+        state.likedProductIds = getLikedProductIds(state);
         state.lastError = action.payload?.message ?? action.error.message ?? null;
       });
   },

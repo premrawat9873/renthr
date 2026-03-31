@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
@@ -35,6 +36,7 @@ import {
   Loader2,
 } from 'lucide-react';
 
+import MarketplaceHeader from '@/components/marketplace/MarketplaceHeader';
 import { cn } from '@/lib/utils';
 import { CATEGORIES } from '@/data/mockData';
 import type { ListingProductPayload } from '@/data/listings';
@@ -50,6 +52,11 @@ import {
   selectWishlistPendingIds,
   toggleWishlistOnServer,
 } from '@/store/slices/wishlistSlice';
+
+const PostListingFlowDialog = dynamic(
+  () => import('@/components/marketplace/PostListingFlowDialog'),
+  { ssr: false }
+);
 
 const CATEGORY_ITEMS = [
   { id: 'all', label: 'All Categories', icon: LayoutGrid },
@@ -167,6 +174,9 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
   const [isOpeningChat, setIsOpeningChat] = useState(false);
+  const [headerLocation, setHeaderLocation] = useState<string | null>(null);
+  const [headerSearchQuery, setHeaderSearchQuery] = useState('');
+  const [isPostFlowOpen, setIsPostFlowOpen] = useState(false);
 
   const images = product.images.length > 0 ? product.images : [product.image];
   const currentImage = images[activeImageIndex] ?? images[0];
@@ -380,9 +390,89 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
     }
   };
 
+  const handleHeaderManualLocation = useCallback((city: string) => {
+    setHeaderLocation(city.trim() || null);
+  }, []);
+
+  const handleHeaderRequestLocation = useCallback(() => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      toast({
+        title: 'Location unavailable',
+        description: 'Your browser does not support location services.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        void (async () => {
+          const { latitude, longitude } = position.coords;
+
+          try {
+            const response = await fetch(
+              `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`,
+              { cache: 'no-store' }
+            );
+
+            if (!response.ok) {
+              throw new Error('Unable to resolve your location.');
+            }
+
+            const payload = (await response.json()) as {
+              address?: {
+                city?: string;
+                town?: string;
+                village?: string;
+                county?: string;
+                state?: string;
+              };
+            };
+
+            const city =
+              payload.address?.city ??
+              payload.address?.town ??
+              payload.address?.village ??
+              payload.address?.county ??
+              '';
+            const state = payload.address?.state ?? '';
+            const displayValue = [city, state].filter(Boolean).join(', ');
+
+            setHeaderLocation(
+              displayValue || `${latitude.toFixed(3)}, ${longitude.toFixed(3)}`
+            );
+          } catch {
+            setHeaderLocation(`${latitude.toFixed(3)}, ${longitude.toFixed(3)}`);
+          }
+        })();
+      },
+      () => {
+        toast({
+          title: 'Location permission denied',
+          description: 'Allow location access to auto-detect your city.',
+          variant: 'destructive',
+        });
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 300000,
+      }
+    );
+  }, []);
+
   return (
     <div className="min-h-screen bg-background">
-      <header className="sticky top-0 z-50 border-b border-border/50 bg-card/80 backdrop-blur-md">
+      <MarketplaceHeader
+        location={headerLocation}
+        onRequestLocation={handleHeaderRequestLocation}
+        onManualLocation={handleHeaderManualLocation}
+        searchQuery={headerSearchQuery}
+        onSearchChange={setHeaderSearchQuery}
+        onAddPost={() => setIsPostFlowOpen(true)}
+      />
+
+      <header className="border-b border-border/50 bg-card/80 backdrop-blur-md">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
           <div className="flex items-center gap-4">
             <Button
@@ -922,6 +1012,10 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
           </div>
         </div>
       )}
+
+      {isPostFlowOpen ? (
+        <PostListingFlowDialog open={isPostFlowOpen} onOpenChange={setIsPostFlowOpen} />
+      ) : null}
 
     </div>
   );

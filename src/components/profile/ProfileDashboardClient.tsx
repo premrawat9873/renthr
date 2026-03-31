@@ -61,6 +61,7 @@ type ProfileDashboardClientProps = {
   joinedLabel: string;
   products: Product[];
   wishlistProducts: Product[];
+  initialPostFlowOpen?: boolean;
 };
 
 type ListingEditForm = {
@@ -70,6 +71,7 @@ type ListingEditForm = {
   location: string;
   sellPrice: string;
   rentDailyPrice: string;
+  featured: boolean;
 };
 
 function getPrimaryRentPrice(product: Product) {
@@ -150,13 +152,14 @@ export default function ProfileDashboardClient({
   joinedLabel,
   products,
   wishlistProducts,
+  initialPostFlowOpen = false,
 }: ProfileDashboardClientProps) {
   const router = useRouter();
   useWishlistBootstrap();
   useHydrateWishlist(wishlistProducts.map((product) => product.id));
   const [listingItems, setListingItems] = useState<Product[]>(products);
   const [activeTab, setActiveTab] = useState<TabKey>('listings');
-  const [postFlowOpen, setPostFlowOpen] = useState(false);
+  const [postFlowOpen, setPostFlowOpen] = useState(initialPostFlowOpen);
   const [availabilityById, setAvailabilityById] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(products.map((product) => [product.id, product.isAvailable ?? true]))
   );
@@ -182,6 +185,14 @@ export default function ProfileDashboardClient({
     );
   }, [products]);
 
+  useEffect(() => {
+    if (!initialPostFlowOpen) {
+      return;
+    }
+
+    router.replace('/profile');
+  }, [initialPostFlowOpen, router]);
+
   const totalListings = listingItems.length;
   const totalRentals = listingItems.filter(
     (product) => product.type === 'rent' || product.type === 'both'
@@ -202,7 +213,7 @@ export default function ProfileDashboardClient({
   }, [listingItems]);
 
   const tabs: Array<{ key: TabKey; label: string }> = [
-    { key: 'listings', label: 'My Listings' },
+    { key: 'listings', label: 'My Posts' },
     { key: 'bookings', label: 'Bookings' },
     { key: 'wishlist', label: 'Wishlist' },
     { key: 'settings', label: 'Settings' },
@@ -343,6 +354,7 @@ export default function ProfileDashboardClient({
         product.rentPrices?.daily != null
           ? String(product.rentPrices.daily)
           : '',
+      featured: Boolean(product.featured),
     });
   };
 
@@ -389,12 +401,14 @@ export default function ProfileDashboardClient({
         title: string;
         description: string;
         location: string;
+        featured: boolean;
         sellPrice?: string;
         rentDailyPrice?: string;
       } = {
         title,
         description,
         location,
+        featured: editingForm.featured,
       };
 
       if (editingProduct?.type === 'sell' || editingProduct?.type === 'both') {
@@ -424,6 +438,7 @@ export default function ProfileDashboardClient({
               title: string;
               description: string;
               location: string;
+              featured: boolean;
               price: number | null;
               rentPrices: {
                 hourly: number | null;
@@ -456,6 +471,7 @@ export default function ProfileDashboardClient({
             title: payload.listing.title,
             description: payload.listing.description,
             location: payload.listing.location,
+            featured: payload.listing.featured,
             price: payload.listing.price,
             rentPrices: payload.listing.rentPrices,
           };
@@ -507,7 +523,7 @@ export default function ProfileDashboardClient({
               className="mt-2 bg-primary-foreground font-medium text-primary transition-all duration-200 hover:-translate-y-0.5 hover:bg-primary-foreground/90 hover:shadow-lg"
             >
               <Plus className="mr-1.5 h-4 w-4" />
-              Add Listing
+              Add Post
             </Button>
 
             <div className="flex items-center justify-center gap-1.5 pt-2">
@@ -952,6 +968,30 @@ export default function ProfileDashboardClient({
                         : current
                     )
                   }
+                />
+              </div>
+
+              <div className="flex items-center justify-between rounded-lg border border-border/60 bg-accent/30 px-3 py-2.5">
+                <div>
+                  <p className="text-sm font-medium text-foreground">Feature this post</p>
+                  <p className="text-xs text-muted-foreground">
+                    Featured posts are highlighted in marketplace cards.
+                  </p>
+                </div>
+                <Switch
+                  checked={editingForm.featured}
+                  onCheckedChange={(checked) =>
+                    setEditingForm((current) =>
+                      current
+                        ? {
+                            ...current,
+                            featured: checked,
+                          }
+                        : current
+                    )
+                  }
+                  disabled={Boolean(savingEditId)}
+                  className="data-[state=checked]:bg-primary"
                 />
               </div>
 

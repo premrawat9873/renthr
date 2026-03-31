@@ -22,6 +22,7 @@ const listingSelect = {
   category: {
     select: {
       name: true,
+      slug: true,
     },
   },
   address: {
@@ -196,6 +197,29 @@ function formatListingLocation(address: ListingRecord["address"]) {
   return parts.length > 0 ? parts.join(", ") : "Location not specified";
 }
 
+function normalizeCategorySlug(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function resolveCategoryId(category: ListingRecord["category"]) {
+  const slug = category?.slug?.trim();
+  if (slug) {
+    return normalizeCategorySlug(slug);
+  }
+
+  const name = category?.name?.trim();
+  if (name) {
+    return normalizeCategorySlug(name) || "uncategorized";
+  }
+
+  return "uncategorized";
+}
+
 function normalizeImageList(input: ListingRecord["images"]) {
   const ordered = [...input]
     .sort((left, right) => {
@@ -229,7 +253,7 @@ function mapListingRecordToProduct(record: ListingRecord): Product {
     record.author.name?.trim() ||
     record.author.email.split("@")[0] ||
     "User";
-  const categoryName = record.category?.name?.trim() || "Uncategorized";
+  const categoryId = resolveCategoryId(record.category);
 
   return {
     id: String(record.id),
@@ -245,7 +269,7 @@ function mapListingRecordToProduct(record: ListingRecord): Product {
             monthly: convertPaiseToAmount(record.rentMonthlyPaise),
           }
         : null,
-    category: categoryName,
+    category: categoryId,
     image: normalizedImages.primaryImage,
     images: normalizedImages.images,
     location: formatListingLocation(record.address),

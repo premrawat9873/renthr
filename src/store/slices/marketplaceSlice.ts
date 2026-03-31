@@ -28,6 +28,63 @@ export interface MarketplaceState {
 
 export const MAX_PRICE = 200000;
 
+const VALID_FILTERS: ListingFilter[] = ["all", "rent", "sell"];
+const VALID_SORT_OPTIONS: SortOption[] = [
+  "newest",
+  "price-asc",
+  "price-desc",
+  "distance",
+];
+const VALID_RENT_DURATIONS: RentDuration[] = [
+  "hourly",
+  "daily",
+  "weekly",
+  "monthly",
+];
+
+function normalizeRentDurations(value: unknown): RentDuration[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const normalized = value.filter((duration): duration is RentDuration =>
+    VALID_RENT_DURATIONS.includes(duration as RentDuration)
+  );
+
+  return Array.from(new Set(normalized));
+}
+
+function normalizeListingFilter(value: unknown): ListingFilter {
+  return VALID_FILTERS.includes(value as ListingFilter)
+    ? (value as ListingFilter)
+    : "all";
+}
+
+function normalizeSortOption(value: unknown): SortOption {
+  return VALID_SORT_OPTIONS.includes(value as SortOption)
+    ? (value as SortOption)
+    : "newest";
+}
+
+function normalizePriceRange(value: unknown): [number, number] {
+  if (!Array.isArray(value) || value.length !== 2) {
+    return [0, MAX_PRICE];
+  }
+
+  const rawMin = Number(value[0]);
+  const rawMax = Number(value[1]);
+  const min = Number.isFinite(rawMin) ? Math.max(0, Math.floor(rawMin)) : 0;
+  const max = Number.isFinite(rawMax)
+    ? Math.min(MAX_PRICE, Math.floor(rawMax))
+    : MAX_PRICE;
+
+  if (max < min) {
+    return [min, min];
+  }
+
+  return [min, max];
+}
+
 const initialState: MarketplaceState = {
   location: null,
   userLocation: null,
@@ -71,7 +128,7 @@ const marketplaceSlice = createSlice({
       }
     },
     setRentDurations(state, action: PayloadAction<RentDuration[]>) {
-      state.rentDurations = action.payload;
+      state.rentDurations = normalizeRentDurations(action.payload);
     },
     setSort(state, action: PayloadAction<SortOption>) {
       state.sort = action.payload;
@@ -113,20 +170,31 @@ export const selectMarketplaceState = (state: RootState) => state.marketplace;
 export const selectLocation = (state: RootState) => state.marketplace.location;
 export const selectUserLocation = (state: RootState) => state.marketplace.userLocation;
 export const selectUserCoords = (state: RootState) => state.marketplace.userCoords;
-export const selectSearchQuery = (state: RootState) => state.marketplace.searchQuery;
-export const selectSelectedCategory = (state: RootState) => state.marketplace.selectedCategory;
-export const selectListingFilter = (state: RootState) => state.marketplace.filter;
-export const selectRentDurations = (state: RootState) => state.marketplace.rentDurations;
-export const selectSort = (state: RootState) => state.marketplace.sort;
-export const selectPriceRange = (state: RootState) => state.marketplace.priceRange;
+export const selectSearchQuery = (state: RootState) => state.marketplace.searchQuery ?? "";
+export const selectSelectedCategory = (state: RootState) =>
+  state.marketplace.selectedCategory ?? null;
+export const selectListingFilter = (state: RootState) =>
+  normalizeListingFilter(state.marketplace.filter);
+export const selectRentDurations = (state: RootState) =>
+  normalizeRentDurations(state.marketplace.rentDurations);
+export const selectSort = (state: RootState) =>
+  normalizeSortOption(state.marketplace.sort);
+export const selectPriceRange = (state: RootState) =>
+  normalizePriceRange(state.marketplace.priceRange);
 export const selectHasActiveFilters = (state: RootState) => {
   const marketplace = state.marketplace;
+  const filter = normalizeListingFilter(marketplace.filter);
+  const selectedCategory = marketplace.selectedCategory ?? null;
+  const rentDurations = normalizeRentDurations(marketplace.rentDurations);
+  const searchQuery = marketplace.searchQuery ?? "";
+  const priceRange = normalizePriceRange(marketplace.priceRange);
+
   return (
-    marketplace.filter !== "all" ||
-    marketplace.selectedCategory !== null ||
-    marketplace.rentDurations.length > 0 ||
-    marketplace.searchQuery !== "" ||
-    marketplace.priceRange[0] > 0 ||
-    marketplace.priceRange[1] < MAX_PRICE
+    filter !== "all" ||
+    selectedCategory !== null ||
+    rentDurations.length > 0 ||
+    searchQuery !== "" ||
+    priceRange[0] > 0 ||
+    priceRange[1] < MAX_PRICE
   );
 };

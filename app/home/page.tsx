@@ -6,7 +6,7 @@ import {
 } from '@/lib/listings';
 import { getSiteUrl } from '@/lib/site';
 
-export const revalidate = 0;
+export const revalidate = 120;
 
 export const metadata: Metadata = {
   title: 'Rent, Buy, and Sell Near You',

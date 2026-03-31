@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { CATEGORIES } from "@/data/mockData";
 import { toast } from "@/hooks/use-toast";
@@ -190,6 +191,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
   const [selectedRentDurations, setSelectedRentDurations] = useState<RentDurationOption[]>([]);
   const [rentPrices, setRentPrices] = useState<Record<RentDurationOption, string>>(INITIAL_RENT_PRICES);
   const [sellPrice, setSellPrice] = useState("");
+  const [isFeatured, setIsFeatured] = useState(false);
   const [locationLine1, setLocationLine1] = useState("");
   const [locationCity, setLocationCity] = useState("");
   const [locationState, setLocationState] = useState("");
@@ -289,6 +291,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
     setSelectedRentDurations([]);
     setRentPrices(INITIAL_RENT_PRICES);
     setSellPrice("");
+    setIsFeatured(false);
     setLocationLine1("");
     setLocationCity("");
     setLocationState("");
@@ -526,6 +529,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
           title: name.trim(),
           description: description.trim(),
           categoryIds: selectedCategoryIds,
+          featured: isFeatured,
           ageValue,
           ageUnit,
           purposes: selectedPurposes,
@@ -1105,6 +1109,21 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
                   )}
                 </div>
               )}
+
+              <div className="flex items-center justify-between rounded-xl border border-primary/35 bg-accent/20 p-3">
+                <div className="space-y-1">
+                  <p className="text-sm font-semibold text-foreground">Feature this post</p>
+                  <p className="text-xs text-muted-foreground">
+                    Featured posts get a highlighted badge in marketplace cards.
+                  </p>
+                </div>
+                <Switch
+                  checked={isFeatured}
+                  onCheckedChange={setIsFeatured}
+                  disabled={isSubmitting}
+                  className="data-[state=checked]:bg-primary"
+                />
+              </div>
             </div>
 
             <div className="flex flex-col gap-3 border-t border-primary/10 bg-background px-6 py-4 sm:flex-row sm:items-center sm:justify-between">

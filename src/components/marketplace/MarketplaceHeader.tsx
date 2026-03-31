@@ -21,6 +21,7 @@ interface HeaderProps {
   onManualLocation: (city: string) => void;
   searchQuery: string;
   onSearchChange: (q: string) => void;
+  onAddPost?: () => void;
 }
 
 const CITIES = [
@@ -48,6 +49,7 @@ export default function MarketplaceHeader({
   onManualLocation,
   searchQuery,
   onSearchChange,
+  onAddPost,
 }: HeaderProps) {
   const router = useRouter();
   const dispatch = useAppDispatch();
@@ -122,6 +124,25 @@ export default function MarketplaceHeader({
     onRequestLocation();
     setLocOpen(false);
     setCityInput("");
+  };
+
+  const handleAddPost = () => {
+    if (!isAuthenticated) {
+      const currentPath =
+        typeof window !== "undefined"
+          ? `${window.location.pathname}${window.location.search}`
+          : "/home";
+
+      router.push(`/login?next=${encodeURIComponent(currentPath)}`);
+      return;
+    }
+
+    if (onAddPost) {
+      onAddPost();
+      return;
+    }
+
+    router.push("/profile?openPost=1");
   };
 
   return (
@@ -279,7 +300,7 @@ export default function MarketplaceHeader({
               ) : (
                 <>
                   <DropdownMenuItem onClick={() => router.push("/profile")}>
-                    Profile & Listings
+                    Profile & Posts
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => void handleLogout()}>
@@ -294,12 +315,10 @@ export default function MarketplaceHeader({
             variant="highlight"
             size="sm"
             className="gap-1.5 rounded-full border border-highlight/55"
-            onClick={() =>
-              router.push(isAuthenticated ? "/profile" : "/login?next=/profile")
-            }
+            onClick={handleAddPost}
           >
             <User className="h-4 w-4" />
-            <span className="hidden sm:inline">My Listings</span>
+            <span className="hidden sm:inline">Add Post</span>
           </Button>
         </div>
       </div>

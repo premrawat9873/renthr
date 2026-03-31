@@ -3,6 +3,7 @@ import {
   FLUSH,
   PAUSE,
   PERSIST,
+  type PersistConfig,
   PURGE,
   REGISTER,
   REHYDRATE,
@@ -10,6 +11,7 @@ import {
   persistStore,
 } from "redux-persist";
 import createWebStorage from "redux-persist/lib/storage/createWebStorage";
+import autoMergeLevel2 from "redux-persist/lib/stateReconciler/autoMergeLevel2";
 import marketplaceReducer from "@/store/slices/marketplaceSlice";
 import wishlistReducer from "@/store/slices/wishlistSlice";
 import authReducer from "@/store/slices/authSlice";
@@ -34,9 +36,12 @@ const rootReducer = combineReducers({
   auth: authReducer,
 });
 
-const persistConfig = {
+export type RootState = ReturnType<typeof rootReducer>;
+
+const persistConfig: PersistConfig<RootState> = {
   key: "new-rent-app",
   storage,
+  stateReconciler: autoMergeLevel2,
   whitelist: ["marketplace", "wishlist", "auth"],
 };
 
@@ -54,6 +59,5 @@ export const store = configureStore({
 
 export const persistor = persistStore(store);
 
-export type RootState = ReturnType<typeof rootReducer>;
 export type AppStore = typeof store;
 export type AppDispatch = AppStore["dispatch"];

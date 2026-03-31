@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo, useCallback, useState, useSyncExternalStore } from 'react';
+import { useMemo, useCallback, useEffect, useState, useSyncExternalStore } from 'react';
+import dynamic from 'next/dynamic';
 import MarketplaceHeader from '@/components/marketplace/MarketplaceHeader';
 import CategorySection from '@/components/marketplace/CategorySection';
 import FilterBar from '@/components/marketplace/FilterBar';
@@ -14,7 +15,9 @@ import type { ListingFilter, Product, RentDuration } from '@/data/marketplaceDat
 import type { LocationData } from '@/components/marketplace/LocationSelector';
 import { MapPin } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
+import { useSupabaseAuth } from '@/lib/supabase-auth';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
+import { selectIsAuthenticated } from '@/store/slices/authSlice';
 import {
   MAX_PRICE,
   clearFilters as clearMarketplaceFilters,
@@ -42,6 +45,10 @@ import { useWishlistBootstrap } from '@/hooks/use-wishlist';
 
 const NEARBY_RADIUS_KM = 12;
 const PAGE_SIZE = 10;
+const PostListingFlowDialog = dynamic(
+  () => import('@/components/marketplace/PostListingFlowDialog'),
+  { ssr: false }
+);
 const subscribeHydration = () => () => {};
 const EMPTY_DURATIONS: RentDuration[] = [];
 const DEFAULT_PRICE_RANGE: [number, number] = [0, MAX_PRICE];
@@ -107,6 +114,23 @@ function getKnownCoordinates(rawLocation: string) {
   }
 
   return null;
+}
+
+const CATEGORY_FILTER_ALIASES: Record<string, string> = {
+  "home-appliances": "appliances",
+  "baby-kids": "baby",
+  kids: "baby",
+};
+
+function normalizeCategoryFilterKey(value: string) {
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+  return CATEGORY_FILTER_ALIASES[normalized] ?? normalized;
 }
 
 function normalizeDistanceForSorting(distance: number) {
@@ -257,11 +281,15 @@ export function MarketplacePageClient({
   initialHasMore,
 }: MarketplacePageClientProps) {
   useWishlistBootstrap();
+  const { status } = useSupabaseAuth();
   const dispatch = useAppDispatch();
   const [loadedProducts, setLoadedProducts] = useState<ListingProductPayload[]>(initialProducts);
   const [nextCursor, setNextCursor] = useState<string | null>(initialNextCursor);
   const [hasMorePages, setHasMorePages] = useState(initialHasMore);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasManualSortSelection, setHasManualSortSelection] = useState(false);
+  const [isPostFlowOpen, setIsPostFlowOpen] = useState(false);
+  const reduxAuthenticated = useAppSelector(selectIsAuthenticated);
   const location = useAppSelector(selectLocation);
   const userLocation = useAppSelector(selectUserLocation);
   const userCoords = useAppSelector(selectUserCoords);
@@ -273,6 +301,8 @@ export function MarketplacePageClient({
   const priceRange = useAppSelector(selectPriceRange);
   const hasActiveFilters = useAppSelector(selectHasActiveFilters);
   const isHydrated = useSyncExternalStore(subscribeHydration, () => true, () => false);
+  const authReady = isHydrated && status !== 'loading';
+  const isAuthenticated = authReady && (status === 'authenticated' || reduxAuthenticated);
 
   const safeLocation = isHydrated ? location : null;
   const safeUserLocation = isHydrated ? userLocation : null;
@@ -284,6 +314,26 @@ export function MarketplacePageClient({
   const safeSort = isHydrated ? sort : 'newest';
   const safePriceRange: [number, number] = isHydrated ? priceRange : DEFAULT_PRICE_RANGE;
   const safeHasActiveFilters = isHydrated ? hasActiveFilters : false;
+  const resolvedCoordsFromLocation = useMemo(() => {
+    if (!safeLocation) {
+      return null;
+    }
+
+    const knownCoords = getKnownCoordinates(safeLocation);
+    if (!knownCoords) {
+      return null;
+    }
+
+    return {
+      latitude: knownCoords.lat,
+      longitude: knownCoords.lng,
+    };
+  }, [safeLocation]);
+  const effectiveUserCoords = safeUserCoords ?? resolvedCoordsFromLocation;
+  const effectiveSort =
+    isHydrated && isAuthenticated && !hasManualSortSelection && safeSort === 'newest'
+      ? 'distance'
+      : safeSort;
   const availableProducts = useMemo(
     () => loadedProducts.map(deserializeListingProduct),
     [loadedProducts]
@@ -381,18 +431,56 @@ export function MarketplacePageClient({
           dispatch(setLocation('Current location'));
         },
         () => {
-          dispatch(setUserCoords(null));
-          dispatch(setUserLocation(null));
+          const fallbackCoords = LOCATION_COORDINATES.bangalore;
+          dispatch(
+            setUserCoords({
+              latitude: fallbackCoords.lat,
+              longitude: fallbackCoords.lng,
+            })
+          );
+          dispatch(
+            setUserLocation({
+              city: 'Bangalore',
+              state: 'Karnataka',
+              latitude: fallbackCoords.lat,
+              longitude: fallbackCoords.lng,
+            })
+          );
           dispatch(setLocation('Bangalore'));
         },
         { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
       );
     } else {
-      dispatch(setUserCoords(null));
-      dispatch(setUserLocation(null));
+      const fallbackCoords = LOCATION_COORDINATES.bangalore;
+      dispatch(
+        setUserCoords({
+          latitude: fallbackCoords.lat,
+          longitude: fallbackCoords.lng,
+        })
+      );
+      dispatch(
+        setUserLocation({
+          city: 'Bangalore',
+          state: 'Karnataka',
+          latitude: fallbackCoords.lat,
+          longitude: fallbackCoords.lng,
+        })
+      );
       dispatch(setLocation('Bangalore'));
     }
   }, [dispatch]);
+
+  useEffect(() => {
+    if (!isHydrated || !isAuthenticated) {
+      return;
+    }
+
+    if (effectiveUserCoords || safeLocation) {
+      return;
+    }
+
+    requestLocation();
+  }, [effectiveUserCoords, isAuthenticated, isHydrated, requestLocation, safeLocation]);
 
   const handleManualLocation = useCallback((city: string) => {
     dispatch(setLocation(city));
@@ -408,11 +496,15 @@ export function MarketplacePageClient({
     dispatch(clearMarketplaceFilters());
   }, [dispatch]);
 
+  const openPostFlow = useCallback(() => {
+    setIsPostFlowOpen(true);
+  }, []);
+
   const filteredProducts = useMemo(() => {
     let results = [...availableProducts];
 
     results = results.map((product) => {
-      if (!safeUserCoords) return product;
+      if (!effectiveUserCoords) return product;
       const productCoords = getKnownCoordinates(product.location);
       if (!productCoords) {
         return {
@@ -423,7 +515,7 @@ export function MarketplacePageClient({
         };
       }
 
-      const computedDistance = haversineDistanceKm(safeUserCoords, productCoords);
+      const computedDistance = haversineDistanceKm(effectiveUserCoords, productCoords);
       return { ...product, distance: Number(computedDistance.toFixed(1)) };
     });
 
@@ -435,13 +527,16 @@ export function MarketplacePageClient({
     }
 
     if (safeSelectedCategory) {
-      results = results.filter((p) => p.category === safeSelectedCategory);
+      const selectedCategoryKey = normalizeCategoryFilterKey(safeSelectedCategory);
+      results = results.filter(
+        (p) => normalizeCategoryFilterKey(p.category) === selectedCategoryKey
+      );
     }
 
     if (safeFilter === 'rent') results = results.filter((p) => supportsRent(p));
     if (safeFilter === 'sell') results = results.filter((p) => supportsSell(p));
 
-    if (safeUserCoords) {
+    if (effectiveUserCoords) {
       const nearbyResults = results.filter(
         (p) => Number.isFinite(p.distance) && p.distance >= 0 && p.distance <= NEARBY_RADIUS_KM
       );
@@ -476,13 +571,13 @@ export function MarketplacePageClient({
       });
     }
 
-    if (safeSort === 'newest') {
+    if (effectiveSort === 'newest') {
       results.sort((a, b) => {
         const byTime = b.postedAt.getTime() - a.postedAt.getTime();
         return byTime !== 0 ? byTime : compareById(a.id, b.id);
       });
     }
-    if (safeSort === 'distance') {
+    if (effectiveSort === 'distance') {
       results.sort((a, b) => {
         const aDistance = normalizeDistanceForSorting(a.distance);
         const bDistance = normalizeDistanceForSorting(b.distance);
@@ -493,7 +588,7 @@ export function MarketplacePageClient({
         return byDistance !== 0 ? byDistance : compareById(a.id, b.id);
       });
     }
-    if (safeSort === 'price-asc') {
+    if (effectiveSort === 'price-asc') {
       results.sort((a, b) => {
         const pa = getComparablePrice(a, safeFilter) ?? Infinity;
         const pb = getComparablePrice(b, safeFilter) ?? Infinity;
@@ -501,7 +596,7 @@ export function MarketplacePageClient({
         return byPrice !== 0 ? byPrice : compareById(a.id, b.id);
       });
     }
-    if (safeSort === 'price-desc') {
+    if (effectiveSort === 'price-desc') {
       results.sort((a, b) => {
         const pa = getComparablePrice(a, safeFilter) ?? 0;
         const pb = getComparablePrice(b, safeFilter) ?? 0;
@@ -511,7 +606,7 @@ export function MarketplacePageClient({
     }
 
     return results;
-  }, [availableProducts, safeSearchQuery, safeSelectedCategory, safeFilter, safeRentDurations, safeSort, safePriceRange, safeUserCoords]);
+  }, [availableProducts, effectiveSort, effectiveUserCoords, safeFilter, safePriceRange, safeRentDurations, safeSearchQuery, safeSelectedCategory]);
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -521,6 +616,7 @@ export function MarketplacePageClient({
         onManualLocation={handleManualLocation}
         searchQuery={safeSearchQuery}
         onSearchChange={(query) => dispatch(setSearchQuery(query))}
+        onAddPost={openPostFlow}
       />
 
       <main className="container flex-1">
@@ -549,8 +645,11 @@ export function MarketplacePageClient({
           onFilterChange={(nextFilter) => dispatch(setFilter(nextFilter))}
           rentDurations={safeRentDurations}
           onRentDurationsChange={(durations) => dispatch(setRentDurations(durations))}
-          sort={safeSort}
-          onSortChange={(nextSort) => dispatch(setSort(nextSort))}
+          sort={effectiveSort}
+          onSortChange={(nextSort) => {
+            setHasManualSortSelection(true);
+            dispatch(setSort(nextSort));
+          }}
           hasActiveFilters={safeHasActiveFilters}
           onClearFilters={clearFilters}
           priceRange={safePriceRange}
@@ -569,6 +668,10 @@ export function MarketplacePageClient({
       </main>
 
       <Footer />
+
+      {isPostFlowOpen ? (
+        <PostListingFlowDialog open={isPostFlowOpen} onOpenChange={setIsPostFlowOpen} />
+      ) : null}
     </div>
   );
 }
