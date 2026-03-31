@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 
 import { resolveAuthenticatedUserId } from "@/lib/address-utils";
 import { prisma } from "@/lib/prisma";
@@ -75,6 +76,12 @@ export async function PATCH(
       data: { status: nextStatus },
       select: { id: true, status: true },
     });
+
+    revalidatePath("/home");
+    revalidatePath("/profile");
+    revalidatePath("/my-posts");
+    revalidatePath(`/profile/${listing.authorId}`);
+    revalidatePath(`/product/${updated.id}`);
 
     return NextResponse.json({
       id: String(updated.id),

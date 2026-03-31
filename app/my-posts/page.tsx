@@ -39,7 +39,9 @@ export default async function MyPostsPage() {
   }
 
   const products = currentUser.id
-    ? await getMarketplaceListingProductsByUserId(currentUser.id)
+    ? await getMarketplaceListingProductsByUserId(currentUser.id, {
+        includeInactive: true,
+      })
     : [];
 
   return (

@@ -33,10 +33,11 @@ async function ensureListingExists(listingId: number) {
 
 export async function POST(
   _request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const listingId = parseListingId(params.id);
+    const { id } = await params;
+    const listingId = parseListingId(id);
     if (!listingId) {
       return NextResponse.json({ error: "Invalid listing id." }, { status: 400 });
     }
@@ -83,10 +84,11 @@ export async function POST(
 
 export async function DELETE(
   _request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const listingId = parseListingId(params.id);
+    const { id } = await params;
+    const listingId = parseListingId(id);
     if (!listingId) {
       return NextResponse.json({ error: "Invalid listing id." }, { status: 400 });
     }

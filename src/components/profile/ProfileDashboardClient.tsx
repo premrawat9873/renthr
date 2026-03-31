@@ -122,6 +122,18 @@ function getListingBadge(product: Product) {
   return null;
 }
 
+function getDistanceSummary(distance: number) {
+  if (!Number.isFinite(distance) || distance < 0) {
+    return 'Distance unavailable';
+  }
+
+  if (distance === 0) {
+    return '0 km';
+  }
+
+  return `${distance.toFixed(1)} km`;
+}
+
 function getTabIcon(tab: TabKey) {
   if (tab === 'listings') return Package;
   if (tab === 'bookings') return Calendar;
@@ -220,6 +232,7 @@ export default function ProfileDashboardClient({
         `/api/listings/${encodeURIComponent(productId)}/availability`,
         {
           method: 'PATCH',
+          credentials: 'include',
           headers: {
             'Content-Type': 'application/json',
           },
@@ -248,6 +261,14 @@ export default function ProfileDashboardClient({
           ...current,
           [productId]: payload.available,
         }));
+
+        setListingItems((items) =>
+          items.map((item) =>
+            item.id === productId ? { ...item, isAvailable: payload.available } : item
+          )
+        );
+
+        router.refresh();
       }
     } catch {
       setAvailabilityById((current) => ({
@@ -501,10 +522,7 @@ export default function ProfileDashboardClient({
           const badge = getListingBadge(product);
           const isRent = product.type === 'rent' || product.type === 'both';
           const priceParts = getProductPriceParts(product);
-          const locationSummary =
-            product.distance > 0
-              ? `${product.location} · ${product.distance.toFixed(1)} km`
-              : `${product.location} · 0 km`;
+          const locationSummary = `${product.location} · ${getDistanceSummary(product.distance)}`;
 
           return (
             <article

@@ -23,7 +23,22 @@ interface HeaderProps {
   onSearchChange: (q: string) => void;
 }
 
-const CITIES = ["Mumbai", "Delhi", "Bangalore", "Hyderabad", "Chennai", "Pune", "Kolkata", "Ahmedabad", "Jaipur", "Lucknow"];
+const CITIES = [
+  "Mumbai",
+  "Delhi",
+  "Chandigarh",
+  "Faridabad",
+  "Noida",
+  "Gurgaon",
+  "Bangalore",
+  "Hyderabad",
+  "Chennai",
+  "Pune",
+  "Kolkata",
+  "Ahmedabad",
+  "Jaipur",
+  "Lucknow",
+];
 
 const subscribeHydration = () => () => {};
 

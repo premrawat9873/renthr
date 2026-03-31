@@ -131,7 +131,7 @@ function formatPostedAgo(postedAtIso: string) {
 
 function getDistanceLabel(distance: number) {
   if (!Number.isFinite(distance) || distance < 0) {
-    return 'Near you';
+    return 'Distance unavailable';
   }
 
   if (distance === 0) {

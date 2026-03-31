@@ -17,6 +17,18 @@ interface Props {
   priority?: boolean;
 }
 
+function formatDistanceLabel(distance: number) {
+  if (!Number.isFinite(distance) || distance < 0) {
+    return 'Distance unavailable';
+  }
+
+  if (distance === 0) {
+    return '0 km';
+  }
+
+  return `${distance.toFixed(1)} km`;
+}
+
 export default function ProductCard({ product, rentDurations, priority = false }: Props) {
   const router = useRouter();
   const dispatch = useAppDispatch();
@@ -124,7 +136,7 @@ export default function ProductCard({ product, rentDurations, priority = false }
         <div className="flex items-center justify-between text-xs text-muted-foreground pt-1">
           <span className="flex items-center gap-1">
             <MapPin className="h-3 w-3" />
-            {product.location} · {product.distance} km
+            {product.location} · {formatDistanceLabel(product.distance)}
           </span>
           <span className="flex items-center gap-1">
             <Clock className="h-3 w-3" />

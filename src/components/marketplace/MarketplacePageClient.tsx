@@ -47,19 +47,75 @@ const EMPTY_DURATIONS: RentDuration[] = [];
 const DEFAULT_PRICE_RANGE: [number, number] = [0, MAX_PRICE];
 
 const LOCATION_COORDINATES: Record<string, { lat: number; lng: number }> = {
-  Bangalore: { lat: 12.9716, lng: 77.5946 },
-  Koramangala: { lat: 12.9352, lng: 77.6245 },
-  Indiranagar: { lat: 12.9719, lng: 77.6412 },
-  'HSR Layout': { lat: 12.9116, lng: 77.6474 },
-  Whitefield: { lat: 12.9698, lng: 77.75 },
-  'MG Road': { lat: 12.9755, lng: 77.6067 },
-  Jayanagar: { lat: 12.9279, lng: 77.5938 },
-  'BTM Layout': { lat: 12.9166, lng: 77.6101 },
-  'Electronic City': { lat: 12.8399, lng: 77.677 },
-  Marathahalli: { lat: 12.9591, lng: 77.6974 },
-  Hebbal: { lat: 13.0358, lng: 77.597 },
-  'Sarjapur Road': { lat: 12.901, lng: 77.686 },
+  bangalore: { lat: 12.9716, lng: 77.5946 },
+  bengaluru: { lat: 12.9716, lng: 77.5946 },
+  koramangala: { lat: 12.9352, lng: 77.6245 },
+  indiranagar: { lat: 12.9719, lng: 77.6412 },
+  "hsr layout": { lat: 12.9116, lng: 77.6474 },
+  whitefield: { lat: 12.9698, lng: 77.75 },
+  "mg road": { lat: 12.9755, lng: 77.6067 },
+  jayanagar: { lat: 12.9279, lng: 77.5938 },
+  "btm layout": { lat: 12.9166, lng: 77.6101 },
+  "electronic city": { lat: 12.8399, lng: 77.677 },
+  marathahalli: { lat: 12.9591, lng: 77.6974 },
+  hebbal: { lat: 13.0358, lng: 77.597 },
+  "sarjapur road": { lat: 12.901, lng: 77.686 },
+  delhi: { lat: 28.6139, lng: 77.209 },
+  "new delhi": { lat: 28.6139, lng: 77.209 },
+  chandigarh: { lat: 30.7333, lng: 76.7794 },
+  faridabad: { lat: 28.4089, lng: 77.3178 },
+  noida: { lat: 28.5355, lng: 77.391 },
+  gurgaon: { lat: 28.4595, lng: 77.0266 },
+  gurugram: { lat: 28.4595, lng: 77.0266 },
+  mumbai: { lat: 19.076, lng: 72.8777 },
+  pune: { lat: 18.5204, lng: 73.8567 },
+  hyderabad: { lat: 17.385, lng: 78.4867 },
+  chennai: { lat: 13.0827, lng: 80.2707 },
+  kolkata: { lat: 22.5726, lng: 88.3639 },
+  ahmedabad: { lat: 23.0225, lng: 72.5714 },
+  jaipur: { lat: 26.9124, lng: 75.7873 },
+  lucknow: { lat: 26.8467, lng: 80.9462 },
 };
+
+function normalizeLocationKey(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function getLocationCandidates(rawLocation: string) {
+  const normalized = rawLocation.trim();
+  if (!normalized) {
+    return [] as string[];
+  }
+
+  const segments = normalized
+    .split(',')
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0);
+
+  const primary = segments[0] ?? normalized;
+  return Array.from(new Set([normalized, primary]));
+}
+
+function getKnownCoordinates(rawLocation: string) {
+  const candidates = getLocationCandidates(rawLocation);
+
+  for (const candidate of candidates) {
+    const match = LOCATION_COORDINATES[normalizeLocationKey(candidate)];
+    if (match) {
+      return match;
+    }
+  }
+
+  return null;
+}
+
+function normalizeDistanceForSorting(distance: number) {
+  if (!Number.isFinite(distance) || distance < 0) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  return distance;
+}
 
 function toRad(value: number) {
   return (value * Math.PI) / 180;
@@ -340,8 +396,7 @@ export function MarketplacePageClient({
 
   const handleManualLocation = useCallback((city: string) => {
     dispatch(setLocation(city));
-    const normalizedCity = city.split(',')[0].trim();
-    const knownCoords = LOCATION_COORDINATES[normalizedCity];
+    const knownCoords = getKnownCoordinates(city);
     if (knownCoords) {
       dispatch(setUserCoords({ latitude: knownCoords.lat, longitude: knownCoords.lng }));
       return;
@@ -358,8 +413,15 @@ export function MarketplacePageClient({
 
     results = results.map((product) => {
       if (!safeUserCoords) return product;
-      const productCoords = LOCATION_COORDINATES[product.location];
-      if (!productCoords) return product;
+      const productCoords = getKnownCoordinates(product.location);
+      if (!productCoords) {
+        return {
+          ...product,
+          distance: Number.isFinite(product.distance) && product.distance >= 0
+            ? product.distance
+            : -1,
+        };
+      }
 
       const computedDistance = haversineDistanceKm(safeUserCoords, productCoords);
       return { ...product, distance: Number(computedDistance.toFixed(1)) };
@@ -380,11 +442,21 @@ export function MarketplacePageClient({
     if (safeFilter === 'sell') results = results.filter((p) => supportsSell(p));
 
     if (safeUserCoords) {
-      const nearbyResults = results.filter((p) => p.distance <= NEARBY_RADIUS_KM);
+      const nearbyResults = results.filter(
+        (p) => Number.isFinite(p.distance) && p.distance >= 0 && p.distance <= NEARBY_RADIUS_KM
+      );
       if (nearbyResults.length > 0) {
         results = nearbyResults;
       }
-      results.sort((a, b) => a.distance - b.distance);
+      results.sort((a, b) => {
+        const aDistance = normalizeDistanceForSorting(a.distance);
+        const bDistance = normalizeDistanceForSorting(b.distance);
+        if (aDistance === bDistance) {
+          return compareById(a.id, b.id);
+        }
+        const byDistance = aDistance - bDistance;
+        return byDistance !== 0 ? byDistance : compareById(a.id, b.id);
+      });
     }
 
     if (safeFilter === 'rent' && safeRentDurations.length > 0) {
@@ -412,7 +484,12 @@ export function MarketplacePageClient({
     }
     if (safeSort === 'distance') {
       results.sort((a, b) => {
-        const byDistance = a.distance - b.distance;
+        const aDistance = normalizeDistanceForSorting(a.distance);
+        const bDistance = normalizeDistanceForSorting(b.distance);
+        if (aDistance === bDistance) {
+          return compareById(a.id, b.id);
+        }
+        const byDistance = aDistance - bDistance;
         return byDistance !== 0 ? byDistance : compareById(a.id, b.id);
       });
     }

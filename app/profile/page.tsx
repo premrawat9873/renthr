@@ -42,7 +42,9 @@ export default async function ProfilePage() {
   }
 
   const products = currentUser.id
-    ? await getMarketplaceListingProductsByUserId(currentUser.id)
+    ? await getMarketplaceListingProductsByUserId(currentUser.id, {
+        includeInactive: true,
+      })
     : [];
   const wishlistProducts = currentUser.id
     ? await getWishlistProductsByUserId(currentUser.id)

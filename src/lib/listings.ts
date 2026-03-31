@@ -71,6 +71,10 @@ type FindManyListingsPageOptions = {
   cursorId: number | null;
 };
 
+type ListingsByUserOptions = {
+  includeInactive?: boolean;
+};
+
 export type MarketplaceListingProductsPayloadPage = {
   products: ListingProductPayload[];
   nextCursor: string | null;
@@ -245,7 +249,7 @@ function mapListingRecordToProduct(record: ListingRecord): Product {
     image: normalizedImages.primaryImage,
     images: normalizedImages.images,
     location: formatListingLocation(record.address),
-    distance: 0,
+    distance: -1,
     isAvailable: record.status === "ACTIVE",
     postedAt: record.createdAt,
     featured: record.featured,
@@ -301,13 +305,20 @@ async function findManyListingsPage({
   });
 }
 
-async function findManyListingsByAuthorId(authorId: number) {
+async function findManyListingsByAuthorId(
+  authorId: number,
+  options: ListingsByUserOptions = {}
+) {
+  const includeInactive = options.includeInactive ?? false;
+
   return prisma.post.findMany({
     where: {
       authorId,
-      status: {
-        in: ["ACTIVE", "INACTIVE"],
-      },
+      status: includeInactive
+        ? {
+            in: ["ACTIVE", "INACTIVE"],
+          }
+        : "ACTIVE",
       publishedAt: {
         not: null,
       },
@@ -394,7 +405,8 @@ export async function getMarketplaceListingProductsPayloadPage(
 }
 
 export async function getMarketplaceListingProductsByUserId(
-  userId: number | string
+  userId: number | string,
+  options: ListingsByUserOptions = {}
 ) {
   const parsedUserId =
     typeof userId === "number" ? userId : Number.parseInt(userId, 10);
@@ -402,9 +414,11 @@ export async function getMarketplaceListingProductsByUserId(
     return [];
   }
 
+  const includeInactive = options.includeInactive ?? false;
+
   const records = await withDatabaseReadFallback(
     "getMarketplaceListingProductsByUserId",
-    () => findManyListingsByAuthorId(parsedUserId),
+    () => findManyListingsByAuthorId(parsedUserId, { includeInactive }),
     [] as ListingRecord[]
   );
   return records.map(mapListingRecordToProduct);
