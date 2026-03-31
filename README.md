@@ -27,9 +27,11 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY="<your-anon-key>"
 - Email/password provider enabled.
 - OAuth providers (Google/Facebook) enabled if you want social login.
 
-3. Add redirect URL in Supabase Auth settings:
+3. Redirect URLs to configure (keep both local and prod):
 
-- `http://localhost:3000`
+- Local dev: `http://localhost:3000` and `http://localhost:3000/auth/callback`
+- Production Supabase Auth: `https://renthour.in/auth/callback` and set **Site URL** to `https://renthour.in`
+- Production NextAuth (Google): `https://renthour.in/api/auth/callback/google`; set `NEXTAUTH_URL` and `NEXT_PUBLIC_SITE_URL` to `https://renthour.in`
 
 After saving env vars, restart the dev server.
 

@@ -5,6 +5,17 @@ import GoogleProvider from "next-auth/providers/google";
 import { verifyPassword } from "@/lib/password";
 import { prisma } from "@/lib/prisma";
 
+// Derive a sensible NEXTAUTH_URL at runtime so production does not fall back to localhost.
+const derivedSiteUrl =
+  process.env.NEXTAUTH_URL ||
+  process.env.NEXT_PUBLIC_SITE_URL ||
+  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : undefined) ||
+  "http://localhost:3000";
+
+if (!process.env.NEXTAUTH_URL) {
+  process.env.NEXTAUTH_URL = derivedSiteUrl;
+}
+
 const providers: AuthOptions["providers"] = [
   CredentialsProvider({
     name: "credentials",
