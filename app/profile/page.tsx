@@ -3,7 +3,10 @@ import Link from 'next/link';
 
 import ProfileDashboardClient from '@/components/profile/ProfileDashboardClient';
 import { getCurrentUserInfo } from '@/lib/current-user';
-import { getMarketplaceListingProductsByUserId } from '@/lib/listings';
+import {
+  getMarketplaceListingProductsByUserId,
+  getWishlistProductsByUserId,
+} from '@/lib/listings';
 
 export const metadata: Metadata = {
   title: 'Profile',
@@ -41,6 +44,9 @@ export default async function ProfilePage() {
   const products = currentUser.id
     ? await getMarketplaceListingProductsByUserId(currentUser.id)
     : [];
+  const wishlistProducts = currentUser.id
+    ? await getWishlistProductsByUserId(currentUser.id)
+    : [];
   const displayName = currentUser.name || currentUser.email.split('@')[0] || 'User';
   const cityLabel = products[0]?.location || 'Location not set';
   const joinedLabel = 'Member on RentHour';
@@ -52,6 +58,7 @@ export default async function ProfilePage() {
       cityLabel={cityLabel}
       joinedLabel={joinedLabel}
       products={products}
+      wishlistProducts={wishlistProducts}
     />
   );
 }

@@ -1,11 +1,11 @@
-import { Search, MapPin, User, ChevronDown, X, Heart } from "lucide-react";
+import { Search, MapPin, User, ChevronDown, X, Heart, MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState, useRef, useEffect, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { logout, selectCurrentUser, selectIsAuthenticated } from "@/store/slices/authSlice";
-import { selectWishlistIds } from "@/store/slices/wishlistSlice";
+import { resetWishlistState, selectWishlistIds } from "@/store/slices/wishlistSlice";
 import { useSupabaseAuth } from "@/lib/supabase-auth";
 import {
   DropdownMenu,
@@ -75,6 +75,7 @@ export default function MarketplaceHeader({
 
     await clearCustomSessionCookie();
     dispatch(logout());
+    dispatch(resetWishlistState());
 
     router.push("/login");
   };
@@ -109,11 +110,11 @@ export default function MarketplaceHeader({
   };
 
   return (
-    <header className="sticky top-0 z-50 overflow-hidden border-b border-primary/20 bg-accent/45 shadow-[0_8px_22px_-18px_hsl(var(--primary)/0.45)] backdrop-blur-md supports-[backdrop-filter]:bg-accent/35">
+    <header className="sticky top-0 z-50 overflow-hidden border-b border-primary/15 bg-accent/30 shadow-[0_6px_18px_-16px_hsl(var(--primary)/0.45)] backdrop-blur-md supports-[backdrop-filter]:bg-accent/30">
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-primary/8 via-accent/14 to-primary/8" />
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,hsl(var(--primary)/0.08),transparent_62%)]" />
 
-      <div className="relative z-10 flex h-16 w-full items-center gap-2 pl-2 pr-3 md:gap-3 md:pl-3 md:pr-6">
+      <div className="relative z-10 flex h-14 md:h-[58px] w-full items-center gap-2 pl-2 pr-3 md:gap-3 md:pl-3 md:pr-5">
         {/* Logo */}
         <Link href="/home" className="flex items-center gap-1 shrink-0 rounded-full border border-primary/30 bg-background/45 px-2.5 py-1 backdrop-blur-sm">
           <span className="text-xl font-heading font-bold text-primary">rent</span>
@@ -126,7 +127,7 @@ export default function MarketplaceHeader({
         <div className="relative shrink-0" ref={dropRef}>
           <button
             onClick={() => setLocOpen(!locOpen)}
-            className="flex h-11 w-11 sm:w-[210px] lg:w-[250px] items-center justify-between gap-2 rounded-full border border-primary/25 bg-background/45 px-3 sm:px-4 text-sm text-foreground backdrop-blur-sm transition-colors duration-200 hover:border-primary/45"
+            className="flex h-10 w-10 sm:w-[210px] lg:w-[240px] items-center justify-between gap-2 rounded-full border border-primary/25 bg-background/45 px-3 sm:px-4 text-sm text-foreground backdrop-blur-sm transition-colors duration-200 hover:border-primary/45"
           >
             <span className="inline-flex items-center gap-2 truncate">
               <MapPin className="h-4 w-4 text-primary" />
@@ -218,10 +219,32 @@ export default function MarketplaceHeader({
 
         {/* Right Actions */}
         <div className="ml-auto flex items-center gap-2 shrink-0">
-          <button className="hidden md:flex flex-col items-center justify-center text-[11px] leading-none text-primary hover:text-primary/80 transition-colors min-w-[48px]">
+          <button
+            onClick={() =>
+              router.push(
+                isAuthenticated ? "/profile" : "/login?next=/profile"
+              )
+            }
+            className="hidden md:flex flex-col items-center justify-center text-[11px] leading-none text-primary hover:text-primary/80 transition-colors min-w-[48px]"
+          >
             <Heart className="h-4 w-4 mb-1" />
             {wishlistCount > 0 ? `Wishlist (${wishlistCount})` : "Wishlist"}
           </button>
+
+          <Button
+            variant="ghost"
+            size="sm"
+            className="inline-flex items-center gap-1.5 h-9 rounded-full border border-primary/25 bg-background/45 px-3 text-xs font-medium text-primary backdrop-blur-sm transition-colors hover:border-primary/40 hover:bg-background/55"
+            onClick={() =>
+              router.push(
+                isAuthenticated ? "/messages" : "/login?next=/messages"
+              )
+            }
+          >
+            <MessageCircle className="h-4 w-4" />
+            <span className="hidden lg:inline">Messages</span>
+            <span className="lg:hidden">Chat</span>
+          </Button>
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -267,7 +290,7 @@ export default function MarketplaceHeader({
       </div>
 
       {/* Mobile Search */}
-      <div className="sm:hidden px-4 pb-3">
+      <div className="sm:hidden px-4 pb-2">
         <div className="relative">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <input

@@ -43,8 +43,13 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { toast } from '@/hooks/use-toast';
+import { useWishlistBootstrap } from '@/hooks/use-wishlist';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
-import { selectIsWishlisted, toggleWishlist } from '@/store/slices/wishlistSlice';
+import {
+  selectIsWishlisted,
+  selectWishlistPendingIds,
+  toggleWishlistOnServer,
+} from '@/store/slices/wishlistSlice';
 
 const CATEGORY_ITEMS = [
   { id: 'all', label: 'All Categories', icon: LayoutGrid },
@@ -153,7 +158,10 @@ function getOwnerInitials(name: string) {
 export default function ProductDetailClient({ product }: { product: ListingProductPayload }) {
   const router = useRouter();
   const dispatch = useAppDispatch();
+  useWishlistBootstrap();
   const liked = useAppSelector((state) => selectIsWishlisted(state, product.id));
+  const wishlistPendingIds = useAppSelector(selectWishlistPendingIds);
+  const isUpdatingWishlist = wishlistPendingIds.includes(product.id);
 
   const [activeCategory, setActiveCategory] = useState<string>('all');
   const [activeImageIndex, setActiveImageIndex] = useState(0);
@@ -401,8 +409,25 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => dispatch(toggleWishlist(product.id))}
-              className="group text-muted-foreground transition-all duration-200 hover:bg-accent/70 hover:text-foreground"
+              onClick={async () => {
+                const result = await dispatch(
+                  toggleWishlistOnServer({ productId: product.id, like: !liked })
+                );
+
+                if (toggleWishlistOnServer.rejected.match(result)) {
+                  const description =
+                    result.payload?.message || 'Please log in to save items.';
+
+                  toast({
+                    title: 'Could not update wishlist',
+                    description,
+                    variant: 'destructive',
+                  });
+                }
+              }}
+              disabled={isUpdatingWishlist}
+              aria-busy={isUpdatingWishlist}
+              className="group text-muted-foreground transition-all duration-200 hover:bg-accent/70 hover:text-foreground disabled:opacity-60"
             >
               <Heart
                 className={cn(
@@ -629,7 +654,7 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
                 ) : (
                   <MessageCircle className="h-4 w-4" />
                 )}
-                {isOpeningChat ? 'Opening chat...' : 'Message Seller'}
+                {isOpeningChat ? 'Opening chat...' : 'Message'}
               </Button>
             </section>
 

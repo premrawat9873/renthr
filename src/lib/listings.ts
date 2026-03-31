@@ -18,6 +18,7 @@ const listingSelect = {
   id: true,
   title: true,
   description: true,
+  status: true,
   category: {
     select: {
       name: true,
@@ -245,6 +246,7 @@ function mapListingRecordToProduct(record: ListingRecord): Product {
     images: normalizedImages.images,
     location: formatListingLocation(record.address),
     distance: 0,
+    isAvailable: record.status === "ACTIVE",
     postedAt: record.createdAt,
     featured: record.featured,
     reviewCount:
@@ -303,7 +305,9 @@ async function findManyListingsByAuthorId(authorId: number) {
   return prisma.post.findMany({
     where: {
       authorId,
-      status: "ACTIVE",
+      status: {
+        in: ["ACTIVE", "INACTIVE"],
+      },
       publishedAt: {
         not: null,
       },
@@ -312,6 +316,30 @@ async function findManyListingsByAuthorId(authorId: number) {
       createdAt: "desc",
     },
     select: listingSelect,
+  });
+}
+
+async function findWishlistListingsByUserId(userId: number) {
+  return prisma.wishlistItem.findMany({
+    where: {
+      userId,
+      post: {
+        publishedAt: {
+          not: null,
+        },
+        status: {
+          in: ["ACTIVE", "INACTIVE"],
+        },
+      },
+    },
+    orderBy: {
+      createdAt: "desc",
+    },
+    select: {
+      post: {
+        select: listingSelect,
+      },
+    },
   });
 }
 
@@ -382,10 +410,36 @@ export async function getMarketplaceListingProductsByUserId(
   return records.map(mapListingRecordToProduct);
 }
 
+export async function getWishlistProductsByUserId(userId: number | string) {
+  const parsedUserId =
+    typeof userId === "number" ? userId : Number.parseInt(userId, 10);
+  if (!Number.isFinite(parsedUserId) || parsedUserId <= 0) {
+    return [];
+  }
+
+  const records = await withDatabaseReadFallback(
+    "getWishlistProductsByUserId",
+    () => findWishlistListingsByUserId(parsedUserId),
+    [] as Array<{ post: ListingRecord | null }>
+  );
+
+  return records
+    .map((item) => item.post)
+    .filter((post): post is ListingRecord => Boolean(post))
+    .map(mapListingRecordToProduct);
+}
+
 export async function getMarketplaceListingProductsPayloadByUserId(
   userId: number | string
 ) {
   const products = await getMarketplaceListingProductsByUserId(userId);
+  return products.map(serializeListingProduct);
+}
+
+export async function getWishlistProductPayloadByUserId(
+  userId: number | string
+) {
+  const products = await getWishlistProductsByUserId(userId);
   return products.map(serializeListingProduct);
 }
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -20,13 +20,36 @@ import {
   Plus,
   TrendingUp,
   Award,
+  MessageCircle,
+  MoreVertical,
+  Pencil,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
 import PostListingFlowDialog from '@/components/marketplace/PostListingFlowDialog';
-import type { Product } from '@/data/marketplaceData';
+import ProductCard from '@/components/marketplace/ProductCard';
+import type { Product, RentDuration } from '@/data/marketplaceData';
 import { formatPrice, formatTimeAgo } from '@/data/marketplaceData';
+import { toast } from '@/hooks/use-toast';
+import { useWishlistBootstrap, useHydrateWishlist } from '@/hooks/use-wishlist';
 import { cn } from '@/lib/utils';
 
 type TabKey = 'listings' | 'bookings' | 'wishlist' | 'settings';
@@ -37,6 +60,16 @@ type ProfileDashboardClientProps = {
   cityLabel: string;
   joinedLabel: string;
   products: Product[];
+  wishlistProducts: Product[];
+};
+
+type ListingEditForm = {
+  productId: string;
+  title: string;
+  description: string;
+  location: string;
+  sellPrice: string;
+  rentDailyPrice: string;
 };
 
 function getPrimaryRentPrice(product: Product) {
@@ -96,28 +129,55 @@ function getTabIcon(tab: TabKey) {
   return Settings;
 }
 
+const DEFAULT_WISHLIST_RENT_DURATIONS: RentDuration[] = ['hourly', 'daily', 'weekly', 'monthly'];
+
 export default function ProfileDashboardClient({
   displayName,
   email,
   cityLabel,
   joinedLabel,
   products,
+  wishlistProducts,
 }: ProfileDashboardClientProps) {
   const router = useRouter();
+  useWishlistBootstrap();
+  useHydrateWishlist(wishlistProducts.map((product) => product.id));
+  const [listingItems, setListingItems] = useState<Product[]>(products);
   const [activeTab, setActiveTab] = useState<TabKey>('listings');
   const [postFlowOpen, setPostFlowOpen] = useState(false);
   const [availabilityById, setAvailabilityById] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(products.map((product) => [product.id, true]))
+    Object.fromEntries(products.map((product) => [product.id, product.isAvailable ?? true]))
   );
+  const [savingAvailabilityId, setSavingAvailabilityId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [editingForm, setEditingForm] = useState<ListingEditForm | null>(null);
+  const [savingEditId, setSavingEditId] = useState<string | null>(null);
 
-  const totalListings = products.length;
-  const totalRentals = products.filter(
+  const editingProduct = useMemo(() => {
+    if (!editingForm) {
+      return null;
+    }
+
+    return listingItems.find((item) => item.id === editingForm.productId) ?? null;
+  }, [editingForm, listingItems]);
+
+  useEffect(() => {
+    setListingItems(products);
+    setAvailabilityById(
+      Object.fromEntries(
+        products.map((product) => [product.id, product.isAvailable ?? true])
+      )
+    );
+  }, [products]);
+
+  const totalListings = listingItems.length;
+  const totalRentals = listingItems.filter(
     (product) => product.type === 'rent' || product.type === 'both'
   ).length;
-  const totalReviews = products.reduce((sum, product) => sum + (product.reviewCount ?? 0), 0);
+  const totalReviews = listingItems.reduce((sum, product) => sum + (product.reviewCount ?? 0), 0);
 
   const averageRating = useMemo(() => {
-    const ratingValues = products
+    const ratingValues = listingItems
       .map((product) => product.rating)
       .filter((rating): rating is number => typeof rating === 'number');
 
@@ -127,7 +187,7 @@ export default function ProfileDashboardClient({
 
     const total = ratingValues.reduce((sum, rating) => sum + rating, 0);
     return total / ratingValues.length;
-  }, [products]);
+  }, [listingItems]);
 
   const tabs: Array<{ key: TabKey; label: string }> = [
     { key: 'listings', label: 'My Listings' },
@@ -145,11 +205,257 @@ export default function ProfileDashboardClient({
     router.push('/home');
   };
 
-  const toggleAvailability = (productId: string) => {
+  const toggleAvailability = async (productId: string) => {
+    const currentAvailable = availabilityById[productId] ?? true;
+    const nextAvailable = !currentAvailable;
+
     setAvailabilityById((current) => ({
       ...current,
-      [productId]: !current[productId],
+      [productId]: nextAvailable,
     }));
+    setSavingAvailabilityId(productId);
+
+    try {
+      const response = await fetch(
+        `/api/listings/${encodeURIComponent(productId)}/availability`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ available: nextAvailable }),
+        }
+      );
+
+      const payload = (await response.json().catch(() => null)) as
+        | { available?: boolean; error?: string }
+        | null;
+
+      if (!response.ok) {
+        setAvailabilityById((current) => ({
+          ...current,
+          [productId]: currentAvailable,
+        }));
+
+        toast({
+          title: 'Could not update availability',
+          description:
+            (payload?.error as string) || 'Please try again in a moment.',
+          variant: 'destructive',
+        });
+      } else if (typeof payload?.available === 'boolean') {
+        setAvailabilityById((current) => ({
+          ...current,
+          [productId]: payload.available,
+        }));
+      }
+    } catch {
+      setAvailabilityById((current) => ({
+        ...current,
+        [productId]: currentAvailable,
+      }));
+
+      toast({
+        title: 'Could not update availability',
+        description: 'Please check your network and try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSavingAvailabilityId(null);
+    }
+  };
+
+  const handleDeleteListing = async (productId: string) => {
+    const confirmed = typeof window !== 'undefined' ? window.confirm('Delete this listing? This cannot be undone.') : false;
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingId(productId);
+
+    try {
+      const response = await fetch(`/api/listings/${encodeURIComponent(productId)}`, {
+        method: 'DELETE',
+      });
+
+      const payload = (await response.json().catch(() => null)) as { error?: string; deleted?: boolean } | null;
+
+      if (!response.ok) {
+        toast({
+          title: 'Could not delete listing',
+          description: (payload?.error as string) || 'Please try again in a moment.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      setListingItems((items) => items.filter((item) => item.id !== productId));
+      setAvailabilityById((current) => {
+        const next = { ...current };
+        delete next[productId];
+        return next;
+      });
+
+      toast({
+        title: 'Listing deleted',
+        description: 'Your listing has been removed.',
+      });
+    } catch {
+      toast({
+        title: 'Could not delete listing',
+        description: 'Please check your network and try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const openEditDialog = (product: Product) => {
+    setEditingForm({
+      productId: product.id,
+      title: product.title,
+      description: product.description ?? '',
+      location: product.location,
+      sellPrice: product.price != null ? String(product.price) : '',
+      rentDailyPrice:
+        product.rentPrices?.daily != null
+          ? String(product.rentPrices.daily)
+          : '',
+    });
+  };
+
+  const handleSaveListingEdit = async () => {
+    if (!editingForm) {
+      return;
+    }
+
+    const title = editingForm.title.trim();
+    const description = editingForm.description.trim();
+    const location = editingForm.location.trim();
+
+    if (title.length < 3) {
+      toast({
+        title: 'Title is too short',
+        description: 'Title must be at least 3 characters.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (description.length < 10) {
+      toast({
+        title: 'Description is too short',
+        description: 'Description must be at least 10 characters.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (location.length < 2) {
+      toast({
+        title: 'Location is required',
+        description: 'Location must be at least 2 characters.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setSavingEditId(editingForm.productId);
+
+    try {
+      const requestBody: {
+        title: string;
+        description: string;
+        location: string;
+        sellPrice?: string;
+        rentDailyPrice?: string;
+      } = {
+        title,
+        description,
+        location,
+      };
+
+      if (editingProduct?.type === 'sell' || editingProduct?.type === 'both') {
+        requestBody.sellPrice = editingForm.sellPrice;
+      }
+
+      if (editingProduct?.type === 'rent' || editingProduct?.type === 'both') {
+        requestBody.rentDailyPrice = editingForm.rentDailyPrice;
+      }
+
+      const response = await fetch(
+        `/api/listings/${encodeURIComponent(editingForm.productId)}`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(requestBody),
+        }
+      );
+
+      const payload = (await response.json().catch(() => null)) as
+        | {
+            error?: string;
+            listing?: {
+              id: string;
+              title: string;
+              description: string;
+              location: string;
+              price: number | null;
+              rentPrices: {
+                hourly: number | null;
+                daily: number | null;
+                weekly: number | null;
+                monthly: number | null;
+              } | null;
+            };
+          }
+        | null;
+
+      if (!response.ok || !payload?.listing) {
+        toast({
+          title: 'Could not update listing',
+          description:
+            (payload?.error as string) || 'Please try again in a moment.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      setListingItems((items) =>
+        items.map((item) => {
+          if (item.id !== payload.listing?.id) {
+            return item;
+          }
+
+          return {
+            ...item,
+            title: payload.listing.title,
+            description: payload.listing.description,
+            location: payload.listing.location,
+            price: payload.listing.price,
+            rentPrices: payload.listing.rentPrices,
+          };
+        })
+      );
+
+      toast({
+        title: 'Listing updated',
+        description: 'Your listing details were saved.',
+      });
+
+      setEditingForm(null);
+    } catch {
+      toast({
+        title: 'Could not update listing',
+        description: 'Please check your network and try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSavingEditId(null);
+    }
   };
 
   const renderListingsGrid = () => {
@@ -190,8 +496,8 @@ export default function ProfileDashboardClient({
           </div>
         </div>
 
-        {products.map((product) => {
-          const isAvailable = availabilityById[product.id] ?? true;
+        {listingItems.map((product) => {
+          const isAvailable = availabilityById[product.id] ?? product.isAvailable ?? true;
           const badge = getListingBadge(product);
           const isRent = product.type === 'rent' || product.type === 'both';
           const priceParts = getProductPriceParts(product);
@@ -201,8 +507,11 @@ export default function ProfileDashboardClient({
               : `${product.location} · 0 km`;
 
           return (
-            <Link key={product.id} href={`/product/${product.id}`}>
-              <article className="group overflow-hidden rounded-2xl border border-border/55 bg-card shadow-[0_2px_10px_-8px_hsl(var(--foreground)/0.35)] transition-all duration-300 hover:-translate-y-1 hover:border-primary/20 hover:shadow-[0_20px_32px_-22px_hsl(var(--foreground)/0.5)]">
+            <article
+              key={product.id}
+              onClick={() => router.push(`/product/${product.id}`)}
+              className="group cursor-pointer overflow-hidden rounded-2xl border border-border/55 bg-card shadow-[0_2px_10px_-8px_hsl(var(--foreground)/0.35)] transition-all duration-300 hover:-translate-y-1 hover:border-primary/20 hover:shadow-[0_20px_32px_-22px_hsl(var(--foreground)/0.5)]"
+            >
                 <div className="relative aspect-[4/3] overflow-hidden">
                   <Image
                     src={product.image}
@@ -223,6 +532,47 @@ export default function ProfileDashboardClient({
                         Featured
                       </span>
                     )}
+                  </div>
+
+                  <div
+                    className="absolute right-3 top-3 z-10"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                    }}
+                  >
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          type="button"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-border/60 bg-card/90 text-foreground shadow-sm backdrop-blur-sm transition-colors hover:bg-card"
+                          aria-label="Listing actions"
+                        >
+                          <MoreVertical className="h-4 w-4" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-40">
+                        <DropdownMenuItem
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            openEditDialog(product);
+                          }}
+                          disabled={savingEditId === product.id}
+                        >
+                          <Pencil className="mr-2 h-4 w-4" />
+                          Edit info
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void handleDeleteListing(product.id);
+                          }}
+                          disabled={deletingId === product.id}
+                          className="text-destructive focus:text-destructive"
+                        >
+                          Delete listing
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
 
                   {badge && (
@@ -275,23 +625,29 @@ export default function ProfileDashboardClient({
                   </div>
 
                   <div
-                    className="flex items-center justify-between border-t border-border/50 pt-2"
+                    className="flex items-center justify-between gap-2 border-t border-border/50 pt-2"
                     onClick={(event) => {
-                      event.preventDefault();
+                      event.stopPropagation();
                     }}
                   >
                     <span className={cn('text-sm font-medium', isAvailable ? 'text-primary' : 'text-muted-foreground')}>
                       {isAvailable ? 'Available' : 'Unavailable'}
                     </span>
-                    <Switch
-                      checked={isAvailable}
-                      onCheckedChange={() => toggleAvailability(product.id)}
-                      className="data-[state=checked]:bg-primary"
-                    />
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        checked={isAvailable}
+                        onCheckedChange={() => void toggleAvailability(product.id)}
+                        disabled={savingAvailabilityId === product.id}
+                        aria-busy={savingAvailabilityId === product.id}
+                        className="data-[state=checked]:bg-primary"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                        }}
+                      />
+                    </div>
                   </div>
                 </div>
               </article>
-            </Link>
           );
         })}
       </div>
@@ -312,9 +668,23 @@ export default function ProfileDashboardClient({
     }
 
     if (activeTab === 'wishlist') {
+      if (wishlistProducts.length === 0) {
+        return (
+          <div className="rounded-2xl border border-border/50 bg-card p-12 text-center shadow-sm">
+            <p className="text-muted-foreground">Items you&apos;ve saved will appear here</p>
+          </div>
+        );
+      }
+
       return (
-        <div className="rounded-2xl border border-border/50 bg-card p-12 text-center shadow-sm">
-          <p className="text-muted-foreground">Items you&apos;ve saved will appear here</p>
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {wishlistProducts.map((product) => (
+            <ProductCard
+              key={product.id}
+              product={product}
+              rentDurations={DEFAULT_WISHLIST_RENT_DURATIONS}
+            />
+          ))}
         </div>
       );
     }
@@ -357,6 +727,15 @@ export default function ProfileDashboardClient({
             >
               <Share2 className="mr-1.5 h-4 w-4" />
               <span className="hidden sm:inline">Share</span>
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => router.push('/messages')}
+              className="text-muted-foreground transition-all duration-200 hover:bg-accent/70 hover:text-foreground"
+            >
+              <MessageCircle className="mr-1.5 h-4 w-4" />
+              <span className="hidden sm:inline">Messages</span>
             </Button>
             <Button
               variant="ghost"
@@ -484,6 +863,141 @@ export default function ProfileDashboardClient({
 
         {renderTabContent()}
       </div>
+
+      <Dialog
+        open={Boolean(editingForm)}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen && !savingEditId) {
+            setEditingForm(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Edit listing info</DialogTitle>
+            <DialogDescription>
+              Update your listing details. Changes are saved instantly.
+            </DialogDescription>
+          </DialogHeader>
+
+          {editingForm && (
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="listing-title">Title</Label>
+                <Input
+                  id="listing-title"
+                  value={editingForm.title}
+                  onChange={(event) =>
+                    setEditingForm((current) =>
+                      current
+                        ? {
+                            ...current,
+                            title: event.target.value,
+                          }
+                        : current
+                    )
+                  }
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="listing-description">Description</Label>
+                <Textarea
+                  id="listing-description"
+                  value={editingForm.description}
+                  onChange={(event) =>
+                    setEditingForm((current) =>
+                      current
+                        ? {
+                            ...current,
+                            description: event.target.value,
+                          }
+                        : current
+                    )
+                  }
+                  className="min-h-[110px]"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="listing-location">Location</Label>
+                <Input
+                  id="listing-location"
+                  value={editingForm.location}
+                  onChange={(event) =>
+                    setEditingForm((current) =>
+                      current
+                        ? {
+                            ...current,
+                            location: event.target.value,
+                          }
+                        : current
+                    )
+                  }
+                />
+              </div>
+
+              {(editingProduct?.type === 'sell' || editingProduct?.type === 'both') && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="listing-sell-price">Sell price (INR)</Label>
+                  <Input
+                    id="listing-sell-price"
+                    inputMode="decimal"
+                    value={editingForm.sellPrice}
+                    onChange={(event) =>
+                      setEditingForm((current) =>
+                        current
+                          ? {
+                              ...current,
+                              sellPrice: event.target.value,
+                            }
+                          : current
+                      )
+                    }
+                  />
+                </div>
+              )}
+
+              {(editingProduct?.type === 'rent' || editingProduct?.type === 'both') && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="listing-rent-daily">Daily rent (INR)</Label>
+                  <Input
+                    id="listing-rent-daily"
+                    inputMode="decimal"
+                    value={editingForm.rentDailyPrice}
+                    onChange={(event) =>
+                      setEditingForm((current) =>
+                        current
+                          ? {
+                              ...current,
+                              rentDailyPrice: event.target.value,
+                            }
+                          : current
+                      )
+                    }
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setEditingForm(null)}
+              disabled={Boolean(savingEditId)}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => void handleSaveListingEdit()}
+              disabled={Boolean(savingEditId)}
+            >
+              {savingEditId ? 'Saving...' : 'Save changes'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <PostListingFlowDialog open={postFlowOpen} onOpenChange={setPostFlowOpen} />
     </main>

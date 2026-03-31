@@ -38,6 +38,7 @@ import {
   setUserCoords,
   setUserLocation,
 } from '@/store/slices/marketplaceSlice';
+import { useWishlistBootstrap } from '@/hooks/use-wishlist';
 
 const NEARBY_RADIUS_KM = 12;
 const PAGE_SIZE = 10;
@@ -199,6 +200,7 @@ export function MarketplacePageClient({
   initialNextCursor,
   initialHasMore,
 }: MarketplacePageClientProps) {
+  useWishlistBootstrap();
   const dispatch = useAppDispatch();
   const [loadedProducts, setLoadedProducts] = useState<ListingProductPayload[]>(initialProducts);
   const [nextCursor, setNextCursor] = useState<string | null>(initialNextCursor);

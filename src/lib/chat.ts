@@ -57,17 +57,25 @@ function normalizeMessageContent(input: unknown) {
 }
 
 async function assertConversationMembership(conversationId: number, userId: number) {
-  const participant = await prisma.conversationParticipant.findFirst({
+  const conversation = await prisma.conversation.findFirst({
     where: {
-      conversationId,
-      userId,
+      id: conversationId,
+      type: 'LISTING',
+      postId: {
+        not: null,
+      },
+      participants: {
+        some: {
+          userId,
+        },
+      },
     },
     select: {
       id: true,
     },
   });
 
-  if (!participant) {
+  if (!conversation) {
     throw new ChatError(404, 'Conversation not found.');
   }
 }
@@ -118,6 +126,10 @@ export async function listChatConversationsForUser(
 ): Promise<ChatConversationPayload[]> {
   const conversations = await prisma.conversation.findMany({
     where: {
+      type: 'LISTING',
+      postId: {
+        not: null,
+      },
       participants: {
         some: {
           userId,
@@ -237,6 +249,10 @@ export async function startOrGetDirectConversation(input: {
   const { userId, recipientId } = input;
   const postId = input.postId ?? null;
 
+  if (!postId) {
+    throw new ChatError(400, 'postId is required to start a listing chat.');
+  }
+
   if (recipientId === userId) {
     throw new ChatError(400, 'You cannot start a chat with yourself.');
   }
@@ -254,23 +270,30 @@ export async function startOrGetDirectConversation(input: {
     throw new ChatError(404, 'Recipient user was not found.');
   }
 
-  if (postId) {
-    const post = await prisma.post.findUnique({
-      where: {
-        id: postId,
-      },
-      select: {
-        id: true,
-      },
-    });
+  const post = await prisma.post.findUnique({
+    where: {
+      id: postId,
+    },
+    select: {
+      id: true,
+      authorId: true,
+    },
+  });
 
-    if (!post) {
-      throw new ChatError(404, 'Listing was not found.');
-    }
+  if (!post) {
+    throw new ChatError(404, 'Listing was not found.');
+  }
+
+  if (post.authorId !== recipientId) {
+    throw new ChatError(
+      400,
+      'Messages for a listing can only be sent to the listing publisher.'
+    );
   }
 
   const candidates = await prisma.conversation.findMany({
     where: {
+      type: 'LISTING',
       postId,
       participants: {
         some: {
@@ -313,7 +336,7 @@ export async function startOrGetDirectConversation(input: {
     ? { id: existingConversation.id }
     : await prisma.conversation.create({
         data: {
-          type: postId ? 'LISTING' : 'DIRECT',
+          type: 'LISTING',
           postId,
           participants: {
             create: [{ userId }, { userId: recipientId }],

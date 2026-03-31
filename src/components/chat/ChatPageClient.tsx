@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
+  ArrowLeft,
   Loader2,
   MessageCircle,
   RefreshCw,
@@ -143,6 +144,15 @@ export default function ChatPageClient({
     : null;
 
   const activeMessages = activeMessagesPage?.messages ?? [];
+
+  const handleBack = () => {
+    if (typeof window !== 'undefined' && window.history.length > 1) {
+      router.back();
+      return;
+    }
+
+    router.push('/home');
+  };
 
   const loadConversations = useCallback(
     async (showSpinner: boolean) => {
@@ -438,11 +448,23 @@ export default function ChatPageClient({
     <main className="min-h-screen bg-background text-foreground">
       <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
         <div className="mb-4 flex items-center justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Messages</h1>
-            <p className="text-sm text-muted-foreground">
-              Signed in as {currentUserName}
-            </p>
+          <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleBack}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <ArrowLeft className="mr-1.5 h-4 w-4" />
+              Back
+            </Button>
+
+            <div>
+              <h1 className="text-2xl font-semibold tracking-tight">Messages</h1>
+              <p className="text-sm text-muted-foreground">
+                Signed in as {currentUserName}
+              </p>
+            </div>
           </div>
 
           <Button

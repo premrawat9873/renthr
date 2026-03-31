@@ -4,7 +4,12 @@ import { Badge } from "@/components/ui/badge";
 import { MapPin, Clock, Heart, Star, Tag, CalendarClock } from "lucide-react";
 import ImageCarousel from "./ImageCarousel";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
-import { selectIsWishlisted, toggleWishlist } from "@/store/slices/wishlistSlice";
+import {
+  selectIsWishlisted,
+  selectWishlistPendingIds,
+  toggleWishlistOnServer,
+} from "@/store/slices/wishlistSlice";
+import { toast } from "@/hooks/use-toast";
 
 interface Props {
   product: Product;
@@ -16,9 +21,12 @@ export default function ProductCard({ product, rentDurations, priority = false }
   const router = useRouter();
   const dispatch = useAppDispatch();
   const liked = useAppSelector((state) => selectIsWishlisted(state, product.id));
+  const pendingIds = useAppSelector(selectWishlistPendingIds);
+  const isUpdating = pendingIds.includes(product.id);
   const images = product.images?.length > 0 ? product.images : [product.image];
   const isRentAvailable = product.type === "rent" || product.type === "both";
   const isSellAvailable = product.type === "sell" || product.type === "both";
+  const isAvailable = product.isAvailable ?? true;
 
   return (
     <div
@@ -28,12 +36,17 @@ export default function ProductCard({ product, rentDurations, priority = false }
       }`}
     >
       {/* Image */}
-      <div className="relative aspect-[4/3] overflow-hidden bg-muted">
+      <div className={`relative aspect-[4/3] overflow-hidden bg-muted ${!isAvailable ? "grayscale" : ""}`}>
         <ImageCarousel images={images} alt={product.title} priority={priority} />
         <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5 z-10">
           {product.featured && (
             <Badge className="text-[10px] uppercase tracking-wider px-2.5 py-1 bg-highlight/90 text-highlight-foreground border-transparent">
               Featured
+            </Badge>
+          )}
+          {!isAvailable && (
+            <Badge variant="destructive" className="text-[10px] uppercase tracking-wider px-2.5 py-1">
+              Unavailable
             </Badge>
           )}
           {isRentAvailable && (
@@ -49,11 +62,26 @@ export default function ProductCard({ product, rentDurations, priority = false }
         </div>
         {/* Heart/Bookmark */}
         <button
-          onClick={(e) => {
+          onClick={async (e) => {
             e.stopPropagation();
-            dispatch(toggleWishlist(product.id));
+            const result = await dispatch(
+              toggleWishlistOnServer({ productId: product.id, like: !liked })
+            );
+
+            if (toggleWishlistOnServer.rejected.match(result)) {
+              const description =
+                result.payload?.message || 'Please log in to save items.';
+
+              toast({
+                title: 'Could not update wishlist',
+                description,
+                variant: 'destructive',
+              });
+            }
           }}
-          className="absolute top-2.5 right-2.5 h-8 w-8 rounded-full bg-card/80 backdrop-blur-sm flex items-center justify-center transition-all duration-200 hover:bg-card hover:scale-110 active:scale-95 z-10"
+          disabled={isUpdating}
+          aria-busy={isUpdating}
+          className="absolute top-2.5 right-2.5 h-8 w-8 rounded-full bg-card/80 backdrop-blur-sm flex items-center justify-center transition-all duration-200 hover:bg-card hover:scale-110 active:scale-95 z-10 disabled:opacity-70"
         >
           <Heart
             className={`h-4 w-4 transition-all duration-200 ${liked ? "fill-destructive text-destructive" : "text-foreground/60"}`}

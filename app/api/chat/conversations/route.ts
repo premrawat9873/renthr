@@ -45,6 +45,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'recipientId is required.' }, { status: 400 });
     }
 
+    if (!postId) {
+      return NextResponse.json({ error: 'postId is required for product chat.' }, { status: 400 });
+    }
+
     const conversation = await startOrGetDirectConversation({
       userId,
       recipientId,

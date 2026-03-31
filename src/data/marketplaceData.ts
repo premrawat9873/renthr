@@ -16,6 +16,7 @@ export interface Product {
   images: string[];
   location: string;
   distance: number;
+  isAvailable: boolean;
   postedAt: Date;
   rating?: number;
   reviewCount?: number;
