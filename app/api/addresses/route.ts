@@ -23,7 +23,7 @@ const LOCATION_MIN_LENGTH = 2;
 
 const addressSelect = {
   id: true,
-  address: true,
+  line1: true,
   state: true,
   city: true,
   pincode: true,
@@ -73,12 +73,12 @@ export async function POST(request: Request) {
     }
 
     const body = (await request.json()) as CreateAddressBody;
-    const address = normalizeText(body.address);
+    const addressLine1 = normalizeText(body.address);
     const state = normalizeText(body.state);
     const city = normalizeText(body.city);
     const pincode = normalizePincode(body.pincode);
 
-    if (address.length < ADDRESS_MIN_LENGTH) {
+    if (addressLine1.length < ADDRESS_MIN_LENGTH) {
       return NextResponse.json(
         { error: "Address must be at least 5 characters." },
         { status: 400 }
@@ -109,7 +109,7 @@ export async function POST(request: Request) {
     const createdAddress = await prisma.address.create({
       data: {
         userId,
-        address,
+        line1: addressLine1,
         state,
         city,
         pincode,

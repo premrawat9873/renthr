@@ -7,7 +7,7 @@ const PINCODE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9\s-]{3,11}$/;
 
 type AddressRecord = {
   id: number;
-  address: string;
+  line1: string;
   state: string;
   city: string;
   pincode: string;
@@ -47,7 +47,7 @@ export function isValidPincode(value: string) {
 export function toAddressPayload(address: AddressRecord) {
   return {
     id: String(address.id),
-    address: address.address,
+    address: address.line1,
     state: address.state,
     city: address.city,
     pincode: address.pincode,

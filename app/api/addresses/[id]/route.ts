@@ -28,7 +28,7 @@ const LOCATION_MIN_LENGTH = 2;
 
 const addressSelect = {
   id: true,
-  address: true,
+  line1: true,
   state: true,
   city: true,
   pincode: true,
@@ -61,7 +61,7 @@ export async function PATCH(
 
     const body = (await request.json()) as UpdateAddressBody;
     const updates: Partial<{
-      address: string;
+      line1: string;
       state: string;
       city: string;
       pincode: string;
@@ -75,7 +75,7 @@ export async function PATCH(
           { status: 400 }
         );
       }
-      updates.address = normalizedAddress;
+      updates.line1 = normalizedAddress;
     }
 
     if (Object.prototype.hasOwnProperty.call(body, "state")) {

@@ -467,7 +467,11 @@ export async function POST(request: Request) {
         title,
         description,
         status: "ACTIVE",
-        authorId: user.id,
+        author: {
+          connect: {
+            id: user.id,
+          },
+        },
         listingType,
         publishedAt: new Date(),
         ...(location
