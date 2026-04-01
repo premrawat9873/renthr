@@ -29,6 +29,8 @@ const listingSelect = {
     select: {
       city: true,
       state: true,
+      latitude: true,
+      longitude: true,
     },
   },
   listingType: true,
@@ -231,6 +233,11 @@ function formatListingLocation(address: ListingRecord["address"]) {
   return parts.length > 0 ? parts.join(", ") : "Location not specified";
 }
 
+function normalizeAddressCoordinate(value: unknown) {
+  const parsed = convertDecimalToNumber(value);
+  return parsed != null && Number.isFinite(parsed) ? Number(parsed.toFixed(7)) : undefined;
+}
+
 function normalizeCategorySlug(value: string) {
   return value
     .trim()
@@ -319,6 +326,8 @@ function mapListingRecordToProduct(record: ListingRecord): Product {
     image: normalizedImages.primaryImage,
     images: normalizedImages.images,
     location: formatListingLocation(record.address),
+    locationLatitude: normalizeAddressCoordinate(record.address?.latitude),
+    locationLongitude: normalizeAddressCoordinate(record.address?.longitude),
     distance: -1,
     isAvailable: record.status === "ACTIVE",
     postedAt: record.createdAt,

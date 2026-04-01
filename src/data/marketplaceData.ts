@@ -15,6 +15,8 @@ export interface Product {
   image: string;
   images: string[];
   location: string;
+  locationLatitude?: number;
+  locationLongitude?: number;
   distance: number;
   isAvailable: boolean;
   postedAt: Date;

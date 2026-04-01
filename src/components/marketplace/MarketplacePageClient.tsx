@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useCallback, useEffect, useState, useSyncExternalStore } from 'react';
+import { useMemo, useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import dynamic from 'next/dynamic';
 import MarketplaceHeader from '@/components/marketplace/MarketplaceHeader';
 import CategorySection from '@/components/marketplace/CategorySection';
@@ -70,6 +70,9 @@ const LOCATION_COORDINATES: Record<string, { lat: number; lng: number }> = {
   delhi: { lat: 28.6139, lng: 77.209 },
   "new delhi": { lat: 28.6139, lng: 77.209 },
   chandigarh: { lat: 30.7333, lng: 76.7794 },
+  mohali: { lat: 30.7046, lng: 76.7179 },
+  "sahibzada ajit singh nagar": { lat: 30.7046, lng: 76.7179 },
+  gharuan: { lat: 30.8613, lng: 76.5206 },
   faridabad: { lat: 28.4089, lng: 77.3178 },
   noida: { lat: 28.5355, lng: 77.391 },
   gurgaon: { lat: 28.4595, lng: 77.0266 },
@@ -114,6 +117,31 @@ function getKnownCoordinates(rawLocation: string) {
   }
 
   return null;
+}
+
+function getProductCoordinates(
+  product: Product,
+  resolvedCoordinatesByLocation: Record<string, { lat: number; lng: number }>
+) {
+  if (
+    Number.isFinite(product.locationLatitude) &&
+    Number.isFinite(product.locationLongitude)
+  ) {
+    return {
+      lat: product.locationLatitude as number,
+      lng: product.locationLongitude as number,
+    };
+  }
+
+  const candidates = getLocationCandidates(product.location);
+  for (const candidate of candidates) {
+    const resolved = resolvedCoordinatesByLocation[normalizeLocationKey(candidate)];
+    if (resolved) {
+      return resolved;
+    }
+  }
+
+  return getKnownCoordinates(product.location);
 }
 
 const CATEGORY_FILTER_ALIASES: Record<string, string> = {
@@ -328,7 +356,11 @@ export function MarketplacePageClient({
   const [hasMorePages, setHasMorePages] = useState(initialHasMore);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasManualSortSelection, setHasManualSortSelection] = useState(false);
+  const [resolvedLocationCoordinates, setResolvedLocationCoordinates] = useState<
+    Record<string, { lat: number; lng: number }>
+  >({});
   const [isPostFlowOpen, setIsPostFlowOpen] = useState(false);
+  const resolvingLocationKeysRef = useRef<Set<string>>(new Set());
   const reduxAuthenticated = useAppSelector(selectIsAuthenticated);
   const location = useAppSelector(selectLocation);
   const userLocation = useAppSelector(selectUserLocation);
@@ -522,6 +554,147 @@ export function MarketplacePageClient({
     requestLocation();
   }, [effectiveUserCoords, isAuthenticated, isHydrated, requestLocation, safeLocation]);
 
+  useEffect(() => {
+    if (!isHydrated || safeUserCoords || !safeLocation) {
+      return;
+    }
+
+    const knownCoords = getKnownCoordinates(safeLocation);
+    if (knownCoords) {
+      const [resolvedCity, resolvedState] = safeLocation
+        .split(',')
+        .map((part) => part.trim());
+
+      dispatch(
+        setUserCoords({
+          latitude: knownCoords.lat,
+          longitude: knownCoords.lng,
+        })
+      );
+
+      dispatch(
+        setUserLocation({
+          city: resolvedCity || safeLocation,
+          state: resolvedState || '',
+          latitude: knownCoords.lat,
+          longitude: knownCoords.lng,
+        })
+      );
+      return;
+    }
+
+    let cancelled = false;
+
+    void (async () => {
+      const resolvedLocation = await searchLocationSuggestion(safeLocation);
+      if (!resolvedLocation || cancelled) {
+        return;
+      }
+
+      dispatch(setLocation(resolvedLocation.label));
+      dispatch(
+        setUserLocation({
+          city: resolvedLocation.city,
+          state: resolvedLocation.state,
+          latitude: resolvedLocation.latitude,
+          longitude: resolvedLocation.longitude,
+        })
+      );
+      dispatch(
+        setUserCoords({
+          latitude: resolvedLocation.latitude,
+          longitude: resolvedLocation.longitude,
+        })
+      );
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [dispatch, isHydrated, safeLocation, safeUserCoords]);
+
+  useEffect(() => {
+    if (!effectiveUserCoords) {
+      return;
+    }
+
+    const locationsToResolve = Array.from(
+      new Set(
+        availableProducts
+          .filter(
+            (product) =>
+              !(
+                Number.isFinite(product.locationLatitude) &&
+                Number.isFinite(product.locationLongitude)
+              )
+          )
+          .map((product) => product.location.trim())
+          .filter((locationText) => {
+            if (!locationText) {
+              return false;
+            }
+
+            if (getKnownCoordinates(locationText)) {
+              return false;
+            }
+
+            const normalizedKey = normalizeLocationKey(locationText);
+            return (
+              !resolvedLocationCoordinates[normalizedKey] &&
+              !resolvingLocationKeysRef.current.has(normalizedKey)
+            );
+          })
+      )
+    );
+
+    if (locationsToResolve.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const resolveMissingLocationCoordinates = async () => {
+      // Keep API usage low by resolving only a handful of unknown locations per render pass.
+      for (const locationText of locationsToResolve.slice(0, 12)) {
+        const normalizedKey = normalizeLocationKey(locationText);
+        resolvingLocationKeysRef.current.add(normalizedKey);
+
+        try {
+          const suggestion = await searchLocationSuggestion(locationText);
+          if (!suggestion || cancelled) {
+            continue;
+          }
+
+          setResolvedLocationCoordinates((current) => {
+            if (current[normalizedKey]) {
+              return current;
+            }
+
+            return {
+              ...current,
+              [normalizedKey]: {
+                lat: suggestion.latitude,
+                lng: suggestion.longitude,
+              },
+            };
+          });
+        } finally {
+          resolvingLocationKeysRef.current.delete(normalizedKey);
+        }
+
+        if (cancelled) {
+          return;
+        }
+      }
+    };
+
+    void resolveMissingLocationCoordinates();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [availableProducts, effectiveUserCoords, resolvedLocationCoordinates]);
+
   const handleManualLocation = useCallback((city: string, selection?: LocationData) => {
     const normalizedLocation = city.trim();
 
@@ -615,7 +788,7 @@ export function MarketplacePageClient({
 
     results = results.map((product) => {
       if (!effectiveUserCoords) return product;
-      const productCoords = getKnownCoordinates(product.location);
+      const productCoords = getProductCoordinates(product, resolvedLocationCoordinates);
       if (!productCoords) {
         return {
           ...product,
@@ -716,7 +889,7 @@ export function MarketplacePageClient({
     }
 
     return results;
-  }, [availableProducts, effectiveSort, effectiveUserCoords, safeFilter, safePriceRange, safeRentDurations, safeSearchQuery, safeSelectedCategory]);
+  }, [availableProducts, effectiveSort, effectiveUserCoords, resolvedLocationCoordinates, safeFilter, safePriceRange, safeRentDurations, safeSearchQuery, safeSelectedCategory]);
 
   return (
     <div className="min-h-screen bg-background flex flex-col">

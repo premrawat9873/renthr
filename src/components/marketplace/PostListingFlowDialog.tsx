@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRight, Check, Loader2, MapPin, Search } from "lucide-react";
 import Image from "next/image";
 
@@ -107,9 +107,92 @@ type ReverseGeocodeAddress = {
   pincode: string;
 };
 
+type IndiaStateOption = {
+  name: string;
+  isoCode: string;
+};
+
+type IndiaStatesResponse = {
+  states?: IndiaStateOption[];
+  error?: string;
+};
+
+type IndiaCitiesResponse = {
+  cities?: string[];
+  error?: string;
+};
+
+type ReverseGeocodeResponse = {
+  line1?: string;
+  city?: string;
+  state?: string;
+  pincode?: string;
+  error?: string;
+};
+
 function toJpegFileName(name: string) {
   const baseName = name.replace(/\.[^.]+$/, "");
   return `${baseName || "image"}.jpg`;
+}
+
+function normalizeLocationToken(value: string) {
+  const asciiValue = value
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+  return asciiValue
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]+/g, " ")
+    .replace(/\s+/g, " ");
+}
+
+function findMatchingStateOption(options: IndiaStateOption[], stateName: string) {
+  const normalizedTarget = normalizeLocationToken(stateName);
+  if (!normalizedTarget) {
+    return null;
+  }
+
+  for (const option of options) {
+    const normalizedOption = normalizeLocationToken(option.name);
+    if (!normalizedOption) {
+      continue;
+    }
+
+    if (
+      normalizedOption === normalizedTarget ||
+      normalizedOption.includes(normalizedTarget) ||
+      normalizedTarget.includes(normalizedOption)
+    ) {
+      return option;
+    }
+  }
+
+  return null;
+}
+
+function findMatchingCity(cities: string[], cityName: string) {
+  const normalizedTarget = normalizeLocationToken(cityName);
+  if (!normalizedTarget) {
+    return null;
+  }
+
+  for (const city of cities) {
+    const normalizedCity = normalizeLocationToken(city);
+    if (!normalizedCity) {
+      continue;
+    }
+
+    if (
+      normalizedCity === normalizedTarget ||
+      normalizedCity.includes(normalizedTarget) ||
+      normalizedTarget.includes(normalizedCity)
+    ) {
+      return city;
+    }
+  }
+
+  return null;
 }
 
 function canvasToBlob(canvas: HTMLCanvasElement, quality: number) {
@@ -200,54 +283,28 @@ async function reverseGeocodeCoordinates(
 ): Promise<ReverseGeocodeAddress | null> {
   try {
     const response = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?lat=${coordinates.latitude}&lon=${coordinates.longitude}&format=json`,
+      `/api/locations/reverse?lat=${coordinates.latitude}&lon=${coordinates.longitude}`,
+      {
+        cache: "no-store",
+      },
     );
 
     if (!response.ok) {
       return null;
     }
 
-    const payload = (await response.json()) as {
-      display_name?: string;
-      address?: {
-        house_number?: string;
-        road?: string;
-        neighbourhood?: string;
-        suburb?: string;
-        city?: string;
-        town?: string;
-        village?: string;
-        county?: string;
-        state?: string;
-        postcode?: string;
-      };
-    };
+    const payload = (await response.json()) as ReverseGeocodeResponse;
+    const city = typeof payload.city === "string" ? payload.city.trim() : "";
+    const state = typeof payload.state === "string" ? payload.state.trim() : "";
+    const line1 = typeof payload.line1 === "string" ? payload.line1.trim() : "";
+    const pincode = typeof payload.pincode === "string" ? payload.pincode.trim() : "";
 
-    const address = payload.address ?? {};
-    const city =
-      address.city ??
-      address.town ??
-      address.village ??
-      address.county ??
-      "Unknown";
-    const state = address.state ?? "Unknown";
-    const pincode = address.postcode ?? "";
-    const lineParts = [
-      address.house_number,
-      address.road,
-      address.neighbourhood,
-      address.suburb,
-    ]
-      .map((value) => (typeof value === "string" ? value.trim() : ""))
-      .filter((value) => value.length > 0);
-    const line1 =
-      lineParts.join(", ") ||
-      (typeof payload.display_name === "string" && payload.display_name.trim().length > 0
-        ? payload.display_name.trim().split(",").slice(0, 2).join(", ")
-        : `${city}, ${state}`);
+    if (!city || !state) {
+      return null;
+    }
 
     return {
-      line1,
+      line1: line1 || `${city}, ${state}`,
       city,
       state,
       pincode,
@@ -278,9 +335,16 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
   const [locationPincode, setLocationPincode] = useState("");
   const [locationCoordinates, setLocationCoordinates] = useState<MapCoordinates | null>(null);
   const [isResolvingPinAddress, setIsResolvingPinAddress] = useState(false);
+  const [isUsingCurrentLocation, setIsUsingCurrentLocation] = useState(false);
+  const [stateOptions, setStateOptions] = useState<IndiaStateOption[]>([]);
+  const [cityOptions, setCityOptions] = useState<string[]>([]);
+  const [selectedStateCode, setSelectedStateCode] = useState("");
+  const [isStatesLoading, setIsStatesLoading] = useState(false);
+  const [isCitiesLoading, setIsCitiesLoading] = useState(false);
   const [selectedPhotoFiles, setSelectedPhotoFiles] = useState<File[]>([]);
   const [isPreparingPhotos, setIsPreparingPhotos] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const pinResolveRequestIdRef = useRef(0);
 
   const selectedCategories = useMemo(
     () => CATEGORIES.filter((category) => selectedCategoryIds.includes(category.id)),
@@ -317,6 +381,11 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
   const photoPreviews = useMemo(
     () => selectedPhotoFiles.map((file) => ({ file, previewUrl: URL.createObjectURL(file) })),
     [selectedPhotoFiles],
+  );
+
+  const selectedCityOption = useMemo(
+    () => findMatchingCity(cityOptions, locationCity),
+    [cityOptions, locationCity],
   );
 
   useEffect(() => {
@@ -399,7 +468,10 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
     setLocationState("");
     setLocationPincode("");
     setLocationCoordinates(null);
+    setSelectedStateCode("");
+    setCityOptions([]);
     setIsResolvingPinAddress(false);
+    setIsUsingCurrentLocation(false);
     setSelectedPhotoFiles([]);
     setIsSubmitting(false);
   };
@@ -448,6 +520,103 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
     if (!hasValidLocation) return;
     setStep("purpose");
   };
+
+  const fetchIndiaStates = useCallback(async (): Promise<IndiaStateOption[]> => {
+    try {
+      setIsStatesLoading(true);
+
+      const response = await fetch("/api/locations/india", {
+        cache: "no-store",
+      });
+      const payload = (await response.json().catch(() => null)) as IndiaStatesResponse | null;
+
+      if (!response.ok || !payload || !Array.isArray(payload.states)) {
+        throw new Error(
+          typeof payload?.error === "string"
+            ? payload.error
+            : "State list is unavailable right now.",
+        );
+      }
+
+      const normalizedStates = payload.states
+        .map((entry) => ({
+          name: typeof entry.name === "string" ? entry.name.trim() : "",
+          isoCode: typeof entry.isoCode === "string" ? entry.isoCode.trim().toUpperCase() : "",
+        }))
+        .filter((entry) => entry.name.length > 0 && entry.isoCode.length > 0);
+
+      setStateOptions(normalizedStates);
+      return normalizedStates;
+    } catch (error) {
+      toast({
+        title: "Could not load states",
+        description:
+          error instanceof Error
+            ? error.message
+            : "Unable to fetch states right now. Please try again.",
+        variant: "destructive",
+      });
+      return [];
+    } finally {
+      setIsStatesLoading(false);
+    }
+  }, []);
+
+  const fetchIndiaCities = useCallback(async (stateCode: string): Promise<string[]> => {
+    if (!stateCode) {
+      setCityOptions([]);
+      return [];
+    }
+
+    try {
+      setIsCitiesLoading(true);
+
+      const response = await fetch(`/api/locations/india?state=${encodeURIComponent(stateCode)}`, {
+        cache: "no-store",
+      });
+      const payload = (await response.json().catch(() => null)) as IndiaCitiesResponse | null;
+
+      if (!response.ok || !payload || !Array.isArray(payload.cities)) {
+        throw new Error(
+          typeof payload?.error === "string"
+            ? payload.error
+            : "City list is unavailable right now.",
+        );
+      }
+
+      const normalizedCities = Array.from(
+        new Set(
+          payload.cities
+            .map((city) => (typeof city === "string" ? city.trim() : ""))
+            .filter((city) => city.length > 0),
+        ),
+      );
+
+      setCityOptions(normalizedCities);
+      return normalizedCities;
+    } catch (error) {
+      toast({
+        title: "Could not load cities",
+        description:
+          error instanceof Error
+            ? error.message
+            : "Unable to fetch cities for this state right now. Please try again.",
+        variant: "destructive",
+      });
+      setCityOptions([]);
+      return [];
+    } finally {
+      setIsCitiesLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!open || step !== "location" || stateOptions.length > 0) {
+      return;
+    }
+
+    void fetchIndiaStates();
+  }, [fetchIndiaStates, open, stateOptions.length, step]);
 
   const handlePhotosSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const incomingFiles = Array.from(event.target.files ?? []);
@@ -563,11 +732,108 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
     }));
   };
 
-  const handlePinLocationChange = useCallback((nextCoordinates: MapCoordinates) => {
-    setLocationCoordinates(nextCoordinates);
+  const handleStateSelection = useCallback(
+    async (nextStateCode: string) => {
+      if (!nextStateCode) {
+        setSelectedStateCode("");
+        setLocationState("");
+        setLocationCity("");
+        setCityOptions([]);
+        return;
+      }
+
+      const matchedState = stateOptions.find((state) => state.isoCode === nextStateCode);
+      setSelectedStateCode(nextStateCode);
+      setLocationState(matchedState?.name ?? "");
+      setLocationCity("");
+      await fetchIndiaCities(nextStateCode);
+    },
+    [fetchIndiaCities, stateOptions],
+  );
+
+  const handleCitySelection = useCallback((nextCity: string) => {
+    setLocationCity(nextCity);
   }, []);
 
+  const resolveAndApplyAddressFromCoordinates = useCallback(
+    async (coordinates: MapCoordinates, trigger: "auto" | "manual") => {
+      const requestId = ++pinResolveRequestIdRef.current;
+      setIsResolvingPinAddress(true);
+
+      try {
+        const resolvedAddress = await reverseGeocodeCoordinates(coordinates);
+        if (requestId !== pinResolveRequestIdRef.current) {
+          return;
+        }
+
+        if (!resolvedAddress) {
+          if (trigger === "manual") {
+            toast({
+              title: "Could not fetch address",
+              description: "Pin was saved, but address details could not be fetched. You can enter them manually.",
+              variant: "destructive",
+            });
+          }
+          return;
+        }
+
+        setLocationLine1(resolvedAddress.line1);
+        setLocationPincode(resolvedAddress.pincode);
+
+        let availableStates = stateOptions;
+        if (availableStates.length === 0) {
+          availableStates = await fetchIndiaStates();
+          if (requestId !== pinResolveRequestIdRef.current) {
+            return;
+          }
+        }
+
+        const matchedState = findMatchingStateOption(availableStates, resolvedAddress.state);
+
+        if (!matchedState) {
+          setSelectedStateCode("");
+          setCityOptions([]);
+          setLocationState(resolvedAddress.state);
+          setLocationCity(resolvedAddress.city);
+        } else {
+          setSelectedStateCode(matchedState.isoCode);
+          setLocationState(matchedState.name);
+
+          const availableCities = await fetchIndiaCities(matchedState.isoCode);
+          if (requestId !== pinResolveRequestIdRef.current) {
+            return;
+          }
+
+          const matchedCity = findMatchingCity(availableCities, resolvedAddress.city);
+          setLocationCity(matchedCity ?? resolvedAddress.city);
+        }
+
+        if (trigger === "manual") {
+          toast({
+            title: "Address updated from pin",
+            description: `${resolvedAddress.city}, ${resolvedAddress.state} selected from the map pin.`,
+          });
+        }
+      } finally {
+        if (requestId === pinResolveRequestIdRef.current) {
+          setIsResolvingPinAddress(false);
+        }
+      }
+    },
+    [fetchIndiaCities, fetchIndiaStates, stateOptions],
+  );
+
+  const handlePinLocationChange = useCallback(
+    (nextCoordinates: MapCoordinates) => {
+      setLocationCoordinates(nextCoordinates);
+      void resolveAndApplyAddressFromCoordinates(nextCoordinates, "auto");
+    },
+    [resolveAndApplyAddressFromCoordinates],
+  );
+
   const clearPinnedLocation = () => {
+    pinResolveRequestIdRef.current += 1;
+    setIsResolvingPinAddress(false);
     setLocationCoordinates(null);
   };
 
@@ -576,31 +842,53 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
       return;
     }
 
-    setIsResolvingPinAddress(true);
-    try {
-      const resolvedAddress = await reverseGeocodeCoordinates(locationCoordinates);
-      if (!resolvedAddress) {
+    await resolveAndApplyAddressFromCoordinates(locationCoordinates, "manual");
+  }, [isResolvingPinAddress, locationCoordinates, resolveAndApplyAddressFromCoordinates]);
+
+  const useCurrentLocationOnMap = useCallback(() => {
+    if (isUsingCurrentLocation || isResolvingPinAddress) {
+      return;
+    }
+
+    if (!("geolocation" in navigator)) {
+      toast({
+        title: "Current location unavailable",
+        description: "Your browser does not support geolocation.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsUsingCurrentLocation(true);
+
+    navigator.geolocation.getCurrentPosition(
+      async ({ coords }) => {
+        const nextCoordinates: MapCoordinates = {
+          latitude: Number(coords.latitude.toFixed(7)),
+          longitude: Number(coords.longitude.toFixed(7)),
+        };
+
+        setLocationCoordinates(nextCoordinates);
+
+        await resolveAndApplyAddressFromCoordinates(nextCoordinates, "manual");
+        setIsUsingCurrentLocation(false);
+      },
+      () => {
+        setIsUsingCurrentLocation(false);
         toast({
-          title: "Could not fetch address",
-          description: "Pin was saved, but address details could not be fetched. You can enter them manually.",
+          title: "Could not access current location",
+          description:
+            "Please allow location access in your browser, or place a pin on the map manually.",
           variant: "destructive",
         });
-        return;
-      }
-
-      setLocationLine1((current) => current.trim() || resolvedAddress.line1);
-      setLocationCity((current) => current.trim() || resolvedAddress.city);
-      setLocationState((current) => current.trim() || resolvedAddress.state);
-      setLocationPincode((current) => current.trim() || resolvedAddress.pincode);
-
-      toast({
-        title: "Location pinned",
-        description: `${resolvedAddress.city}, ${resolvedAddress.state} captured from map pin.`,
-      });
-    } finally {
-      setIsResolvingPinAddress(false);
-    }
-  }, [isResolvingPinAddress, locationCoordinates]);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 12000,
+        maximumAge: 0,
+      },
+    );
+  }, [isResolvingPinAddress, isUsingCurrentLocation, resolveAndApplyAddressFromCoordinates]);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1077,8 +1365,25 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
                       type="button"
                       variant="outline"
                       size="sm"
+                      onClick={useCurrentLocationOnMap}
+                      disabled={isUsingCurrentLocation || isResolvingPinAddress}
+                      className="h-8 border-primary/45 text-xs"
+                    >
+                      {isUsingCurrentLocation ? (
+                        <>
+                          <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                          Locating...
+                        </>
+                      ) : (
+                        "Use current location"
+                      )}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
                       onClick={autoFillAddressFromPin}
-                      disabled={!locationCoordinates || isResolvingPinAddress}
+                      disabled={!locationCoordinates || isResolvingPinAddress || isUsingCurrentLocation}
                       className="h-8 border-primary/45 text-xs"
                     >
                       {isResolvingPinAddress ? (
@@ -1095,7 +1400,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
                       variant="outline"
                       size="sm"
                       onClick={clearPinnedLocation}
-                      disabled={!locationCoordinates}
+                      disabled={!locationCoordinates || isUsingCurrentLocation}
                       className="h-8 border-primary/45 text-xs"
                     >
                       Clear pin
@@ -1131,27 +1436,68 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
 
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="post-listing-location-city">City</Label>
-                  <Input
-                    id="post-listing-location-city"
-                    value={locationCity}
-                    onChange={(event) => setLocationCity(event.target.value)}
-                    placeholder={selectedLocation?.trim() || "e.g. Bengaluru"}
-                    maxLength={80}
-                    className={FIELD_BORDER_CLASS}
-                  />
+                  <Label htmlFor="post-listing-location-state">State</Label>
+                  <select
+                    id="post-listing-location-state"
+                    value={selectedStateCode}
+                    onChange={(event) => {
+                      void handleStateSelection(event.target.value);
+                    }}
+                    disabled={isSubmitting || isStatesLoading}
+                    className={cn(
+                      "h-10 w-full rounded-md border bg-background px-3 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50",
+                      FIELD_BORDER_CLASS,
+                    )}
+                  >
+                    <option value="">
+                      {isStatesLoading ? "Loading states..." : "Select a state"}
+                    </option>
+                    {stateOptions.map((stateOption) => (
+                      <option key={stateOption.isoCode} value={stateOption.isoCode}>
+                        {stateOption.name}
+                      </option>
+                    ))}
+                  </select>
+                  {locationState && !selectedStateCode && !isStatesLoading && (
+                    <p className="text-xs text-muted-foreground">
+                      Detected from map: {locationState}. Pick the closest state from the dropdown.
+                    </p>
+                  )}
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="post-listing-location-state">State</Label>
-                  <Input
-                    id="post-listing-location-state"
-                    value={locationState}
-                    onChange={(event) => setLocationState(event.target.value)}
-                    placeholder="e.g. Karnataka"
-                    maxLength={80}
-                    className={FIELD_BORDER_CLASS}
-                  />
+                  <Label htmlFor="post-listing-location-city">City</Label>
+                  <select
+                    id="post-listing-location-city"
+                    value={selectedCityOption ?? (locationCity || "")}
+                    onChange={(event) => handleCitySelection(event.target.value)}
+                    disabled={isSubmitting || !selectedStateCode || isCitiesLoading}
+                    className={cn(
+                      "h-10 w-full rounded-md border bg-background px-3 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50",
+                      FIELD_BORDER_CLASS,
+                    )}
+                  >
+                    <option value="">
+                      {!selectedStateCode
+                        ? "Select state first"
+                        : isCitiesLoading
+                          ? "Loading cities..."
+                          : "Select a city"}
+                    </option>
+                    {cityOptions.map((city) => (
+                      <option key={city} value={city}>
+                        {city}
+                      </option>
+                    ))}
+                    {locationCity && !selectedCityOption && (
+                      <option value={locationCity}>{locationCity} (from map)</option>
+                    )}
+                  </select>
+                  {selectedStateCode && !isCitiesLoading && cityOptions.length === 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      No city list found for this state. Try choosing a different state.
+                    </p>
+                  )}
                 </div>
               </div>
 

@@ -139,7 +139,7 @@ function formatPostedAgo(postedAtIso: string) {
 
 function getDistanceLabel(distance: number) {
   if (!Number.isFinite(distance) || distance < 0) {
-    return 'Distance unavailable';
+    return null;
   }
 
   if (distance === 0) {
@@ -252,6 +252,7 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
 
   const images = product.images.length > 0 ? product.images : [product.image];
+  const distanceLabel = getDistanceLabel(product.distance);
   const currentImage = images[activeImageIndex] ?? images[0];
 
   const availablePricing = useMemo(() => {
@@ -872,7 +873,7 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
                   <MapPin className="h-4 w-4 text-primary" />
                   <span className="text-sm font-medium">{product.location}</span>
                 </div>
-                <span className="text-sm">{getDistanceLabel(product.distance)}</span>
+                {distanceLabel ? <span className="text-sm">{distanceLabel}</span> : null}
               </div>
             </section>
 

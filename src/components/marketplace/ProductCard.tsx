@@ -19,7 +19,7 @@ interface Props {
 
 function formatDistanceLabel(distance: number) {
   if (!Number.isFinite(distance) || distance < 0) {
-    return 'Distance unavailable';
+    return null;
   }
 
   if (distance === 0) {
@@ -36,6 +36,7 @@ export default function ProductCard({ product, rentDurations, priority = false }
   const pendingIds = useAppSelector(selectWishlistPendingIds);
   const isUpdating = pendingIds.includes(product.id);
   const images = product.images?.length > 0 ? product.images : [product.image];
+  const distanceLabel = formatDistanceLabel(product.distance);
   const isRentAvailable = product.type === "rent" || product.type === "both";
   const isSellAvailable = product.type === "sell" || product.type === "both";
   const isAvailable = product.isAvailable ?? true;
@@ -120,15 +121,21 @@ export default function ProductCard({ product, rentDurations, priority = false }
 
         {/* Price */}
         <div className="space-y-0.5">
-          {isSellAvailable && product.price != null && (
-            <p className="text-base font-semibold text-foreground">
-              {isRentAvailable ? `Buy ${formatPrice(product.price)}` : formatPrice(product.price)}
+          {isSellAvailable && (
+            <p className="text-sm font-semibold text-foreground">
+              {product.price != null
+                ? `Selling price ${formatPrice(product.price)}`
+                : "Selling price on request"}
             </p>
           )}
-          {isRentAvailable && product.rentPrices && (
-            <div className="flex flex-wrap gap-x-2 gap-y-0.5">
-              {renderRentPrice(product, rentDurations)}
-            </div>
+          {isRentAvailable && (
+            product.rentPrices ? (
+              <div className="flex flex-wrap gap-x-2 gap-y-0.5">
+                {renderRentPrice(product, rentDurations)}
+              </div>
+            ) : (
+              <p className="text-sm font-semibold text-foreground">Rent price on request</p>
+            )
           )}
         </div>
 
@@ -136,7 +143,8 @@ export default function ProductCard({ product, rentDurations, priority = false }
         <div className="flex items-center justify-between text-xs text-muted-foreground pt-1">
           <span className="flex items-center gap-1">
             <MapPin className="h-3 w-3" />
-            {product.location} · {formatDistanceLabel(product.distance)}
+            {product.location}
+            {distanceLabel ? ` · ${distanceLabel}` : ""}
           </span>
           <span className="flex items-center gap-1">
             <Clock className="h-3 w-3" />
@@ -164,9 +172,27 @@ function renderRentPrice(product: Product, durations: RentDuration[]) {
     items.push({ label: "/day", price: rp.daily });
   }
 
+  if (items.length === 0 && rp.hourly != null) {
+    items.push({ label: "/hr", price: rp.hourly });
+  }
+
+  if (items.length === 0 && rp.weekly != null) {
+    items.push({ label: "/wk", price: rp.weekly });
+  }
+
+  if (items.length === 0 && rp.monthly != null) {
+    items.push({ label: "/mo", price: rp.monthly });
+  }
+
+  if (items.length === 0) {
+    return (
+      <p className="text-sm font-semibold text-foreground">Rent price on request</p>
+    );
+  }
+
   return items.map((item) => (
     <span key={item.label} className="text-sm font-semibold text-foreground">
-      {formatPrice(item.price!)}<span className="font-normal text-muted-foreground">{item.label}</span>
+      Rent {formatPrice(item.price!)}<span className="font-normal text-muted-foreground">{item.label}</span>
     </span>
   ));
 }

@@ -126,7 +126,7 @@ function getListingBadge(product: Product) {
 
 function getDistanceSummary(distance: number) {
   if (!Number.isFinite(distance) || distance < 0) {
-    return 'Distance unavailable';
+    return null;
   }
 
   if (distance === 0) {
@@ -538,7 +538,10 @@ export default function ProfileDashboardClient({
           const badge = getListingBadge(product);
           const isRent = product.type === 'rent' || product.type === 'both';
           const priceParts = getProductPriceParts(product);
-          const locationSummary = `${product.location} · ${getDistanceSummary(product.distance)}`;
+          const distanceSummary = getDistanceSummary(product.distance);
+          const locationSummary = distanceSummary
+            ? `${product.location} · ${distanceSummary}`
+            : product.location;
 
           return (
             <article
