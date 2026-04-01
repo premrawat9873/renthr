@@ -1,4 +1,4 @@
-import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
+import { createSelector, createSlice, type PayloadAction } from "@reduxjs/toolkit";
 import type { ListingFilter, RentDuration, SortOption } from "@/data/marketplaceData";
 import type { RootState } from "@/store/store";
 
@@ -173,28 +173,39 @@ export const selectUserCoords = (state: RootState) => state.marketplace.userCoor
 export const selectSearchQuery = (state: RootState) => state.marketplace.searchQuery ?? "";
 export const selectSelectedCategory = (state: RootState) =>
   state.marketplace.selectedCategory ?? null;
-export const selectListingFilter = (state: RootState) =>
-  normalizeListingFilter(state.marketplace.filter);
-export const selectRentDurations = (state: RootState) =>
-  normalizeRentDurations(state.marketplace.rentDurations);
-export const selectSort = (state: RootState) =>
-  normalizeSortOption(state.marketplace.sort);
-export const selectPriceRange = (state: RootState) =>
-  normalizePriceRange(state.marketplace.priceRange);
-export const selectHasActiveFilters = (state: RootState) => {
-  const marketplace = state.marketplace;
-  const filter = normalizeListingFilter(marketplace.filter);
-  const selectedCategory = marketplace.selectedCategory ?? null;
-  const rentDurations = normalizeRentDurations(marketplace.rentDurations);
-  const searchQuery = marketplace.searchQuery ?? "";
-  const priceRange = normalizePriceRange(marketplace.priceRange);
 
-  return (
-    filter !== "all" ||
-    selectedCategory !== null ||
-    rentDurations.length > 0 ||
-    searchQuery !== "" ||
-    priceRange[0] > 0 ||
-    priceRange[1] < MAX_PRICE
-  );
-};
+const selectRawFilter = (state: RootState) => state.marketplace.filter;
+const selectRawRentDurations = (state: RootState) => state.marketplace.rentDurations;
+const selectRawSort = (state: RootState) => state.marketplace.sort;
+const selectRawPriceRange = (state: RootState) => state.marketplace.priceRange;
+
+export const selectListingFilter = createSelector([selectRawFilter], (filter) =>
+  normalizeListingFilter(filter)
+);
+export const selectRentDurations = createSelector(
+  [selectRawRentDurations],
+  (rentDurations) => normalizeRentDurations(rentDurations)
+);
+export const selectSort = createSelector([selectRawSort], (sort) => normalizeSortOption(sort));
+export const selectPriceRange = createSelector([selectRawPriceRange], (priceRange) =>
+  normalizePriceRange(priceRange)
+);
+export const selectHasActiveFilters = createSelector(
+  [
+    selectListingFilter,
+    selectSelectedCategory,
+    selectRentDurations,
+    selectSearchQuery,
+    selectPriceRange,
+  ],
+  (filter, selectedCategory, rentDurations, searchQuery, priceRange) => {
+    return (
+      filter !== "all" ||
+      selectedCategory !== null ||
+      rentDurations.length > 0 ||
+      searchQuery !== "" ||
+      priceRange[0] > 0 ||
+      priceRange[1] < MAX_PRICE
+    );
+  }
+);

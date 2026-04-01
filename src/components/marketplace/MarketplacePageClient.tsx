@@ -168,6 +168,46 @@ type ReverseGeocodeResult = {
   state: string;
 };
 
+type LocationSearchSuggestion = {
+  label: string;
+  city: string;
+  state: string;
+  latitude: number;
+  longitude: number;
+};
+
+type LocationSearchResponse = {
+  suggestions?: LocationSearchSuggestion[];
+  error?: string;
+};
+
+async function searchLocationSuggestion(query: string) {
+  const normalizedQuery = query.trim();
+
+  if (normalizedQuery.length < 2) {
+    return null;
+  }
+
+  try {
+    const response = await fetch(
+      `/api/locations/search?q=${encodeURIComponent(normalizedQuery)}`,
+      { cache: 'no-store' }
+    );
+
+    const payload = (await response
+      .json()
+      .catch(() => null)) as LocationSearchResponse | null;
+
+    if (!response.ok || !payload || !Array.isArray(payload.suggestions)) {
+      return null;
+    }
+
+    return payload.suggestions[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+
 async function reverseGeocodeLocation(
   latitude: number,
   longitude: number
@@ -482,14 +522,84 @@ export function MarketplacePageClient({
     requestLocation();
   }, [effectiveUserCoords, isAuthenticated, isHydrated, requestLocation, safeLocation]);
 
-  const handleManualLocation = useCallback((city: string) => {
-    dispatch(setLocation(city));
-    const knownCoords = getKnownCoordinates(city);
-    if (knownCoords) {
-      dispatch(setUserCoords({ latitude: knownCoords.lat, longitude: knownCoords.lng }));
+  const handleManualLocation = useCallback((city: string, selection?: LocationData) => {
+    const normalizedLocation = city.trim();
+
+    if (!normalizedLocation) {
+      dispatch(setLocation(null));
+      dispatch(setUserCoords(null));
+      dispatch(setUserLocation(null));
       return;
     }
+
+    dispatch(setLocation(normalizedLocation));
+
+    if (selection) {
+      dispatch(
+        setUserLocation({
+          city: selection.city,
+          state: selection.state,
+          latitude: selection.latitude,
+          longitude: selection.longitude,
+        })
+      );
+      dispatch(
+        setUserCoords({
+          latitude: selection.latitude,
+          longitude: selection.longitude,
+        })
+      );
+      return;
+    }
+
+    const knownCoords = getKnownCoordinates(normalizedLocation);
+    if (knownCoords) {
+      const [resolvedCity, resolvedState] = normalizedLocation
+        .split(',')
+        .map((part) => part.trim());
+
+      dispatch(
+        setUserLocation({
+          city: resolvedCity || normalizedLocation,
+          state: resolvedState || '',
+          latitude: knownCoords.lat,
+          longitude: knownCoords.lng,
+        })
+      );
+      dispatch(
+        setUserCoords({
+          latitude: knownCoords.lat,
+          longitude: knownCoords.lng,
+        })
+      );
+      return;
+    }
+
     dispatch(setUserCoords(null));
+    dispatch(setUserLocation(null));
+
+    void (async () => {
+      const resolvedLocation = await searchLocationSuggestion(normalizedLocation);
+      if (!resolvedLocation) {
+        return;
+      }
+
+      dispatch(setLocation(resolvedLocation.label));
+      dispatch(
+        setUserLocation({
+          city: resolvedLocation.city,
+          state: resolvedLocation.state,
+          latitude: resolvedLocation.latitude,
+          longitude: resolvedLocation.longitude,
+        })
+      );
+      dispatch(
+        setUserCoords({
+          latitude: resolvedLocation.latitude,
+          longitude: resolvedLocation.longitude,
+        })
+      );
+    })();
   }, [dispatch]);
 
   const clearFilters = useCallback(() => {
