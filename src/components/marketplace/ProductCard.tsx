@@ -44,7 +44,7 @@ export default function ProductCard({ product, rentDurations, priority = false }
   return (
     <div
       onClick={() => router.push(`/product/${product.id}`)}
-      className={`group bg-card rounded-2xl overflow-hidden card-lift cursor-pointer relative ${
+      className={`group bg-card rounded-2xl overflow-hidden card-lift isolate cursor-pointer relative ${
         product.featured ? "border-l-[3px] border-l-highlight shadow-md" : ""
       }`}
     >
