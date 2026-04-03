@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import { useSupabaseAuth } from '@/lib/supabase-auth';
 import { useAppDispatch } from '@/store/hooks';
 import { loginWithEmail } from '@/store/slices/authSlice';
@@ -613,6 +614,18 @@ export default function LoginPage() {
               >
                 {authMode === 'login' ? 'Create account' : 'Sign in'}
               </button>
+            </p>
+
+            <p className="w-full max-w-[380px] text-center text-[0.78rem] text-[#7b7b7b] mt-3 leading-relaxed">
+              By continuing, you agree to our{' '}
+              <Link href="/terms-of-use" className="font-medium text-[#2e8b57] hover:text-[#1a6b3c]">
+                Terms of Use
+              </Link>
+              {' '}and{' '}
+              <Link href="/privacy-policy" className="font-medium text-[#2e8b57] hover:text-[#1a6b3c]">
+                Privacy Policy
+              </Link>
+              .
             </p>
           </div>
           {/* end inner container */}

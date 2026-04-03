@@ -44,12 +44,19 @@ export default function ProductCard({ product, rentDurations, priority = false }
   return (
     <div
       onClick={() => router.push(`/product/${product.id}`)}
-      className={`group relative isolate cursor-pointer overflow-hidden rounded-2xl border border-border/55 bg-card card-lift ${
-        product.featured ? "border-l-[3px] border-l-highlight shadow-md" : ""
+      className={`group relative isolate flex h-full cursor-pointer flex-col overflow-hidden rounded-2xl border border-border/55 bg-card card-lift ${
+        product.featured ? "shadow-md ring-1 ring-highlight/35" : ""
       }`}
     >
+      {product.featured && (
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-y-0 left-0 z-10 w-[3px] bg-highlight"
+        />
+      )}
+
       {/* Image */}
-      <div className={`relative aspect-[4/3] overflow-hidden rounded-t-2xl bg-muted ${!isAvailable ? "grayscale" : ""}`}>
+      <div className={`relative aspect-[4/3] shrink-0 overflow-hidden rounded-t-2xl bg-muted ${!isAvailable ? "grayscale" : ""}`}>
         <ImageCarousel
           images={images}
           alt={product.title}
@@ -108,7 +115,7 @@ export default function ProductCard({ product, rentDurations, priority = false }
       </div>
 
       {/* Content */}
-      <div className="p-3.5 space-y-2">
+      <div className="flex flex-1 flex-col space-y-2 p-3.5">
         <h3 className="font-heading font-medium text-sm leading-snug line-clamp-2">
           {product.title}
         </h3>
@@ -145,13 +152,15 @@ export default function ProductCard({ product, rentDurations, priority = false }
         </div>
 
         {/* Meta */}
-        <div className="flex items-center justify-between text-xs text-muted-foreground pt-1">
-          <span className="flex items-center gap-1">
-            <MapPin className="h-3 w-3" />
-            {product.location}
-            {distanceLabel ? ` · ${distanceLabel}` : ""}
+        <div className="mt-auto flex items-center justify-between gap-2 pt-1 text-xs text-muted-foreground">
+          <span className="flex min-w-0 flex-1 items-center gap-1">
+            <MapPin className="h-3 w-3 shrink-0" />
+            <span className="truncate">
+              {product.location}
+              {distanceLabel ? ` · ${distanceLabel}` : ""}
+            </span>
           </span>
-          <span className="flex items-center gap-1">
+          <span className="flex shrink-0 items-center gap-1">
             <Clock className="h-3 w-3" />
             {formatTimeAgo(product.postedAt)}
           </span>

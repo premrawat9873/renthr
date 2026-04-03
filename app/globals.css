@@ -103,10 +103,8 @@
     transition-property: transform, box-shadow;
     transition-duration: 300ms;
     transition-timing-function: ease-out;
-    will-change: transform;
-    transform: translateZ(0);
-    backface-visibility: hidden;
-    outline: 1px solid transparent;
+    will-change: transform, box-shadow;
+    transform: translate3d(0, 0, 0);
     box-shadow: 0 1px 3px hsl(var(--foreground) / 0.04), 0 1px 2px hsl(var(--foreground) / 0.06);
   }
   .card-lift:hover {

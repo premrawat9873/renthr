@@ -1,4 +1,5 @@
 import { Globe, Instagram, Twitter, Facebook, Youtube } from "lucide-react";
+import Link from 'next/link';
 
 export default function Footer() {
   return (
@@ -65,11 +66,15 @@ export default function Footer() {
             <span className="font-heading font-semibold text-highlight-foreground bg-highlight px-1 py-0.5 rounded text-[10px]">hour</span>
           </div>
           <div className="flex items-center gap-4">
-            <a href="#" className="hover:text-highlight transition-colors">Privacy</a>
+            <Link href="/privacy-policy" className="hover:text-highlight transition-colors">
+              Privacy
+            </Link>
             <span>·</span>
-            <a href="#" className="hover:text-highlight transition-colors">Terms</a>
+            <Link href="/terms-of-use" className="hover:text-highlight transition-colors">
+              Terms
+            </Link>
             <span>·</span>
-            <a href="#" className="hover:text-highlight transition-colors">Sitemap</a>
+            <a href="/sitemap.xml" className="hover:text-highlight transition-colors">Sitemap</a>
           </div>
           <div className="flex items-center gap-3">
             <button className="flex items-center gap-1 hover:text-highlight transition-colors">

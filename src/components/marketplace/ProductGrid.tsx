@@ -32,7 +32,7 @@ function CTACard() {
 
 function ProductCardSkeleton() {
   return (
-    <div className="bg-card rounded-2xl overflow-hidden border border-border/40">
+    <div className="h-full overflow-hidden rounded-2xl border border-border/40 bg-card">
       <Skeleton className="aspect-[4/3] rounded-none" />
       <div className="p-3.5 space-y-2.5">
         <Skeleton className="h-4 w-4/5" />
@@ -105,11 +105,11 @@ export default function ProductGrid({
 
   return (
     <div className="py-6 space-y-8">
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-5">
+      <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4 items-stretch">
         {gridItems.map((item, i) => (
           <div
             key={item.type === "product" ? `product-${item.product.id}` : `cta-${i}`}
-            className="animate-fade-in"
+            className="h-full animate-fade-in"
             style={{ animationDelay: `${(i % SKELETON_COUNT) * 30}ms`, animationFillMode: "both" }}
           >
             {item.type === "cta" ? (
@@ -126,7 +126,7 @@ export default function ProductGrid({
 
         {skeletonCount > 0 &&
           Array.from({ length: skeletonCount }).map((_, index) => (
-            <div key={`loading-skeleton-${index}`} className="animate-fade-in" style={{ animationDelay: `${index * 30}ms`, animationFillMode: "both" }}>
+            <div key={`loading-skeleton-${index}`} className="h-full animate-fade-in" style={{ animationDelay: `${index * 30}ms`, animationFillMode: "both" }}>
               <ProductCardSkeleton />
             </div>
           ))}
