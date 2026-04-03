@@ -2,6 +2,7 @@ import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 
 import { resolveAuthenticatedUserId } from "@/lib/address-utils";
+import { resolveProfileAvatarUrl } from "@/lib/profile-avatar";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -163,7 +164,7 @@ async function getPostReviews(postId: number, currentUserId: number | null) {
       reviewer: {
         id: String(review.reviewer.id),
         name: formatReviewerName(review.reviewer.name, review.reviewer.email),
-        avatarUrl: review.reviewer.avatarUrl,
+        avatarUrl: resolveProfileAvatarUrl(review.reviewer.avatarUrl),
       },
     };
   });
@@ -375,7 +376,7 @@ export async function POST(
             createdReview.reviewer.name,
             createdReview.reviewer.email
           ),
-          avatarUrl: createdReview.reviewer.avatarUrl,
+          avatarUrl: resolveProfileAvatarUrl(createdReview.reviewer.avatarUrl),
         },
       },
     });

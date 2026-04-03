@@ -1,6 +1,8 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { getAvatarUrlFromMetadata } from "@/lib/profile-avatar";
 
 function isSafeInternalPath(path: string | null) {
   return Boolean(path && path.startsWith("/") && !path.startsWith("//"));
@@ -53,6 +55,62 @@ export async function GET(request: Request) {
 
   if (error) {
     return toLoginRedirect(requestUrl, nextPath, "oauth_exchange_failed");
+  }
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (user?.email) {
+    try {
+      const normalizedEmail = user.email.trim().toLowerCase();
+      const metadataName =
+        typeof user.user_metadata?.name === "string"
+          ? user.user_metadata.name.trim()
+          : "";
+      const metadataAvatarUrl = getAvatarUrlFromMetadata(user.user_metadata);
+
+      const existingUser = await prisma.user.findUnique({
+        where: { email: normalizedEmail },
+        select: {
+          id: true,
+          name: true,
+          avatarUrl: true,
+        },
+      });
+
+      if (!existingUser) {
+        await prisma.user.create({
+          data: {
+            email: normalizedEmail,
+            name: metadataName || null,
+            avatarUrl: metadataAvatarUrl,
+          },
+        });
+      } else {
+        const updateData: {
+          name?: string;
+          avatarUrl?: string;
+        } = {};
+
+        if (metadataName && !existingUser.name) {
+          updateData.name = metadataName;
+        }
+
+        if (metadataAvatarUrl && !existingUser.avatarUrl) {
+          updateData.avatarUrl = metadataAvatarUrl;
+        }
+
+        if (Object.keys(updateData).length > 0) {
+          await prisma.user.update({
+            where: { id: existingUser.id },
+            data: updateData,
+          });
+        }
+      }
+    } catch {
+      // OAuth session is already established; skip profile sync failure for this request.
+    }
   }
 
   return response;

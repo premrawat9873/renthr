@@ -76,14 +76,22 @@ export async function resolveAuthenticatedUserId() {
     where: {
       email: normalizedEmail,
     },
-    update: currentUser.name
-      ? {
-          name: currentUser.name,
-        }
-      : {},
+    update: {
+      ...(currentUser.name
+        ? {
+            name: currentUser.name,
+          }
+        : {}),
+      ...(currentUser.avatarUrl
+        ? {
+            avatarUrl: currentUser.avatarUrl,
+          }
+        : {}),
+    },
     create: {
       email: normalizedEmail,
       name: currentUser.name,
+      avatarUrl: currentUser.avatarUrl,
     },
     select: {
       id: true,

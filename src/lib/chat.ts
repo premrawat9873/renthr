@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { prisma } from '@/lib/prisma';
+import { resolveProfileAvatarUrl } from '@/lib/profile-avatar';
 import type {
   ChatConversationPayload,
   ChatMessagePayload,
@@ -103,7 +104,7 @@ function mapMessagePayload(
     conversationId: String(message.conversationId),
     senderId: String(message.senderId),
     senderName: getDisplayName(message.sender.name, message.sender.email),
-    senderAvatarUrl: message.sender.avatarUrl,
+    senderAvatarUrl: resolveProfileAvatarUrl(message.sender.avatarUrl),
     type: message.type as ChatMessageType,
     content: message.content,
     imageUrl: message.imageUrl,
@@ -222,7 +223,7 @@ export async function listChatConversationsForUser(
       peer: {
         id: String(peer?.id ?? userId),
         name: peer ? getDisplayName(peer.name, peer.email) : 'User',
-        avatarUrl: peer?.avatarUrl ?? null,
+        avatarUrl: resolveProfileAvatarUrl(peer?.avatarUrl),
       },
       lastMessage: latestMessage
         ? {

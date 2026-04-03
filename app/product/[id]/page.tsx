@@ -85,49 +85,82 @@ export default async function ProductDetailPage({
   const productUrl = `${siteUrl}/product/${product.id}`;
   const hasSellPrice =
     (product.type === 'sell' || product.type === 'both') && product.price != null;
-  const productJsonLd = {
-    '@context': 'https://schema.org',
-    '@type': 'Product',
-    name: product.title,
-    sku: product.id,
-    category: product.category,
-    description:
-      product.description ?? `${product.title} listing in ${product.location}.`,
-    image: product.images.length > 0 ? product.images : [product.image],
-    url: productUrl,
-    brand: {
-      '@type': 'Brand',
-      name: SITE_NAME,
-    },
-    ...(hasSellPrice
+  const rentalPrices = [
+    product.rentPrices?.hourly,
+    product.rentPrices?.daily,
+    product.rentPrices?.weekly,
+    product.rentPrices?.monthly,
+  ].filter(
+    (value): value is number =>
+      typeof value === 'number' && Number.isFinite(value) && value > 0
+  );
+  const hasAggregateRating =
+    product.rating != null &&
+    product.reviewCount != null &&
+    Number.isFinite(product.reviewCount) &&
+    product.reviewCount > 0;
+
+  const productOffers = hasSellPrice
+    ? {
+        '@type': 'Offer',
+        priceCurrency: 'INR',
+        price: product.price,
+        itemCondition: 'https://schema.org/UsedCondition',
+        availability: 'https://schema.org/InStock',
+        url: productUrl,
+      }
+    : rentalPrices.length > 0
       ? {
-          offers: {
-            '@type': 'Offer',
-            priceCurrency: 'INR',
-            price: product.price,
-            itemCondition: 'https://schema.org/UsedCondition',
-            availability: 'https://schema.org/InStock',
-            url: productUrl,
-          },
+          '@type': 'AggregateOffer',
+          priceCurrency: 'INR',
+          lowPrice: Math.min(...rentalPrices),
+          highPrice: Math.max(...rentalPrices),
+          offerCount: rentalPrices.length,
+          availability: 'https://schema.org/InStock',
+          url: productUrl,
         }
-      : {}),
-    ...(product.rating != null && product.reviewCount != null
-      ? {
-          aggregateRating: {
-            '@type': 'AggregateRating',
-            ratingValue: product.rating,
-            reviewCount: product.reviewCount,
-          },
-        }
-      : {}),
-  };
+      : null;
+
+  const shouldRenderProductJsonLd = Boolean(productOffers || hasAggregateRating);
+
+  const productJsonLd = shouldRenderProductJsonLd
+    ? {
+        '@context': 'https://schema.org',
+        '@type': 'Product',
+        name: product.title,
+        sku: product.id,
+        category: product.category,
+        description:
+          product.description ?? `${product.title} listing in ${product.location}.`,
+        image: product.images.length > 0 ? product.images : [product.image],
+        url: productUrl,
+        brand: {
+          '@type': 'Brand',
+          name: SITE_NAME,
+        },
+        ...(productOffers ? { offers: productOffers } : {}),
+        ...(hasAggregateRating
+          ? {
+              aggregateRating: {
+                '@type': 'AggregateRating',
+                ratingValue: product.rating,
+                reviewCount: product.reviewCount,
+              },
+            }
+          : {}),
+      }
+    : null;
 
   return (
     <>
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(productJsonLd) }}
-      />
+      {productJsonLd ? (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify(productJsonLd).replace(/</g, '\\u003c'),
+          }}
+        />
+      ) : null}
       <ProductDetailClient product={product} />
     </>
   );

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -8,6 +8,13 @@ import {
   ArrowLeft,
   Share2,
   Heart,
+  User,
+  CreditCard,
+  Bell,
+  Shield,
+  CircleHelp,
+  LogOut,
+  ChevronRight,
   Package,
   CalendarCheck,
   Star,
@@ -23,6 +30,8 @@ import {
   MessageCircle,
   MoreVertical,
   Pencil,
+  Loader2,
+  Trash2,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -50,6 +59,11 @@ import type { Product, RentDuration } from '@/data/marketplaceData';
 import { formatPrice, formatTimeAgo } from '@/data/marketplaceData';
 import { toast } from '@/hooks/use-toast';
 import { useWishlistBootstrap, useHydrateWishlist } from '@/hooks/use-wishlist';
+import { useSupabaseAuth } from '@/lib/supabase-auth';
+import {
+  getDefaultProfileAvatarUrl,
+  resolveProfileAvatarUrl,
+} from '@/lib/profile-avatar';
 import { cn } from '@/lib/utils';
 
 type TabKey = 'listings' | 'bookings' | 'wishlist' | 'settings';
@@ -57,11 +71,17 @@ type TabKey = 'listings' | 'bookings' | 'wishlist' | 'settings';
 type ProfileDashboardClientProps = {
   displayName: string;
   email: string;
+  avatarUrl: string | null;
   cityLabel: string;
   joinedLabel: string;
   products: Product[];
   wishlistProducts: Product[];
   initialPostFlowOpen?: boolean;
+};
+
+type AvatarUploadResponse = {
+  avatarUrl?: string | null;
+  error?: string;
 };
 
 type ListingEditForm = {
@@ -148,6 +168,7 @@ const DEFAULT_WISHLIST_RENT_DURATIONS: RentDuration[] = ['hourly', 'daily', 'wee
 export default function ProfileDashboardClient({
   displayName,
   email,
+  avatarUrl,
   cityLabel,
   joinedLabel,
   products,
@@ -155,11 +176,19 @@ export default function ProfileDashboardClient({
   initialPostFlowOpen = false,
 }: ProfileDashboardClientProps) {
   const router = useRouter();
+  const { status: authStatus, signOut } = useSupabaseAuth();
   useWishlistBootstrap();
   useHydrateWishlist(wishlistProducts.map((product) => product.id));
+  const defaultProfileAvatarUrl = getDefaultProfileAvatarUrl();
+  const avatarInputRef = useRef<HTMLInputElement | null>(null);
   const [listingItems, setListingItems] = useState<Product[]>(products);
   const [activeTab, setActiveTab] = useState<TabKey>('listings');
   const [postFlowOpen, setPostFlowOpen] = useState(initialPostFlowOpen);
+  const [profileAvatarUrl, setProfileAvatarUrl] = useState<string>(
+    resolveProfileAvatarUrl(avatarUrl)
+  );
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [isResettingAvatar, setIsResettingAvatar] = useState(false);
   const [availabilityById, setAvailabilityById] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(products.map((product) => [product.id, product.isAvailable ?? true]))
   );
@@ -167,6 +196,7 @@ export default function ProfileDashboardClient({
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [editingForm, setEditingForm] = useState<ListingEditForm | null>(null);
   const [savingEditId, setSavingEditId] = useState<string | null>(null);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   const editingProduct = useMemo(() => {
     if (!editingForm) {
@@ -184,6 +214,10 @@ export default function ProfileDashboardClient({
       )
     );
   }, [products]);
+
+  useEffect(() => {
+    setProfileAvatarUrl(resolveProfileAvatarUrl(avatarUrl));
+  }, [avatarUrl]);
 
   useEffect(() => {
     if (!initialPostFlowOpen) {
@@ -226,6 +260,166 @@ export default function ProfileDashboardClient({
     }
 
     router.push('/home');
+  };
+
+  const handleAvatarFileChange = async (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const selectedFile = event.target.files?.[0];
+    event.currentTarget.value = '';
+
+    if (!selectedFile || isUploadingAvatar || isResettingAvatar) {
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('avatar', selectedFile);
+
+    setIsUploadingAvatar(true);
+
+    try {
+      const response = await fetch('/api/profile/avatar', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const payload = (await response
+        .json()
+        .catch(() => null)) as AvatarUploadResponse | null;
+
+      if (!response.ok || !payload?.avatarUrl) {
+        throw new Error(
+          payload?.error || 'Unable to update your profile image right now.'
+        );
+      }
+
+      setProfileAvatarUrl(resolveProfileAvatarUrl(payload.avatarUrl));
+
+      toast({
+        title: 'Profile image updated',
+        description: 'Your new profile image is now visible across your account.',
+      });
+
+      router.refresh();
+    } catch (error) {
+      toast({
+        title: 'Could not update profile image',
+        description:
+          error instanceof Error
+            ? error.message
+            : 'Please try again in a moment.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  };
+
+  const handleAvatarReset = async () => {
+    if (isUploadingAvatar || isResettingAvatar) {
+      return;
+    }
+
+    setIsResettingAvatar(true);
+
+    try {
+      const response = await fetch('/api/profile/avatar', {
+        method: 'DELETE',
+      });
+
+      const payload = (await response
+        .json()
+        .catch(() => null)) as AvatarUploadResponse | null;
+
+      if (!response.ok) {
+        throw new Error(
+          payload?.error || 'Unable to reset your profile image right now.'
+        );
+      }
+
+      setProfileAvatarUrl(resolveProfileAvatarUrl(payload?.avatarUrl));
+
+      toast({
+        title: 'Profile image reset',
+        description: 'Your default profile image is now active.',
+      });
+
+      router.refresh();
+    } catch (error) {
+      toast({
+        title: 'Could not reset profile image',
+        description:
+          error instanceof Error
+            ? error.message
+            : 'Please try again in a moment.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsResettingAvatar(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    if (isLoggingOut) {
+      return;
+    }
+
+    setIsLoggingOut(true);
+
+    try {
+      if (authStatus === 'authenticated') {
+        try {
+          await signOut();
+        } catch {
+          // Continue to local logout cleanup even if provider sign-out fails.
+        }
+      }
+
+      try {
+        await fetch('/api/auth/logout', {
+          method: 'POST',
+        });
+      } catch {
+        // Ignore network failures and continue redirecting out of the account area.
+      }
+
+      router.push('/login');
+      router.refresh();
+    } finally {
+      setIsLoggingOut(false);
+    }
+  };
+
+  const handleSettingsItemClick = (itemKey: 'profile' | 'address' | 'payment' | 'notifications' | 'security' | 'support' | 'logout') => {
+    if (itemKey === 'logout') {
+      void handleLogout();
+      return;
+    }
+
+    if (itemKey === 'profile') {
+      if (typeof window !== 'undefined') {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+
+      toast({
+        title: 'Profile details',
+        description: 'You can update your avatar and account details from the profile section above.',
+      });
+      return;
+    }
+
+    const upcomingLabels: Record<'address' | 'payment' | 'notifications' | 'security' | 'support', string> = {
+      address: 'Address management',
+      payment: 'Payment methods',
+      notifications: 'Notification preferences',
+      security: 'Security settings',
+      support: 'Help and support',
+    };
+
+    toast({
+      title: `${upcomingLabels[itemKey]} coming soon`,
+      description: 'This settings section is added and will be connected in the next update.',
+    });
   };
 
   const toggleAvailability = async (productId: string) => {
@@ -727,8 +921,105 @@ export default function ProfileDashboardClient({
     }
 
     return (
-      <div className="rounded-2xl border border-border/50 bg-card p-12 text-center shadow-sm">
-        <p className="text-muted-foreground">Account settings coming soon</p>
+      <div className="mx-auto max-w-3xl overflow-hidden rounded-2xl border border-border/50 bg-card shadow-sm">
+        {[
+          {
+            key: 'profile' as const,
+            label: 'Profile',
+            description: 'Edit your personal info',
+            icon: User,
+            destructive: false,
+          },
+          {
+            key: 'address' as const,
+            label: 'Address',
+            description: 'Manage your addresses',
+            icon: MapPin,
+            destructive: false,
+          },
+          {
+            key: 'payment' as const,
+            label: 'Payment Methods',
+            description: 'Bank & payment details',
+            icon: CreditCard,
+            destructive: false,
+          },
+          {
+            key: 'notifications' as const,
+            label: 'Notifications',
+            description: 'Notification preferences',
+            icon: Bell,
+            destructive: false,
+          },
+          {
+            key: 'security' as const,
+            label: 'Security',
+            description: 'Password & privacy',
+            icon: Shield,
+            destructive: false,
+          },
+          {
+            key: 'support' as const,
+            label: 'Help & Support',
+            description: 'Contact us & FAQs',
+            icon: CircleHelp,
+            destructive: false,
+          },
+          {
+            key: 'logout' as const,
+            label: 'Logout',
+            description: 'Sign out from your account',
+            icon: LogOut,
+            destructive: true,
+          },
+        ].map((item, index, array) => {
+          const Icon = item.icon;
+          const isLast = index === array.length - 1;
+
+          return (
+            <button
+              key={item.key}
+              type="button"
+              onClick={() => handleSettingsItemClick(item.key)}
+              disabled={isLoggingOut}
+              className={cn(
+                'flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition-colors hover:bg-accent/40 disabled:cursor-not-allowed disabled:opacity-70 sm:px-6',
+                !isLast && 'border-b border-border/55'
+              )}
+            >
+              <div className="flex min-w-0 items-center gap-3.5">
+                <div
+                  className={cn(
+                    'flex h-11 w-11 shrink-0 items-center justify-center rounded-full',
+                    item.destructive
+                      ? 'bg-destructive/10 text-destructive'
+                      : 'bg-primary/10 text-primary'
+                  )}
+                >
+                  <Icon className="h-5 w-5" />
+                </div>
+
+                <div className="min-w-0">
+                  <p
+                    className={cn(
+                      'truncate text-[1.02rem] font-semibold',
+                      item.destructive ? 'text-destructive' : 'text-foreground'
+                    )}
+                  >
+                    {item.label}
+                  </p>
+                  <p className="truncate text-sm text-muted-foreground">{item.description}</p>
+                </div>
+              </div>
+
+              {item.key === 'logout' && isLoggingOut ? (
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              ) : (
+                <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+              )}
+            </button>
+          );
+        })}
       </div>
     );
   };
@@ -794,12 +1085,58 @@ export default function ProfileDashboardClient({
                 <div className="absolute -inset-1 rounded-full bg-gradient-to-br from-primary/30 via-accent/20 to-primary/30 blur-sm transition-all duration-300 group-hover:blur-md" />
                 <div className="relative h-28 w-28 overflow-hidden rounded-full ring-[3px] ring-card shadow-lg">
                   <Image
-                    src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&h=200&fit=crop&crop=face"
+                    src={profileAvatarUrl}
                     alt={displayName}
                     fill
                     className="object-cover"
+                    onError={() => {
+                      if (profileAvatarUrl !== defaultProfileAvatarUrl) {
+                        setProfileAvatarUrl(defaultProfileAvatarUrl);
+                      }
+                    }}
                   />
                 </div>
+                <input
+                  ref={avatarInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(event) => {
+                    void handleAvatarFileChange(event);
+                  }}
+                  disabled={isUploadingAvatar || isResettingAvatar}
+                />
+                <button
+                  type="button"
+                  onClick={() => avatarInputRef.current?.click()}
+                  disabled={isUploadingAvatar || isResettingAvatar}
+                  className="absolute -bottom-1 -left-1 inline-flex h-8 w-8 items-center justify-center rounded-full border-2 border-card bg-primary text-primary-foreground shadow transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-70"
+                  aria-label="Edit profile image"
+                >
+                  {isUploadingAvatar ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Pencil className="h-4 w-4" />
+                  )}
+                </button>
+                {profileAvatarUrl !== defaultProfileAvatarUrl ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void handleAvatarReset();
+                    }}
+                    disabled={isUploadingAvatar || isResettingAvatar}
+                    className="absolute -top-1 -right-1 inline-flex h-8 w-8 items-center justify-center rounded-full border-2 border-card bg-destructive text-destructive-foreground shadow transition-colors hover:bg-destructive/90 disabled:cursor-not-allowed disabled:opacity-70"
+                    aria-label="Reset profile image"
+                    title="Reset to default"
+                  >
+                    {isResettingAvatar ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-4 w-4" />
+                    )}
+                  </button>
+                ) : null}
                 <div className="absolute bottom-1 right-1 flex h-5 w-5 items-center justify-center rounded-full border-2 border-card bg-primary shadow-sm">
                   <div className="h-2 w-2 animate-pulse rounded-full bg-primary-foreground" />
                 </div>

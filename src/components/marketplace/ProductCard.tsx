@@ -44,13 +44,18 @@ export default function ProductCard({ product, rentDurations, priority = false }
   return (
     <div
       onClick={() => router.push(`/product/${product.id}`)}
-      className={`group bg-card rounded-2xl overflow-hidden card-lift isolate cursor-pointer relative ${
+      className={`group relative isolate cursor-pointer overflow-hidden rounded-2xl border border-border/55 bg-card card-lift ${
         product.featured ? "border-l-[3px] border-l-highlight shadow-md" : ""
       }`}
     >
       {/* Image */}
-      <div className={`relative aspect-[4/3] overflow-hidden bg-muted ${!isAvailable ? "grayscale" : ""}`}>
-        <ImageCarousel images={images} alt={product.title} priority={priority} />
+      <div className={`relative aspect-[4/3] overflow-hidden rounded-t-2xl bg-muted ${!isAvailable ? "grayscale" : ""}`}>
+        <ImageCarousel
+          images={images}
+          alt={product.title}
+          priority={priority}
+          className="rounded-t-2xl"
+        />
         <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5 z-10">
           {product.featured && (
             <Badge className="text-[10px] uppercase tracking-wider px-2.5 py-1 bg-highlight/90 text-highlight-foreground border-transparent">

@@ -11,6 +11,7 @@ import {
   getMarketplaceListingProductsPayloadPage,
   MARKETPLACE_DEFAULT_PAGE_SIZE,
 } from "@/lib/listings";
+import { getAvatarUrlFromMetadata } from "@/lib/profile-avatar";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -35,6 +36,7 @@ type CreateListingBody = {
 const MAX_IMAGE_COUNT = 3;
 const LOCATION_MIN_LENGTH = 2;
 const LOCATION_PINCODE_PATTERN = /^[A-Za-z0-9 -]{4,12}$/;
+const LOCATION_PLACEHOLDER_VALUES = new Set(["unknown", "na", "n/a"]);
 
 function normalizeCategorySlug(value: string) {
   return value
@@ -214,11 +216,16 @@ function parseListingLocation(value: unknown): ParsedListingLocation | null {
       return null;
     }
 
+    const [cityPart, statePart] = normalized
+      .split(",")
+      .map((segment) => segment.trim())
+      .filter((segment) => segment.length > 0);
+
     return {
       line1: normalized,
-      city: normalized,
-      state: "Unknown",
-      pincode: "000000",
+      city: cityPart || "",
+      state: statePart || "",
+      pincode: "",
       country: "IN",
       landmark: null,
       label: "Listing location",
@@ -251,9 +258,9 @@ function parseListingLocation(value: unknown): ParsedListingLocation | null {
     line1 = "Pinned location";
   }
 
-  const normalizedCity = city || (hasCoordinates ? "Unknown" : "");
-  const normalizedState = state || (hasCoordinates ? "Unknown" : "");
-  const normalizedPincode = pincode || (hasCoordinates ? "000000" : "");
+  const normalizedCity = city;
+  const normalizedState = state;
+  const normalizedPincode = pincode;
 
   if (!line1 && !normalizedCity && !normalizedState && !normalizedPincode && !hasCoordinates) {
     return null;
@@ -270,6 +277,10 @@ function parseListingLocation(value: unknown): ParsedListingLocation | null {
     latitude: hasCoordinates ? latitude : null,
     longitude: hasCoordinates ? longitude : null,
   };
+}
+
+function isPlaceholderLocationValue(value: string) {
+  return LOCATION_PLACEHOLDER_VALUES.has(value.trim().toLowerCase());
 }
 
 function isValidLocationPincode(value: string) {
@@ -296,6 +307,7 @@ async function resolveAuthenticatedIdentity() {
     return {
       email: customSession.email.toLowerCase(),
       name: customSession.name,
+      avatarUrl: null,
     };
   }
 
@@ -329,10 +341,12 @@ async function resolveAuthenticatedIdentity() {
     typeof user.user_metadata?.name === "string"
       ? user.user_metadata.name.trim()
       : "";
+  const metadataAvatarUrl = getAvatarUrlFromMetadata(user.user_metadata);
 
   return {
     email: user.email.toLowerCase(),
     name: metadataName || null,
+    avatarUrl: metadataAvatarUrl,
   };
 }
 
@@ -463,34 +477,53 @@ export async function POST(request: Request) {
       );
     }
 
-    if (location) {
-      if (location.line1.length < LOCATION_MIN_LENGTH) {
-        return NextResponse.json(
-          { error: "Location address line must be at least 2 characters." },
-          { status: 400 }
-        );
-      }
+    if (!location) {
+      return NextResponse.json(
+        { error: "City and state are required for listing location." },
+        { status: 400 }
+      );
+    }
 
-      if (location.city.length < LOCATION_MIN_LENGTH) {
-        return NextResponse.json(
-          { error: "Location city must be at least 2 characters." },
-          { status: 400 }
-        );
-      }
+    if (location.line1.length < LOCATION_MIN_LENGTH) {
+      return NextResponse.json(
+        { error: "Location address line must be at least 2 characters." },
+        { status: 400 }
+      );
+    }
 
-      if (location.state.length < LOCATION_MIN_LENGTH) {
-        return NextResponse.json(
-          { error: "Location state must be at least 2 characters." },
-          { status: 400 }
-        );
-      }
+    if (location.city.length < LOCATION_MIN_LENGTH) {
+      return NextResponse.json(
+        { error: "Location city must be at least 2 characters." },
+        { status: 400 }
+      );
+    }
 
-      if (!isValidLocationPincode(location.pincode)) {
-        return NextResponse.json(
-          { error: "Location pincode must be 4-12 letters, numbers, spaces, or hyphens." },
-          { status: 400 }
-        );
-      }
+    if (location.state.length < LOCATION_MIN_LENGTH) {
+      return NextResponse.json(
+        { error: "Location state must be at least 2 characters." },
+        { status: 400 }
+      );
+    }
+
+    if (isPlaceholderLocationValue(location.city)) {
+      return NextResponse.json(
+        { error: "Please provide an exact city for this listing." },
+        { status: 400 }
+      );
+    }
+
+    if (isPlaceholderLocationValue(location.state)) {
+      return NextResponse.json(
+        { error: "Please provide an exact state for this listing." },
+        { status: 400 }
+      );
+    }
+
+    if (!isValidLocationPincode(location.pincode)) {
+      return NextResponse.json(
+        { error: "Location pincode must be 4-12 letters, numbers, spaces, or hyphens." },
+        { status: 400 }
+      );
     }
 
     const supportsSell = purposes.includes("sell");
@@ -566,6 +599,7 @@ export async function POST(request: Request) {
       create: {
         email: identity.email,
         name: identity.name,
+        avatarUrl: identity.avatarUrl,
       },
       select: {
         id: true,
@@ -590,24 +624,20 @@ export async function POST(request: Request) {
         listingType,
         featured,
         publishedAt: new Date(),
-        ...(location
-          ? {
-              address: {
-                create: {
-                  label: location.label || "Listing location",
-                  line1: location.line1,
-                  landmark: location.landmark,
-                  city: location.city,
-                  state: location.state,
-                  pincode: location.pincode || "000000",
-                  country: location.country || "IN",
-                  latitude: location.latitude,
-                  longitude: location.longitude,
-                  userId: user.id,
-                },
-              },
-            }
-          : {}),
+        address: {
+          create: {
+            label: location.label || "Listing location",
+            line1: location.line1,
+            landmark: location.landmark,
+            city: location.city,
+            state: location.state,
+            pincode: location.pincode || "000000",
+            country: location.country || "IN",
+            latitude: location.latitude,
+            longitude: location.longitude,
+            userId: user.id,
+          },
+        },
         sellPricePaise:
           supportsSell && sellPrice != null ? sellPrice * 100 : null,
         rentHourlyPaise:

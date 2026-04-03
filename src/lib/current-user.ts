@@ -8,11 +8,15 @@ import {
   verifyCustomSessionToken,
 } from "@/lib/custom-session";
 import { prisma } from "@/lib/prisma";
+import {
+  getAvatarUrlFromMetadata,
+} from "@/lib/profile-avatar";
 
 export type CurrentUserInfo = {
   id: string | null;
   email: string;
   name: string | null;
+  avatarUrl: string | null;
 };
 
 function parsePositiveInt(value: string) {
@@ -36,17 +40,18 @@ export async function getCurrentUserInfo(): Promise<CurrentUserInfo | null> {
     const user = sessionUserId
       ? await prisma.user.findUnique({
           where: { id: sessionUserId },
-          select: { id: true, email: true, name: true },
+          select: { id: true, email: true, name: true, avatarUrl: true },
         })
       : await prisma.user.findUnique({
           where: { email: customSession.email.toLowerCase() },
-          select: { id: true, email: true, name: true },
+          select: { id: true, email: true, name: true, avatarUrl: true },
         });
 
     return {
       id: user ? String(user.id) : null,
       email: user?.email ?? customSession.email.toLowerCase(),
       name: user?.name ?? customSession.name ?? null,
+      avatarUrl: user?.avatarUrl ?? null,
     };
   }
 
@@ -76,9 +81,10 @@ export async function getCurrentUserInfo(): Promise<CurrentUserInfo | null> {
   }
 
   const normalizedEmail = supabaseUser.email.toLowerCase();
+  const supabaseAvatarUrl = getAvatarUrlFromMetadata(supabaseUser.user_metadata);
   const dbUser = await prisma.user.findUnique({
     where: { email: normalizedEmail },
-    select: { id: true, email: true, name: true },
+    select: { id: true, email: true, name: true, avatarUrl: true },
   });
 
   const metadataName =
@@ -86,9 +92,19 @@ export async function getCurrentUserInfo(): Promise<CurrentUserInfo | null> {
       ? supabaseUser.user_metadata.name.trim()
       : null;
 
+  if (dbUser && !dbUser.avatarUrl && supabaseAvatarUrl) {
+    await prisma.user.update({
+      where: { id: dbUser.id },
+      data: {
+        avatarUrl: supabaseAvatarUrl,
+      },
+    });
+  }
+
   return {
     id: dbUser ? String(dbUser.id) : null,
     email: dbUser?.email ?? normalizedEmail,
     name: dbUser?.name ?? metadataName ?? null,
+    avatarUrl: dbUser?.avatarUrl ?? supabaseAvatarUrl ?? null,
   };
 }

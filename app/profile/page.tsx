@@ -7,6 +7,7 @@ import {
   getMarketplaceListingProductsByUserId,
   getWishlistProductsByUserId,
 } from '@/lib/listings';
+import { resolveProfileAvatarUrl } from '@/lib/profile-avatar';
 
 export const metadata: Metadata = {
   title: 'Profile',
@@ -70,6 +71,7 @@ export default async function ProfilePage({
     <ProfileDashboardClient
       displayName={displayName}
       email={currentUser.email}
+      avatarUrl={resolveProfileAvatarUrl(currentUser.avatarUrl)}
       cityLabel={cityLabel}
       joinedLabel={joinedLabel}
       products={products}

@@ -47,6 +47,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/hooks/use-toast';
 import { useWishlistBootstrap } from '@/hooks/use-wishlist';
+import { resolveProfileAvatarUrl } from '@/lib/profile-avatar';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import {
   selectIsWishlisted,
@@ -359,6 +360,7 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
   const categoryLabel = CATEGORIES.find((category) => category.id === product.category)?.label ?? 'Listing';
   const postedLabel = formatPostedAgo(product.postedAt);
   const ownerDisplayName = product.ownerName || 'User';
+  const ownerAvatarUrl = resolveProfileAvatarUrl(product.ownerImage);
   const ownerProfileHref = product.ownerId ? `/profile/${product.ownerId}` : null;
 
   const listingDescription =
@@ -882,7 +884,7 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
                 <div className="flex items-center gap-4">
                   <div className="relative">
                     <Avatar className="h-14 w-14 ring-2 ring-primary/20 ring-offset-2 ring-offset-background">
-                      {product.ownerImage ? <AvatarImage src={product.ownerImage} /> : null}
+                      <AvatarImage src={ownerAvatarUrl} />
                       <AvatarFallback className="bg-primary/10 font-semibold text-primary">
                         {getOwnerInitials(ownerDisplayName)}
                       </AvatarFallback>
@@ -1128,9 +1130,7 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
                               <div className="flex items-start justify-between gap-3">
                                 <div className="flex items-center gap-2.5">
                                   <Avatar className="h-9 w-9">
-                                    {review.reviewer.avatarUrl ? (
-                                      <AvatarImage src={review.reviewer.avatarUrl} />
-                                    ) : null}
+                                    <AvatarImage src={resolveProfileAvatarUrl(review.reviewer.avatarUrl)} />
                                     <AvatarFallback className="bg-primary/10 text-primary">
                                       {getOwnerInitials(review.reviewer.name)}
                                     </AvatarFallback>

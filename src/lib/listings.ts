@@ -6,6 +6,7 @@ import {
   type ListingProductPayload,
 } from "@/data/listings";
 import type { Prisma } from "../../generated/prisma/client";
+import { resolveProfileAvatarUrl } from "@/lib/profile-avatar";
 import { prisma } from "@/lib/prisma";
 
 export const MARKETPLACE_DEFAULT_PAGE_SIZE = 10;
@@ -58,6 +59,7 @@ const listingSelect = {
       id: true,
       name: true,
       email: true,
+      avatarUrl: true,
     },
   },
 } satisfies Prisma.PostSelect;
@@ -337,6 +339,7 @@ function mapListingRecordToProduct(record: ListingRecord): Product {
     description: record.description ?? undefined,
     ownerId: String(record.author.id),
     ownerName,
+    ownerImage: resolveProfileAvatarUrl(record.author.avatarUrl),
     ownerTag: "Verified Seller",
   };
 }

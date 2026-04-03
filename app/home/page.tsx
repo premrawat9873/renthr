@@ -38,12 +38,8 @@ export default async function HomePage() {
     itemListElement: products.map((product, index) => ({
       '@type': 'ListItem',
       position: index + 1,
-      item: {
-        '@type': 'Product',
-        name: product.title,
-        url: `${siteUrl}/product/${product.id}`,
-        image: product.image,
-      },
+      name: product.title,
+      url: `${siteUrl}/product/${product.id}`,
     })),
   };
 
@@ -51,7 +47,9 @@ export default async function HomePage() {
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd) }}
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(itemListJsonLd).replace(/</g, '\\u003c'),
+        }}
       />
       <MarketplacePageClient
         initialProducts={products}

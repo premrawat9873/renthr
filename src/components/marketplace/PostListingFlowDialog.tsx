@@ -22,7 +22,6 @@ import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { useAppSelector } from "@/store/hooks";
 import {
-  selectLocation,
   selectUserCoords,
 } from "@/store/slices/marketplaceSlice";
 
@@ -315,7 +314,6 @@ async function reverseGeocodeCoordinates(
 }
 
 export default function PostListingFlowDialog({ open, onOpenChange }: PostListingFlowDialogProps) {
-  const selectedLocation = useAppSelector(selectLocation);
   const selectedUserCoords = useAppSelector(selectUserCoords);
   const [step, setStep] = useState<PostStep>("category");
   const [categorySearch, setCategorySearch] = useState("");
@@ -423,23 +421,13 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
   const normalizedLocationCity = locationCity.trim();
   const normalizedLocationState = locationState.trim();
   const normalizedLocationPincode = locationPincode.trim();
-  const hasPinnedCoordinates = locationCoordinates != null;
-  const hasManualLocationInput =
-    normalizedLocationLine1.length > 0 ||
-    normalizedLocationCity.length > 0 ||
-    normalizedLocationState.length > 0 ||
-    normalizedLocationPincode.length > 0;
-  const hasLocationInput = hasManualLocationInput || hasPinnedCoordinates;
   const hasValidPincode =
     normalizedLocationPincode.length === 0 ||
     LOCATION_PINCODE_PATTERN.test(normalizedLocationPincode);
-  const hasCompleteManualLocation =
-    normalizedLocationLine1.length >= 3 &&
-    normalizedLocationCity.length >= 2 &&
-    normalizedLocationState.length >= 2;
   const hasValidLocation =
-    !hasLocationInput ||
-    ((hasCompleteManualLocation || hasPinnedCoordinates) && hasValidPincode);
+    normalizedLocationCity.length >= 2 &&
+    normalizedLocationState.length >= 2 &&
+    hasValidPincode;
   const canSubmit =
     selectedCategoryIds.length > 0 &&
     hasValidDetails &&
@@ -936,27 +924,23 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
         },
         {} as Partial<Record<RentDurationOption, string>>
       );
-      const fallbackLocation = selectedLocation?.trim();
-      const locationPayload = hasLocationInput
-        ? {
-            line1:
-              normalizedLocationLine1 ||
-              [normalizedLocationCity, normalizedLocationState]
-                .filter((value) => value.length > 0)
-                .join(", ") ||
-              "Pinned location",
-            city: normalizedLocationCity || "Unknown",
-            state: normalizedLocationState || "Unknown",
-            pincode: normalizedLocationPincode || "000000",
-            country: "IN",
-            ...(locationCoordinates
-              ? {
-                  latitude: locationCoordinates.latitude,
-                  longitude: locationCoordinates.longitude,
-                }
-              : {}),
-          }
-        : null;
+      const locationPayload = {
+        line1:
+          normalizedLocationLine1 ||
+          [normalizedLocationCity, normalizedLocationState]
+            .filter((value) => value.length > 0)
+            .join(", "),
+        city: normalizedLocationCity,
+        state: normalizedLocationState,
+        pincode: normalizedLocationPincode,
+        country: "IN",
+        ...(locationCoordinates
+          ? {
+              latitude: locationCoordinates.latitude,
+              longitude: locationCoordinates.longitude,
+            }
+          : {}),
+      };
 
       const saveListingResponse = await fetch("/api/listings", {
         method: "POST",
@@ -974,7 +958,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
           sellPrice,
           rentPrices: selectedRentPricePayload,
           imageUrls: uploadedImageUrls,
-          location: locationPayload ?? (fallbackLocation ? fallbackLocation : undefined),
+          location: locationPayload,
         }),
       });
 
@@ -1001,7 +985,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
         ? locationCoordinates
           ? `${locationPayload.city}, ${locationPayload.state} (${locationCoordinates.latitude.toFixed(5)}, ${locationCoordinates.longitude.toFixed(5)})`
           : `${locationPayload.city}, ${locationPayload.state}`
-        : fallbackLocation || "Not specified";
+        : "Not specified";
 
       toast({
         title: "Listing saved",
@@ -1029,8 +1013,8 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-h-[90vh] max-w-3xl overflow-hidden border-primary/20 p-0 sm:rounded-2xl">
-        <div className="border-b border-primary/10 bg-gradient-to-br from-accent via-background to-accent/60 p-6">
+      <DialogContent className="flex h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-3xl flex-col overflow-hidden border-primary/20 p-0 sm:h-[min(92dvh,860px)] sm:w-[calc(100vw-2rem)] sm:rounded-2xl">
+        <div className="border-b border-primary/10 bg-gradient-to-br from-accent via-background to-accent/60 p-4 sm:p-6">
           <DialogHeader className="text-left">
             <DialogTitle className="font-heading text-xl text-foreground">
               Post a new listing
@@ -1040,7 +1024,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
             </DialogDescription>
           </DialogHeader>
 
-          <div className="mt-4 grid gap-2 md:grid-cols-[1fr_auto_1fr_auto_1fr_auto_1fr_auto_1fr] md:items-center">
+          <div className="mt-4 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:grid md:grid-cols-[1fr_auto_1fr_auto_1fr_auto_1fr_auto_1fr] md:items-center md:overflow-visible md:pb-0">
             <FlowStepCard
               active={step === "category"}
               complete={step !== "category"}
@@ -1100,8 +1084,8 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
         </div>
 
         {step === "category" ? (
-          <section key="post-step-category" className="flex max-h-[62vh] flex-col">
-            <div className="space-y-4 overflow-y-auto p-6">
+          <section key="post-step-category" className="flex min-h-0 flex-1 flex-col">
+            <div className="flex-1 space-y-4 overflow-y-auto p-4 sm:p-6">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="font-heading text-lg">Step 1: Select categories</h3>
                 <span className="rounded-full bg-accent px-2.5 py-1 text-xs font-medium text-muted-foreground">
@@ -1171,7 +1155,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
               )}
             </div>
 
-            <div className="flex flex-col gap-3 border-t border-primary/10 bg-background px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-3 border-t border-primary/10 bg-background px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-4">
               <p className="text-xs text-muted-foreground">
                 Pick at least 1 category and at most {MAX_CATEGORY_SELECTION}.
               </p>
@@ -1188,8 +1172,8 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
             </div>
           </section>
         ) : step === "details" ? (
-          <section key="post-step-details" className="flex max-h-[62vh] flex-col">
-            <div className="space-y-4 overflow-y-auto p-6">
+          <section key="post-step-details" className="flex min-h-0 flex-1 flex-col">
+            <div className="flex-1 space-y-4 overflow-y-auto p-4 sm:p-6">
               <h3 className="font-heading text-lg">Step 2: Product details</h3>
 
               <div className="space-y-2">
@@ -1252,7 +1236,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
               </div>
             </div>
 
-            <div className="flex flex-col gap-3 border-t border-primary/10 bg-background px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-3 border-t border-primary/10 bg-background px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-4">
               <Button type="button" variant="outline" onClick={() => setStep("category")} className="border-primary/45">
                 Back to categories
               </Button>
@@ -1269,8 +1253,8 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
             </div>
           </section>
         ) : step === "photos" ? (
-          <section key="post-step-photos" className="flex max-h-[62vh] flex-col">
-            <div className="space-y-4 overflow-y-auto p-6">
+          <section key="post-step-photos" className="flex min-h-0 flex-1 flex-col">
+            <div className="flex-1 space-y-4 overflow-y-auto p-4 sm:p-6">
               <h3 className="font-heading text-lg">Step 3: Upload photos</h3>
 
               <div className="space-y-2">
@@ -1332,7 +1316,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
               )}
             </div>
 
-            <div className="flex flex-col gap-3 border-t border-primary/10 bg-background px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-3 border-t border-primary/10 bg-background px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-4">
               <Button type="button" variant="outline" onClick={() => setStep("details")} className="border-primary/45">
                 Back to details
               </Button>
@@ -1349,12 +1333,12 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
             </div>
           </section>
         ) : step === "location" ? (
-          <section key="post-step-location" className="flex max-h-[62vh] flex-col">
-            <div className="space-y-4 overflow-y-auto p-6">
-              <h3 className="font-heading text-lg">Step 4: Product location (optional)</h3>
+          <section key="post-step-location" className="flex min-h-0 flex-1 flex-col">
+            <div className="flex-1 space-y-4 overflow-y-auto p-4 sm:p-6">
+              <h3 className="font-heading text-lg">Step 4: Product location</h3>
 
               <p className="text-xs text-muted-foreground">
-                Add pickup location details so buyers can see where this product is available.
+                City and state are required so buyers can get accurate distance from your listing.
               </p>
 
               <div className="space-y-2">
@@ -1518,7 +1502,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
 
               {!hasValidLocation && (
                 <p className="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-                  Add full address fields or pin on map. Pincode is optional but must be valid when provided.
+                  Select both city and state before continuing. Pincode is optional but must be valid when provided.
                 </p>
               )}
 
@@ -1530,7 +1514,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
               )}
             </div>
 
-            <div className="flex flex-col gap-3 border-t border-primary/10 bg-background px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-3 border-t border-primary/10 bg-background px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-4">
               <Button type="button" variant="outline" onClick={() => setStep("photos")} className="border-primary/45">
                 Back to photos
               </Button>
@@ -1547,8 +1531,8 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
             </div>
           </section>
         ) : (
-          <form key="post-step-purpose" onSubmit={handleSubmit} className="flex max-h-[62vh] flex-col">
-            <div className="space-y-4 overflow-y-auto p-6">
+          <form key="post-step-purpose" onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+            <div className="flex-1 space-y-4 overflow-y-auto p-4 sm:p-6">
               <h3 className="font-heading text-lg">Step 5: Purpose and pricing</h3>
 
               <div className="space-y-2">
@@ -1679,7 +1663,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
               </div>
             </div>
 
-            <div className="flex flex-col gap-3 border-t border-primary/10 bg-background px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-3 border-t border-primary/10 bg-background px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-4">
               <Button
                 type="button"
                 variant="outline"
@@ -1717,7 +1701,7 @@ function FlowStepCard({ active, complete, stepNumber, title, subtitle }: FlowSte
   return (
     <div
       className={cn(
-        "rounded-xl border px-3 py-2 transition-colors",
+        "min-w-[210px] shrink-0 rounded-xl border px-3 py-2 transition-colors md:min-w-0",
         active
           ? "border-primary/40 bg-primary/10"
           : "border-border/70 bg-background/90",
@@ -1739,7 +1723,7 @@ function FlowStepCard({ active, complete, stepNumber, title, subtitle }: FlowSte
 
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</p>
-          <p className="text-sm font-medium text-foreground">{subtitle}</p>
+          <p className="text-sm font-medium leading-snug text-foreground">{subtitle}</p>
         </div>
       </div>
     </div>
