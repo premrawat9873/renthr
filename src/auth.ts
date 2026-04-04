@@ -57,6 +57,7 @@ const googleClientId = process.env.GOOGLE_CLIENT_ID || process.env.AUTH_GOOGLE_I
 const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET || process.env.AUTH_GOOGLE_SECRET;
 const facebookClientId = process.env.FACEBOOK_CLIENT_ID || process.env.AUTH_FACEBOOK_ID;
 const facebookClientSecret = process.env.FACEBOOK_CLIENT_SECRET || process.env.AUTH_FACEBOOK_SECRET;
+const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
 
 if (googleClientId && googleClientSecret) {
   providers.push(
@@ -83,6 +84,11 @@ export const authOptions: AuthOptions = {
   },
   session: {
     strategy: "jwt",
+    maxAge: SESSION_MAX_AGE_SECONDS,
+    updateAge: 60 * 60 * 24,
+  },
+  jwt: {
+    maxAge: SESSION_MAX_AGE_SECONDS,
   },
   secret: process.env.NEXTAUTH_SECRET || process.env.AUTH_SECRET,
 };

@@ -2,7 +2,23 @@ import { createHmac, timingSafeEqual } from 'crypto';
 
 export const CUSTOM_SESSION_COOKIE_NAME = 'rk_session';
 
-const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7;
+const DEFAULT_SESSION_TTL_SECONDS = 60 * 60 * 24 * 30;
+
+function getSessionTtlSeconds() {
+  const rawTtl = process.env.AUTH_SESSION_TTL_SECONDS;
+  if (!rawTtl) {
+    return DEFAULT_SESSION_TTL_SECONDS;
+  }
+
+  const parsed = Number.parseInt(rawTtl, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_SESSION_TTL_SECONDS;
+  }
+
+  return parsed;
+}
+
+const SESSION_TTL_SECONDS = getSessionTtlSeconds();
 
 type SessionAuthMethod = 'otp';
 

@@ -3,6 +3,11 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAvatarUrlFromMetadata } from "@/lib/profile-avatar";
+import {
+  createCustomSessionToken,
+  CUSTOM_SESSION_COOKIE_NAME,
+  getCustomSessionCookieOptions,
+} from "@/lib/custom-session";
 
 function isSafeInternalPath(path: string | null) {
   return Boolean(path && path.startsWith("/") && !path.startsWith("//"));
@@ -62,14 +67,15 @@ export async function GET(request: Request) {
   } = await supabase.auth.getUser();
 
   if (user?.email) {
-    try {
-      const normalizedEmail = user.email.trim().toLowerCase();
-      const metadataName =
-        typeof user.user_metadata?.name === "string"
-          ? user.user_metadata.name.trim()
-          : "";
-      const metadataAvatarUrl = getAvatarUrlFromMetadata(user.user_metadata);
+    const normalizedEmail = user.email.trim().toLowerCase();
+    const metadataName =
+      typeof user.user_metadata?.name === "string"
+        ? user.user_metadata.name.trim()
+        : "";
+    const metadataAvatarUrl = getAvatarUrlFromMetadata(user.user_metadata);
+    let sessionUserId: string | number = user.id;
 
+    try {
       const existingUser = await prisma.user.findUnique({
         where: { email: normalizedEmail },
         select: {
@@ -80,14 +86,21 @@ export async function GET(request: Request) {
       });
 
       if (!existingUser) {
-        await prisma.user.create({
+        const createdUser = await prisma.user.create({
           data: {
             email: normalizedEmail,
             name: metadataName || null,
             avatarUrl: metadataAvatarUrl,
           },
+          select: {
+            id: true,
+          },
         });
+
+        sessionUserId = createdUser.id;
       } else {
+        sessionUserId = existingUser.id;
+
         const updateData: {
           name?: string;
           avatarUrl?: string;
@@ -110,6 +123,22 @@ export async function GET(request: Request) {
       }
     } catch {
       // OAuth session is already established; skip profile sync failure for this request.
+    }
+
+    try {
+      const sessionToken = createCustomSessionToken({
+        userId: sessionUserId,
+        email: normalizedEmail,
+        name: metadataName || null,
+      });
+
+      response.cookies.set(
+        CUSTOM_SESSION_COOKIE_NAME,
+        sessionToken,
+        getCustomSessionCookieOptions()
+      );
+    } catch {
+      // Keep OAuth login successful even if custom cookie signing is unavailable.
     }
   }
 

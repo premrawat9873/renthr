@@ -14,7 +14,32 @@ type SupabaseAuthContextValue = {
   signOut: () => Promise<void>;
 };
 
+type AuthSessionResponse = {
+  authenticated?: boolean;
+};
+
 const SupabaseAuthContext = createContext<SupabaseAuthContextValue | undefined>(undefined);
+
+async function hasServerSideSessionCookie() {
+  try {
+    const response = await fetch('/api/auth/me', {
+      method: 'GET',
+      cache: 'no-store',
+      headers: {
+        'Cache-Control': 'no-store',
+      },
+    });
+
+    if (!response.ok) {
+      return false;
+    }
+
+    const payload = (await response.json()) as AuthSessionResponse;
+    return Boolean(payload.authenticated);
+  } catch {
+    return false;
+  }
+}
 
 export function SupabaseAuthProvider({ children }: { children: React.ReactNode }) {
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
@@ -24,36 +49,62 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
   useEffect(() => {
     let isMounted = true;
 
+    let syncSequence = 0;
+
+    const syncAuthState = async (nextSession: Session | null) => {
+      const currentSequence = ++syncSequence;
+
+      if (nextSession) {
+        if (!isMounted || currentSequence !== syncSequence) {
+          return;
+        }
+
+        setSession(nextSession);
+        setStatus('authenticated');
+        return;
+      }
+
+      if (!isMounted || currentSequence !== syncSequence) {
+        return;
+      }
+
+      setSession(null);
+
+      const cookieAuthenticated = await hasServerSideSessionCookie();
+
+      if (!isMounted || currentSequence !== syncSequence) {
+        return;
+      }
+
+      setStatus(cookieAuthenticated ? 'authenticated' : 'unauthenticated');
+    };
+
     supabase.auth
       .getSession()
       .then(({ data, error }) => {
         if (!isMounted) return;
 
         if (error) {
-          setSession(null);
-          setStatus('unauthenticated');
+          void syncAuthState(null);
           return;
         }
 
-        const nextSession = data.session ?? null;
-        setSession(nextSession);
-        setStatus(nextSession ? 'authenticated' : 'unauthenticated');
+        void syncAuthState(data.session ?? null);
       })
       .catch(() => {
         if (!isMounted) return;
-        setSession(null);
-        setStatus('unauthenticated');
+        void syncAuthState(null);
       });
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      setSession(nextSession ?? null);
-      setStatus(nextSession ? 'authenticated' : 'unauthenticated');
+      void syncAuthState(nextSession ?? null);
     });
 
     return () => {
       isMounted = false;
+      syncSequence += 1;
       subscription.unsubscribe();
     };
   }, [supabase]);
