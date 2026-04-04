@@ -308,7 +308,7 @@ function mapListingRecordToProduct(record: ListingRecord): Product {
             reviewRatings.reduce((sum, value) => sum + value, 0) / reviewCount
           ).toFixed(1)
         )
-      : undefined;
+      : null;
 
   return {
     id: String(record.id),
@@ -333,9 +333,9 @@ function mapListingRecordToProduct(record: ListingRecord): Product {
     distance: -1,
     isAvailable: record.status === "ACTIVE",
     postedAt: record.createdAt,
-    rating,
+    ...(rating != null ? { rating } : {}),
     featured: record.featured,
-    reviewCount: reviewCount > 0 ? reviewCount : undefined,
+    ...(reviewCount > 0 ? { reviewCount } : {}),
     description: record.description ?? undefined,
     ownerId: String(record.author.id),
     ownerName,

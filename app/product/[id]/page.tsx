@@ -95,7 +95,8 @@ export default async function ProductDetailPage({
       typeof value === 'number' && Number.isFinite(value) && value > 0
   );
   const hasAggregateRating =
-    product.rating != null &&
+    typeof product.rating === 'number' &&
+    Number.isFinite(product.rating) &&
     product.reviewCount != null &&
     Number.isFinite(product.reviewCount) &&
     product.reviewCount > 0;

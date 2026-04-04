@@ -40,6 +40,9 @@ export default function ProductCard({ product, rentDurations, priority = false }
   const isRentAvailable = product.type === "rent" || product.type === "both";
   const isSellAvailable = product.type === "sell" || product.type === "both";
   const isAvailable = product.isAvailable ?? true;
+  const reviewCount = product.reviewCount ?? 0;
+  const ratingValue = product.rating;
+  const hasReviews = typeof ratingValue === "number" && reviewCount > 0;
 
   return (
     <div
@@ -121,13 +124,17 @@ export default function ProductCard({ product, rentDurations, priority = false }
         </h3>
 
         {/* Rating (rent only) */}
-        {isRentAvailable && product.rating != null && (
+        {isRentAvailable && (
           <div className="flex items-center gap-1.5">
-            <Star className="h-3.5 w-3.5 fill-star text-star" />
-            <span className="text-xs font-medium text-foreground">{product.rating.toFixed(1)}</span>
-            {product.reviewCount != null && (
-              <span className="text-xs text-muted-foreground">({product.reviewCount} reviews)</span>
-            )}
+            <Star
+              className={`h-3.5 w-3.5 ${hasReviews ? "fill-star text-star" : "text-muted-foreground"}`}
+            />
+            <span className="text-xs font-medium text-foreground">
+              {hasReviews ? ratingValue.toFixed(1) : "0.0"}
+            </span>
+            <span className="text-xs text-muted-foreground">
+              ({reviewCount} {reviewCount === 1 ? "review" : "reviews"})
+            </span>
           </div>
         )}
 
