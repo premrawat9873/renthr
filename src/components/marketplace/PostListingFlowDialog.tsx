@@ -89,7 +89,7 @@ const INITIAL_RENT_PRICES: Record<RentDurationOption, string> = {
   weekly: "",
   monthly: "",
 };
-const LOCATION_PINCODE_PATTERN = /^[A-Za-z0-9 -]{4,12}$/;
+const LOCATION_PINCODE_PATTERN = /^\d{6}$/;
 const FIELD_BORDER_CLASS =
   "border-primary/40 focus-visible:border-primary/70 focus-visible:ring-primary/20";
 const ACTION_BUTTON_BORDER_CLASS =
@@ -144,6 +144,10 @@ function normalizeLocationToken(value: string) {
     .toLowerCase()
     .replace(/[^a-z0-9 ]+/g, " ")
     .replace(/\s+/g, " ");
+}
+
+function normalizePincodeInput(value: string) {
+  return value.replace(/\D+/g, "").slice(0, 6);
 }
 
 function findMatchingStateOption(options: IndiaStateOption[], stateName: string) {
@@ -296,7 +300,10 @@ async function reverseGeocodeCoordinates(
     const city = typeof payload.city === "string" ? payload.city.trim() : "";
     const state = typeof payload.state === "string" ? payload.state.trim() : "";
     const line1 = typeof payload.line1 === "string" ? payload.line1.trim() : "";
-    const pincode = typeof payload.pincode === "string" ? payload.pincode.trim() : "";
+    const pincode =
+      typeof payload.pincode === "string"
+        ? normalizePincodeInput(payload.pincode.trim())
+        : "";
 
     if (!city || !state) {
       return null;
@@ -766,7 +773,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
         }
 
         setLocationLine1(resolvedAddress.line1);
-        setLocationPincode(resolvedAddress.pincode);
+        setLocationPincode(normalizePincodeInput(resolvedAddress.pincode));
 
         let availableStates = stateOptions;
         if (availableStates.length === 0) {
@@ -1490,19 +1497,21 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
                 <Input
                   id="post-listing-location-pincode"
                   value={locationPincode}
-                  onChange={(event) => setLocationPincode(event.target.value)}
+                  onChange={(event) => setLocationPincode(normalizePincodeInput(event.target.value))}
                   placeholder="e.g. 560001"
-                  maxLength={12}
+                  maxLength={6}
+                  inputMode="numeric"
+                  pattern="[0-9]{6}"
                   className={FIELD_BORDER_CLASS}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Use 4-12 letters, numbers, spaces, or hyphens.
+                  Enter a 6-digit pincode.
                 </p>
               </div>
 
               {!hasValidLocation && (
                 <p className="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-                  Select both city and state before continuing. Pincode is optional but must be valid when provided.
+                  Select both city and state before continuing. Pincode is optional but must be exactly 6 digits when provided.
                 </p>
               )}
 

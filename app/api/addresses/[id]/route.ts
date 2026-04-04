@@ -105,8 +105,7 @@ export async function PATCH(
       if (!isValidPincode(normalizedPincode)) {
         return NextResponse.json(
           {
-            error:
-              "Enter a valid pincode (4-12 letters, numbers, spaces, or hyphen).",
+            error: "Enter a valid 6-digit pincode.",
           },
           { status: 400 }
         );

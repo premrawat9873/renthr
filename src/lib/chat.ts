@@ -2,6 +2,7 @@ import 'server-only';
 
 import { prisma } from '@/lib/prisma';
 import { resolveProfileAvatarUrl } from '@/lib/profile-avatar';
+import { decryptChatMessageContent, encryptChatMessageContent } from '@/lib/chat-encryption';
 import type {
   ChatConversationPayload,
   ChatMessagePayload,
@@ -106,7 +107,7 @@ function mapMessagePayload(
     senderName: getDisplayName(message.sender.name, message.sender.email),
     senderAvatarUrl: resolveProfileAvatarUrl(message.sender.avatarUrl),
     type: message.type as ChatMessageType,
-    content: message.content,
+    content: decryptChatMessageContent(message.content),
     imageUrl: message.imageUrl,
     createdAt: message.createdAt.toISOString(),
     mine: message.senderId === viewerUserId,
@@ -229,7 +230,7 @@ export async function listChatConversationsForUser(
         ? {
             id: String(latestMessage.id),
             senderId: String(latestMessage.senderId),
-            content: latestMessage.content,
+            content: decryptChatMessageContent(latestMessage.content),
             type: latestMessage.type as ChatMessageType,
             createdAt: latestMessage.createdAt.toISOString(),
           }
@@ -360,7 +361,7 @@ export async function startOrGetDirectConversation(input: {
         data: {
           conversationId: baseConversation.id,
           senderId: userId,
-          content: initialMessage,
+          content: encryptChatMessageContent(initialMessage),
           type: 'TEXT',
         },
         select: {
@@ -479,7 +480,7 @@ export async function sendMessageToConversation(input: {
       data: {
         conversationId,
         senderId: userId,
-        content,
+        content: encryptChatMessageContent(content),
         type: imageUrl ? 'IMAGE' : 'TEXT',
         imageUrl: imageUrl || null,
       },

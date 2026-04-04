@@ -20,6 +20,7 @@ This project uses Supabase Auth for email/password and OAuth sign-in.
 ```env
 NEXT_PUBLIC_SUPABASE_URL="https://<your-project-ref>.supabase.co"
 NEXT_PUBLIC_SUPABASE_ANON_KEY="<your-anon-key>"
+MESSAGE_ENCRYPTION_SECRET="<long-random-secret>"
 ```
 
 2. In Supabase Dashboard, configure Auth provider settings:

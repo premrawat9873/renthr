@@ -3,7 +3,7 @@ import "server-only";
 import { getCurrentUserInfo } from "@/lib/current-user";
 import { prisma } from "@/lib/prisma";
 
-const PINCODE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9\s-]{3,11}$/;
+const PINCODE_PATTERN = /^\d{6}$/;
 
 type AddressRecord = {
   id: number;
@@ -37,7 +37,7 @@ export function normalizeText(value: unknown) {
 }
 
 export function normalizePincode(value: unknown) {
-  return typeof value === "string" ? value.trim().toUpperCase() : "";
+  return typeof value === "string" ? value.trim() : "";
 }
 
 export function isValidPincode(value: string) {

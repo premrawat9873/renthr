@@ -35,7 +35,7 @@ type CreateListingBody = {
 
 const MAX_IMAGE_COUNT = 3;
 const LOCATION_MIN_LENGTH = 2;
-const LOCATION_PINCODE_PATTERN = /^[A-Za-z0-9 -]{4,12}$/;
+const LOCATION_PINCODE_PATTERN = /^\d{6}$/;
 const LOCATION_PLACEHOLDER_VALUES = new Set(["unknown", "na", "n/a"]);
 
 function normalizeCategorySlug(value: string) {
@@ -521,7 +521,7 @@ export async function POST(request: Request) {
 
     if (!isValidLocationPincode(location.pincode)) {
       return NextResponse.json(
-        { error: "Location pincode must be 4-12 letters, numbers, spaces, or hyphens." },
+        { error: "Location pincode must be a 6-digit number." },
         { status: 400 }
       );
     }
