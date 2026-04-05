@@ -8,6 +8,7 @@ import {
   CUSTOM_SESSION_COOKIE_NAME,
   getCustomSessionCookieOptions,
 } from "@/lib/custom-session";
+import { getSupabaseAuthCookieOptions } from "@/lib/auth-cookie-options";
 
 function isSafeInternalPath(path: string | null) {
   return Boolean(path && path.startsWith("/") && !path.startsWith("//"));
@@ -44,6 +45,7 @@ export async function GET(request: Request) {
   const cookieStore = await cookies();
 
   const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+    cookieOptions: getSupabaseAuthCookieOptions(),
     cookies: {
       getAll() {
         return cookieStore.getAll();

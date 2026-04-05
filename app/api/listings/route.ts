@@ -7,6 +7,7 @@ import {
   CUSTOM_SESSION_COOKIE_NAME,
   verifyCustomSessionToken,
 } from "@/lib/custom-session";
+import { getSupabaseAuthCookieOptions } from "@/lib/auth-cookie-options";
 import {
   getMarketplaceListingProductsPayloadPage,
   MARKETPLACE_DEFAULT_PAGE_SIZE,
@@ -319,6 +320,7 @@ async function resolveAuthenticatedIdentity() {
   }
 
   const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+    cookieOptions: getSupabaseAuthCookieOptions(),
     cookies: {
       getAll() {
         return cookieStore.getAll();

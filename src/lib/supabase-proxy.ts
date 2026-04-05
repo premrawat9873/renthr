@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
+import { getSupabaseAuthCookieOptions } from '@/lib/auth-cookie-options';
 import {
   CUSTOM_SESSION_COOKIE_NAME,
   verifyCustomSessionToken,
@@ -47,6 +48,7 @@ export async function updateSession(request: NextRequest) {
 
   if (supabaseUrl && supabaseAnonKey) {
     const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+      cookieOptions: getSupabaseAuthCookieOptions(),
       cookies: {
         getAll() {
           return request.cookies.getAll();

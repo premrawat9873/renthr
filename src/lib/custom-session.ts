@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from 'crypto';
+import { getAuthCookieBaseOptions } from '@/lib/auth-cookie-options';
 
 export const CUSTOM_SESSION_COOKIE_NAME = 'rk_session';
 
@@ -130,10 +131,8 @@ export function verifyCustomSessionToken(token: string | null | undefined): Cust
 
 export function getCustomSessionCookieOptions() {
   return {
+    ...getAuthCookieBaseOptions(),
     httpOnly: true,
-    sameSite: 'lax' as const,
-    secure: process.env.NODE_ENV === 'production',
-    path: '/',
     maxAge: SESSION_TTL_SECONDS,
   };
 }
