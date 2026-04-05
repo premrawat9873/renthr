@@ -35,8 +35,10 @@
     ]
   },
   "include": [
+    "next-env.d.ts",
     "src",
     "app",
+    "proxy.ts",
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts"
   ],
