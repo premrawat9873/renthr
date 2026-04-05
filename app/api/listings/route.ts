@@ -14,6 +14,7 @@ import {
 } from "@/lib/listings";
 import { getAvatarUrlFromMetadata } from "@/lib/profile-avatar";
 import { prisma } from "@/lib/prisma";
+import { isSupabaseRefreshTokenNotFoundError } from "@/lib/supabase-auth-utils";
 
 export const runtime = "nodejs";
 
@@ -331,9 +332,26 @@ async function resolveAuthenticatedIdentity() {
     },
   });
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  let user = null;
+
+  try {
+    const {
+      data,
+      error,
+    } = await supabase.auth.getUser();
+
+    if (error) {
+      return null;
+    }
+
+    user = data.user;
+  } catch (error) {
+    if (isSupabaseRefreshTokenNotFoundError(error)) {
+      return null;
+    }
+
+    return null;
+  }
 
   if (!user?.email) {
     return null;

@@ -9,6 +9,10 @@ import {
   getCustomSessionCookieOptions,
 } from "@/lib/custom-session";
 import { getSupabaseAuthCookieOptions } from "@/lib/auth-cookie-options";
+import {
+  clearSupabaseAuthTokenCookies,
+  filterCookiesForSupabaseAuthCodeExchange,
+} from "@/lib/supabase-auth-utils";
 
 function isSafeInternalPath(path: string | null) {
   return Boolean(path && path.startsWith("/") && !path.startsWith("//"));
@@ -43,12 +47,19 @@ export async function GET(request: Request) {
 
   const response = NextResponse.redirect(new URL(nextPath, requestUrl.origin));
   const cookieStore = await cookies();
+  const incomingCookies = cookieStore.getAll();
+
+  const toLoginRedirectWithSessionReset = (errorCode: string) => {
+    const redirectResponse = toLoginRedirect(requestUrl, nextPath, errorCode);
+    clearSupabaseAuthTokenCookies(redirectResponse, incomingCookies);
+    return redirectResponse;
+  };
 
   const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
     cookieOptions: getSupabaseAuthCookieOptions(),
     cookies: {
       getAll() {
-        return cookieStore.getAll();
+        return filterCookiesForSupabaseAuthCodeExchange(incomingCookies);
       },
       setAll(cookiesToSet) {
         cookiesToSet.forEach(({ name, value, options }) => {
@@ -58,15 +69,35 @@ export async function GET(request: Request) {
     },
   });
 
-  const { error } = await supabase.auth.exchangeCodeForSession(code);
+  let exchangeError: unknown = null;
 
-  if (error) {
-    return toLoginRedirect(requestUrl, nextPath, "oauth_exchange_failed");
+  try {
+    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    exchangeError = error;
+  } catch (error) {
+    exchangeError = error;
   }
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  if (exchangeError) {
+    return toLoginRedirectWithSessionReset("oauth_exchange_failed");
+  }
+
+  let user = null;
+
+  try {
+    const {
+      data,
+      error,
+    } = await supabase.auth.getUser();
+
+    if (error) {
+      return toLoginRedirectWithSessionReset("oauth_user_missing");
+    }
+
+    user = data.user;
+  } catch {
+    return toLoginRedirectWithSessionReset("oauth_user_missing");
+  }
 
   if (user?.email) {
     const normalizedEmail = user.email.trim().toLowerCase();

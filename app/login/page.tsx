@@ -122,12 +122,24 @@ export default function LoginPage() {
       missing_oauth_code: 'Google sign-in could not be completed. Please try again.',
       missing_supabase_env: 'Auth is not configured correctly. Please contact support.',
       oauth_exchange_failed: 'Google sign-in session could not be created. Please try again.',
+      oauth_user_missing: 'Google account details could not be loaded. Please try again.',
     };
 
     setAuthError(
       messageByErrorCode[oauthErrorParam] ||
         'Sign-in could not be completed. Please try again.'
     );
+
+    if (oauthErrorParam === 'oauth_exchange_failed' || oauthErrorParam === 'oauth_user_missing') {
+      setAuthMessage('Resetting old session data. Please try Google sign-in again in a moment.');
+
+      void fetch('/api/auth/logout', {
+        method: 'POST',
+        cache: 'no-store',
+      }).catch(() => {
+        // Ignore cleanup errors; manual retry still works.
+      });
+    }
   }, [oauthErrorParam]);
 
   const handleRegister = async () => {

@@ -11,6 +11,7 @@ import { prisma } from "@/lib/prisma";
 import {
   getAvatarUrlFromMetadata,
 } from "@/lib/profile-avatar";
+import { isSupabaseRefreshTokenNotFoundError } from "@/lib/supabase-auth-utils";
 
 export type CurrentUserInfo = {
   id: string | null;
@@ -72,9 +73,26 @@ export async function getCurrentUserInfo(): Promise<CurrentUserInfo | null> {
     },
   });
 
-  const {
-    data: { user: supabaseUser },
-  } = await supabase.auth.getUser();
+  let supabaseUser = null;
+
+  try {
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser();
+
+    if (error) {
+      return null;
+    }
+
+    supabaseUser = user;
+  } catch (error) {
+    if (isSupabaseRefreshTokenNotFoundError(error)) {
+      return null;
+    }
+
+    return null;
+  }
 
   if (!supabaseUser?.email) {
     return null;

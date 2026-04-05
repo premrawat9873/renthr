@@ -61,7 +61,7 @@ export async function GET(request: Request) {
   const callbackUrl = new URL('/api/auth/oauth/mobile/callback', requestUrl.origin);
   callbackUrl.searchParams.set('redirect', redirectTarget);
 
-  let response = NextResponse.redirect(new URL('/login', requestUrl.origin));
+  const response = NextResponse.redirect(new URL('/login', requestUrl.origin));
   const cookieStore = await cookies();
 
   const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {

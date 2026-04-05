@@ -9,6 +9,10 @@ import {
   getCustomSessionCookieOptions,
 } from '@/lib/custom-session';
 import { getSupabaseAuthCookieOptions } from '@/lib/auth-cookie-options';
+import {
+  clearSupabaseAuthTokenCookies,
+  filterCookiesForSupabaseAuthCodeExchange,
+} from '@/lib/supabase-auth-utils';
 
 const DEFAULT_ALLOWED_MOBILE_REDIRECT_SCHEMES = ['renthour', 'exp'];
 
@@ -85,14 +89,23 @@ export async function GET(request: Request) {
     );
   }
 
-  let response = NextResponse.redirect(redirectTargetRaw);
+  const response = NextResponse.redirect(redirectTargetRaw);
   const cookieStore = await cookies();
+  const incomingCookies = cookieStore.getAll();
+
+  const redirectWithSessionReset = (errorCode: string) => {
+    const redirectResponse = NextResponse.redirect(
+      buildMobileRedirect(redirectTargetRaw, { error: errorCode })
+    );
+    clearSupabaseAuthTokenCookies(redirectResponse, incomingCookies);
+    return redirectResponse;
+  };
 
   const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
     cookieOptions: getSupabaseAuthCookieOptions(),
     cookies: {
       getAll() {
-        return cookieStore.getAll();
+        return filterCookiesForSupabaseAuthCodeExchange(incomingCookies);
       },
       setAll(cookiesToSet) {
         cookiesToSet.forEach(({ name, value, options }) => {
@@ -102,16 +115,35 @@ export async function GET(request: Request) {
     },
   });
 
-  const { error } = await supabase.auth.exchangeCodeForSession(code);
-  if (error) {
-    return NextResponse.redirect(
-      buildMobileRedirect(redirectTargetRaw, { error: 'oauth_exchange_failed' })
-    );
+  let exchangeError: unknown = null;
+
+  try {
+    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    exchangeError = error;
+  } catch (error) {
+    exchangeError = error;
   }
 
-  const {
-    data: { user: supabaseUser },
-  } = await supabase.auth.getUser();
+  if (exchangeError) {
+    return redirectWithSessionReset('oauth_exchange_failed');
+  }
+
+  let supabaseUser = null;
+
+  try {
+    const {
+      data,
+      error,
+    } = await supabase.auth.getUser();
+
+    if (error) {
+      return redirectWithSessionReset('oauth_user_missing');
+    }
+
+    supabaseUser = data.user;
+  } catch {
+    return redirectWithSessionReset('oauth_user_missing');
+  }
 
   if (!supabaseUser?.email) {
     return NextResponse.redirect(

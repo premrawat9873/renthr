@@ -5,6 +5,10 @@ import {
   CUSTOM_SESSION_COOKIE_NAME,
   verifyCustomSessionToken,
 } from '@/lib/custom-session';
+import {
+  clearSupabaseAuthTokenCookies,
+  isSupabaseRefreshTokenNotFoundError,
+} from '@/lib/supabase-auth-utils';
 
 const PROTECTED_ROUTES: string[] = [];
 
@@ -40,6 +44,15 @@ export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({
     request,
   });
+  const pathname = request.nextUrl.pathname;
+
+  if (pathname === '/' && request.nextUrl.searchParams.has('code')) {
+    return NextResponse.redirect(getOAuthCallbackRedirectUrl(request));
+  }
+
+  if (pathname === '/') {
+    return NextResponse.redirect(new URL('/home', request.url));
+  }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -69,26 +82,30 @@ export async function updateSession(request: NextRequest) {
       },
     });
 
-    const {
-      data: { user: supabaseUser },
-    } = await supabase.auth.getUser();
+    try {
+      const {
+        data: { user: supabaseUser },
+        error,
+      } = await supabase.auth.getUser();
 
-    user = supabaseUser;
+      if (error && isSupabaseRefreshTokenNotFoundError(error)) {
+        clearSupabaseAuthTokenCookies(response, request.cookies.getAll());
+      }
+
+      user = supabaseUser;
+    } catch (error) {
+      if (isSupabaseRefreshTokenNotFoundError(error)) {
+        clearSupabaseAuthTokenCookies(response, request.cookies.getAll());
+      }
+
+      user = null;
+    }
   }
 
-  const pathname = request.nextUrl.pathname;
   const customSession = verifyCustomSessionToken(
     request.cookies.get(CUSTOM_SESSION_COOKIE_NAME)?.value
   );
   const isAuthenticated = Boolean(user) || Boolean(customSession);
-
-  if (pathname === '/' && request.nextUrl.searchParams.has('code')) {
-    return NextResponse.redirect(getOAuthCallbackRedirectUrl(request));
-  }
-
-  if (pathname === '/') {
-    return NextResponse.redirect(new URL('/home', request.url));
-  }
 
   if (isProtectedRoute(pathname) && !isAuthenticated) {
     const redirectUrl = request.nextUrl.clone();
