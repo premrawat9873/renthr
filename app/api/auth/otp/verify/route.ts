@@ -85,6 +85,7 @@ export async function POST(request: Request) {
         email: user.email,
         name: user.name,
       },
+      sessionToken,
     });
 
     response.cookies.set(CUSTOM_SESSION_COOKIE_NAME, sessionToken, getCustomSessionCookieOptions());

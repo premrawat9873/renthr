@@ -132,6 +132,7 @@ export async function GET(request: Request) {
         userId: sessionUserId,
         email: normalizedEmail,
         name: metadataName || null,
+        authMethod: "oauth",
       });
 
       response.cookies.set(

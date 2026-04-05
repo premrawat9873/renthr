@@ -21,7 +21,7 @@ function getSessionTtlSeconds() {
 
 const SESSION_TTL_SECONDS = getSessionTtlSeconds();
 
-type SessionAuthMethod = 'otp';
+type SessionAuthMethod = 'otp' | 'password' | 'oauth';
 
 export type CustomSessionPayload = {
   sub: string;
