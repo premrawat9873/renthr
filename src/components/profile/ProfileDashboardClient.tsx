@@ -259,7 +259,7 @@ export default function ProfileDashboardClient({
       return;
     }
 
-    router.push('/home');
+    router.push('/');
   };
 
   const handleAvatarFileChange = async (
@@ -1039,7 +1039,7 @@ export default function ProfileDashboardClient({
               <span className="hidden sm:inline">Back</span>
             </Button>
 
-            <Link href="/home" className="flex items-center gap-1">
+            <Link href="/" className="flex items-center gap-1">
               <span className="text-xl font-semibold tracking-tight text-foreground">rent</span>
               <span className="rounded-md bg-accent px-2 py-0.5 text-xl font-bold text-accent-foreground">
                 hour

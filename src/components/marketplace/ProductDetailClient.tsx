@@ -410,7 +410,7 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
       return;
     }
 
-    router.push('/home');
+    router.push('/');
   };
 
   const handleMessageSeller = async () => {
@@ -754,7 +754,7 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
 
       <main className="mx-auto max-w-7xl px-4 pb-24 pt-6 sm:px-6 lg:px-8 lg:pb-6">
         <nav className="flex items-center gap-1 overflow-x-auto text-sm">
-          <Link href="/home" className="p-1 text-muted-foreground transition-colors hover:text-foreground">
+          <Link href="/" className="p-1 text-muted-foreground transition-colors hover:text-foreground">
             <Home className="h-4 w-4" />
           </Link>
 

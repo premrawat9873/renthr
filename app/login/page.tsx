@@ -62,7 +62,7 @@ export default function LoginPage() {
   const nextParam = searchParams.get('next');
   const oauthErrorParam = searchParams.get('error');
   const postLoginRedirectPath =
-    nextParam && nextParam.startsWith('/') && !nextParam.startsWith('//') ? nextParam : '/home';
+    nextParam && nextParam.startsWith('/') && !nextParam.startsWith('//') ? nextParam : '/';
 
   const getAuthRedirectOrigin = () => {
     const currentOrigin = window.location.origin;
@@ -121,7 +121,10 @@ export default function LoginPage() {
     const messageByErrorCode: Record<string, string> = {
       missing_oauth_code: 'Google sign-in could not be completed. Please try again.',
       missing_supabase_env: 'Auth is not configured correctly. Please contact support.',
-      oauth_exchange_failed: 'Google sign-in session could not be created. Please try again.',
+      oauth_start_failed:
+        'Google sign-in could not be started. If you use Brave, disable Shields for this site and try again.',
+      oauth_exchange_failed:
+        'Google sign-in session could not be created. If you use Brave, disable Shields for this site and try again.',
       oauth_user_missing: 'Google account details could not be loaded. Please try again.',
     };
 
@@ -133,6 +136,10 @@ export default function LoginPage() {
     if (oauthErrorParam === 'oauth_exchange_failed' || oauthErrorParam === 'oauth_user_missing') {
       setAuthMessage('Resetting old session data. Please try Google sign-in again in a moment.');
 
+      void supabase.auth.signOut({ scope: 'local' }).catch(() => {
+        // Ignore local cleanup errors; server-side cleanup still runs below.
+      });
+
       void fetch('/api/auth/logout', {
         method: 'POST',
         cache: 'no-store',
@@ -140,7 +147,7 @@ export default function LoginPage() {
         // Ignore cleanup errors; manual retry still works.
       });
     }
-  }, [oauthErrorParam]);
+  }, [oauthErrorParam, supabase]);
 
   const handleRegister = async () => {
     const emailValue = email.trim().toLowerCase();
@@ -346,6 +353,26 @@ export default function LoginPage() {
     setAuthMessage(null);
 
     try {
+      await supabase.auth.signOut({ scope: 'local' }).catch(() => {
+        // Ignore local cleanup errors and continue with server-side cleanup.
+      });
+
+      // Start OAuth from a clean cookie state to avoid stale refresh-token loops.
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        cache: 'no-store',
+      }).catch(() => {
+        // Ignore cleanup errors and still attempt OAuth.
+      });
+
+      if (provider === 'google') {
+        const oauthStartUrl = `/api/auth/oauth/google/start?next=${encodeURIComponent(
+          postLoginRedirectPath
+        )}`;
+        window.location.assign(oauthStartUrl);
+        return;
+      }
+
       const { error } = await supabase.auth.signInWithOAuth({
         provider,
         options: {

@@ -26,7 +26,7 @@ function getPostLoginRedirectPath(request: NextRequest) {
   if (isSafeInternalPath(nextParam)) {
     return nextParam;
   }
-  return '/home';
+  return '/';
 }
 
 function getOAuthCallbackRedirectUrl(request: NextRequest) {
@@ -34,7 +34,7 @@ function getOAuthCallbackRedirectUrl(request: NextRequest) {
   callbackUrl.pathname = '/auth/callback';
 
   if (!isSafeInternalPath(callbackUrl.searchParams.get('next'))) {
-    callbackUrl.searchParams.set('next', '/home');
+    callbackUrl.searchParams.set('next', '/');
   }
 
   return callbackUrl;
@@ -48,10 +48,6 @@ export async function updateSession(request: NextRequest) {
 
   if (pathname === '/' && request.nextUrl.searchParams.has('code')) {
     return NextResponse.redirect(getOAuthCallbackRedirectUrl(request));
-  }
-
-  if (pathname === '/') {
-    return NextResponse.redirect(new URL('/home', request.url));
   }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;

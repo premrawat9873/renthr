@@ -46,7 +46,7 @@ export default async function ProfilePage({
             <Link href="/login?next=/profile" className="text-sm font-medium text-primary hover:underline">
               Go to login
             </Link>
-            <Link href="/home" className="text-sm font-medium text-primary hover:underline">
+            <Link href="/" className="text-sm font-medium text-primary hover:underline">
               Back to marketplace
             </Link>
           </div>

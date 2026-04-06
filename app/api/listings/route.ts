@@ -689,7 +689,7 @@ export async function POST(request: Request) {
       },
     });
 
-    revalidatePath("/home");
+    revalidatePath("/");
     revalidatePath("/profile");
     revalidatePath("/my-posts");
     revalidatePath(`/profile/${user.id}`);

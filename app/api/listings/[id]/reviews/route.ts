@@ -357,7 +357,7 @@ export async function POST(
       return review;
     });
 
-    revalidatePath("/home");
+    revalidatePath("/");
     revalidatePath("/profile");
     revalidatePath("/my-posts");
     revalidatePath(`/profile/${listing.authorId}`);

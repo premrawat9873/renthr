@@ -151,7 +151,7 @@ export default function ChatPageClient({
       return;
     }
 
-    router.push('/home');
+    router.push('/');
   };
 
   const loadConversations = useCallback(

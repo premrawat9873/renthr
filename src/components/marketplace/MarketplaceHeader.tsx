@@ -322,7 +322,7 @@ export default function MarketplaceHeader({
       const currentPath =
         typeof window !== "undefined"
           ? `${window.location.pathname}${window.location.search}`
-          : "/home";
+          : "/";
 
       router.push(`/login?next=${encodeURIComponent(currentPath)}`);
       return;
@@ -343,7 +343,7 @@ export default function MarketplaceHeader({
 
       <div className="relative z-10 flex h-14 md:h-[58px] w-full items-center gap-2 pl-2 pr-3 md:gap-3 md:pl-3 md:pr-5">
         {/* Logo */}
-        <Link href="/home" className="flex items-center gap-1 shrink-0 rounded-full border border-primary/30 bg-background/45 px-2.5 py-1 backdrop-blur-sm">
+        <Link href="/" className="flex items-center gap-1 shrink-0 rounded-full border border-primary/30 bg-background/45 px-2.5 py-1 backdrop-blur-sm">
           <span className="text-xl font-heading font-bold text-primary">rent</span>
           <span className="text-xl font-heading font-bold text-highlight-foreground bg-highlight px-1.5 py-0.5 rounded-lg">
             hour

@@ -10,6 +10,7 @@ import {
 } from "@/lib/custom-session";
 import { getSupabaseAuthCookieOptions } from "@/lib/auth-cookie-options";
 import {
+  applyAuthResetResponseHeaders,
   clearSupabaseAuthTokenCookies,
   filterCookiesForSupabaseAuthCodeExchange,
 } from "@/lib/supabase-auth-utils";
@@ -22,7 +23,7 @@ function toLoginRedirect(requestUrl: URL, nextPath: string, errorCode: string) {
   const loginUrl = new URL("/login", requestUrl.origin);
   loginUrl.searchParams.set("error", errorCode);
 
-  if (nextPath !== "/home") {
+  if (nextPath !== "/") {
     loginUrl.searchParams.set("next", nextPath);
   }
 
@@ -33,7 +34,7 @@ export async function GET(request: Request) {
   const requestUrl = new URL(request.url);
   const code = requestUrl.searchParams.get("code");
   const nextParam = requestUrl.searchParams.get("next");
-  const nextPath = isSafeInternalPath(nextParam) ? nextParam : "/home";
+  const nextPath = isSafeInternalPath(nextParam) ? nextParam : "/";
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
@@ -49,9 +50,13 @@ export async function GET(request: Request) {
   const cookieStore = await cookies();
   const incomingCookies = cookieStore.getAll();
 
+  // Clear any previously chunked auth token cookies first so old chunks cannot corrupt new sessions.
+  clearSupabaseAuthTokenCookies(response, incomingCookies);
+
   const toLoginRedirectWithSessionReset = (errorCode: string) => {
     const redirectResponse = toLoginRedirect(requestUrl, nextPath, errorCode);
     clearSupabaseAuthTokenCookies(redirectResponse, incomingCookies);
+    applyAuthResetResponseHeaders(redirectResponse);
     return redirectResponse;
   };
 

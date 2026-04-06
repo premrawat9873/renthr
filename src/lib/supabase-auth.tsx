@@ -1,8 +1,9 @@
 'use client';
 
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { Session, SupabaseClient, User } from '@supabase/supabase-js';
 import { getSupabaseBrowserClient } from '@/lib/supabase-client';
+import { isSupabaseRefreshTokenNotFoundError } from '@/lib/supabase-auth-utils';
 
 type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated';
 
@@ -45,11 +46,32 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const [session, setSession] = useState<Session | null>(null);
   const [status, setStatus] = useState<AuthStatus>('loading');
+  const statusRef = useRef<AuthStatus>('loading');
+
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
 
   useEffect(() => {
     let isMounted = true;
 
     let syncSequence = 0;
+    let didAttemptStaleReset = false;
+
+    const resetStaleAuthState = async () => {
+      try {
+        await supabase.auth.signOut({ scope: 'local' });
+      } catch {
+        // Ignore cleanup failures; server-side logout still clears cookies.
+      }
+
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        cache: 'no-store',
+      }).catch(() => {
+        // Ignore cleanup failures and continue with unauthenticated state.
+      });
+    };
 
     const syncAuthState = async (nextSession: Session | null) => {
       const currentSequence = ++syncSequence;
@@ -85,6 +107,9 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
         if (!isMounted) return;
 
         if (error) {
+          if (isSupabaseRefreshTokenNotFoundError(error)) {
+            void resetStaleAuthState();
+          }
           void syncAuthState(null);
           return;
         }
@@ -99,6 +124,21 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      if (nextSession) {
+        didAttemptStaleReset = false;
+        void syncAuthState(nextSession);
+        return;
+      }
+
+      if (statusRef.current === 'unauthenticated') {
+        if (!didAttemptStaleReset) {
+          didAttemptStaleReset = true;
+          void resetStaleAuthState();
+        }
+
+        return;
+      }
+
       void syncAuthState(nextSession ?? null);
     });
 

@@ -2,8 +2,13 @@ import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { getSupabaseAuthCookieOptions } from '@/lib/auth-cookie-options';
+import { clearSupabaseAuthTokenCookies } from '@/lib/supabase-auth-utils';
 
 const DEFAULT_ALLOWED_MOBILE_REDIRECT_SCHEMES = ['renthour', 'exp'];
+
+function isSafeInternalPath(path: string | null) {
+  return Boolean(path && path.startsWith('/') && !path.startsWith('//'));
+}
 
 function getAllowedMobileRedirectSchemes() {
   const configuredSchemes = process.env.MOBILE_AUTH_REDIRECT_SCHEMES;
@@ -40,11 +45,26 @@ function buildMobileRedirect(redirectUrl: string, errorCode: string) {
   return parsed.toString();
 }
 
+function buildWebLoginRedirect(requestUrl: URL, errorCode: string, nextPath: string) {
+  const loginUrl = new URL('/login', requestUrl.origin);
+  loginUrl.searchParams.set('error', errorCode);
+
+  if (nextPath !== '/') {
+    loginUrl.searchParams.set('next', nextPath);
+  }
+
+  return loginUrl;
+}
+
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url);
   const redirectTarget = requestUrl.searchParams.get('redirect')?.trim() || '';
+  const nextParam = requestUrl.searchParams.get('next');
+  const nextPath = isSafeInternalPath(nextParam) ? nextParam : '/';
 
-  if (!redirectTarget || !isAllowedMobileRedirect(redirectTarget)) {
+  const isMobileFlow = redirectTarget.length > 0;
+
+  if (isMobileFlow && !isAllowedMobileRedirect(redirectTarget)) {
     return NextResponse.json(
       { error: 'Invalid redirect URL for mobile OAuth flow.' },
       { status: 400 }
@@ -55,20 +75,37 @@ export async function GET(request: Request) {
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!supabaseUrl || !supabaseAnonKey) {
-    return NextResponse.redirect(buildMobileRedirect(redirectTarget, 'missing_supabase_env'));
+    if (isMobileFlow) {
+      return NextResponse.redirect(buildMobileRedirect(redirectTarget, 'missing_supabase_env'));
+    }
+
+    return NextResponse.redirect(
+      buildWebLoginRedirect(requestUrl, 'missing_supabase_env', nextPath)
+    );
   }
 
-  const callbackUrl = new URL('/api/auth/oauth/mobile/callback', requestUrl.origin);
-  callbackUrl.searchParams.set('redirect', redirectTarget);
+  const callbackUrl = isMobileFlow
+    ? new URL('/api/auth/oauth/mobile/callback', requestUrl.origin)
+    : new URL('/auth/callback', requestUrl.origin);
+
+  if (isMobileFlow) {
+    callbackUrl.searchParams.set('redirect', redirectTarget);
+  } else {
+    callbackUrl.searchParams.set('next', nextPath);
+  }
 
   const response = NextResponse.redirect(new URL('/login', requestUrl.origin));
   const cookieStore = await cookies();
+  const incomingCookies = cookieStore.getAll();
+
+  // Ensure stale chunked auth cookies do not poison the next OAuth PKCE session.
+  clearSupabaseAuthTokenCookies(response, incomingCookies);
 
   const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
     cookieOptions: getSupabaseAuthCookieOptions(),
     cookies: {
       getAll() {
-        return cookieStore.getAll();
+        return incomingCookies;
       },
       setAll(cookiesToSet) {
         cookiesToSet.forEach(({ name, value, options }) => {
@@ -90,7 +127,13 @@ export async function GET(request: Request) {
   });
 
   if (error || !data?.url) {
-    return NextResponse.redirect(buildMobileRedirect(redirectTarget, 'oauth_start_failed'));
+    if (isMobileFlow) {
+      return NextResponse.redirect(buildMobileRedirect(redirectTarget, 'oauth_start_failed'));
+    }
+
+    return NextResponse.redirect(
+      buildWebLoginRedirect(requestUrl, 'oauth_start_failed', nextPath)
+    );
   }
 
   response.headers.set('Location', data.url);

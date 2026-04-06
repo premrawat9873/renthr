@@ -77,7 +77,7 @@ export async function PATCH(
       select: { id: true, status: true },
     });
 
-    revalidatePath("/home");
+    revalidatePath("/");
     revalidatePath("/profile");
     revalidatePath("/my-posts");
     revalidatePath(`/profile/${listing.authorId}`);

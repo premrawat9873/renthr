@@ -377,7 +377,7 @@ export async function PATCH(
     const supportsRent =
       updatedListing.listingType === "RENT" || updatedListing.listingType === "BOTH";
 
-    revalidatePath("/home");
+    revalidatePath("/");
     revalidatePath("/profile");
     revalidatePath("/my-posts");
     revalidatePath(`/profile/${userId}`);

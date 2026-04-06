@@ -4,7 +4,10 @@ import {
   CUSTOM_SESSION_COOKIE_NAME,
   getCustomSessionCookieOptions,
 } from '@/lib/custom-session';
-import { clearSupabaseAuthTokenCookies } from '@/lib/supabase-auth-utils';
+import {
+  applyAuthResetResponseHeaders,
+  clearSupabaseAuthTokenCookies,
+} from '@/lib/supabase-auth-utils';
 
 function isSafeInternalPath(path: string | null) {
   return Boolean(path && path.startsWith('/') && !path.startsWith('//'));
@@ -17,6 +20,7 @@ function clearAuthCookies(response: NextResponse, cookieList: Array<{ name: stri
   });
 
   clearSupabaseAuthTokenCookies(response, cookieList);
+  applyAuthResetResponseHeaders(response);
 }
 
 export async function POST() {

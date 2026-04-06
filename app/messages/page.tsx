@@ -37,7 +37,7 @@ export default async function MessagesPage({
             <Link href="/login?next=/messages" className="text-sm font-medium text-primary hover:underline">
               Go to login
             </Link>
-            <Link href="/home" className="text-sm font-medium text-primary hover:underline">
+            <Link href="/" className="text-sm font-medium text-primary hover:underline">
               Back to marketplace
             </Link>
           </div>

@@ -29,7 +29,7 @@ export default async function MyPostsPage() {
             <Link href="/login?next=/my-posts" className="text-sm font-medium text-primary hover:underline">
               Go to login
             </Link>
-            <Link href="/home" className="text-sm font-medium text-primary hover:underline">
+            <Link href="/" className="text-sm font-medium text-primary hover:underline">
               Back to marketplace
             </Link>
           </div>
@@ -58,7 +58,7 @@ export default async function MyPostsPage() {
           emptyDescription="You have not created any listing yet."
         />
 
-        <Link href="/home" className="text-sm font-medium text-primary hover:underline">
+        <Link href="/" className="text-sm font-medium text-primary hover:underline">
           Back to marketplace
         </Link>
       </div>

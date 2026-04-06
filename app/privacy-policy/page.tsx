@@ -345,8 +345,8 @@ export default function PrivacyPolicyPage() {
             <p>Mailing address: {SUPPORT_ADDRESS}</p>
             <p>
               You can return to the marketplace at{' '}
-              <Link href="/home" className="font-medium text-primary hover:underline">
-                /home
+              <Link href="/" className="font-medium text-primary hover:underline">
+                /
               </Link>
               .
             </p>

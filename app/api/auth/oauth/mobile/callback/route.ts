@@ -10,6 +10,7 @@ import {
 } from '@/lib/custom-session';
 import { getSupabaseAuthCookieOptions } from '@/lib/auth-cookie-options';
 import {
+  applyAuthResetResponseHeaders,
   clearSupabaseAuthTokenCookies,
   filterCookiesForSupabaseAuthCodeExchange,
 } from '@/lib/supabase-auth-utils';
@@ -93,11 +94,15 @@ export async function GET(request: Request) {
   const cookieStore = await cookies();
   const incomingCookies = cookieStore.getAll();
 
+  // Clear any previously chunked auth token cookies first so old chunks cannot corrupt new sessions.
+  clearSupabaseAuthTokenCookies(response, incomingCookies);
+
   const redirectWithSessionReset = (errorCode: string) => {
     const redirectResponse = NextResponse.redirect(
       buildMobileRedirect(redirectTargetRaw, { error: errorCode })
     );
     clearSupabaseAuthTokenCookies(redirectResponse, incomingCookies);
+    applyAuthResetResponseHeaders(redirectResponse);
     return redirectResponse;
   };
 

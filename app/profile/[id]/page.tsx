@@ -72,7 +72,7 @@ export default async function PublicProfilePage({
         />
 
         <div className="flex items-center gap-4">
-          <Link href="/home" className="text-sm font-medium text-primary hover:underline">
+          <Link href="/" className="text-sm font-medium text-primary hover:underline">
             Back to marketplace
           </Link>
           <Link href="/profile" className="text-sm font-medium text-primary hover:underline">
