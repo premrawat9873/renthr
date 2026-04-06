@@ -19,6 +19,8 @@ export type ChatConversationPayload = {
   post: {
     id: string;
     title: string;
+    imageUrl: string | null;
+    priceLabel: string | null;
   } | null;
   peer: {
     id: string;
@@ -41,4 +43,19 @@ export type ChatMessagesPagePayload = {
   messages: ChatMessagePayload[];
   nextCursor: string | null;
   hasMore: boolean;
+  conversation?: {
+    id: string;
+    type: 'DIRECT' | 'LISTING';
+    post: {
+      id: string;
+      title: string;
+      imageUrl: string | null;
+      priceLabel: string | null;
+    } | null;
+    peer: {
+      id: string;
+      name: string;
+      avatarUrl: string | null;
+    } | null;
+  } | null;
 };

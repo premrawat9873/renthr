@@ -43,7 +43,7 @@ export default function ImageCarousel({ images, alt, className = "", priority = 
           priority={priority}
           loading={priority ? "eager" : "lazy"}
           fetchPriority={priority ? "high" : "auto"}
-          className={`object-cover transform-gpu transition-transform duration-500 ease-out group-hover:scale-105 ${className}`}
+          className={`object-contain transform-gpu transition-transform duration-500 ease-out group-hover:scale-[1.01] ${className}`}
         />
       </div>
     );
@@ -66,7 +66,7 @@ export default function ImageCarousel({ images, alt, className = "", priority = 
           priority={priority}
           loading={priority ? "eager" : "lazy"}
           fetchPriority={priority ? "high" : "auto"}
-          className="object-cover transform-gpu transition-transform duration-500 ease-out group-hover:scale-105"
+          className="object-contain transform-gpu transition-transform duration-500 ease-out group-hover:scale-[1.01]"
         />
       </div>
 

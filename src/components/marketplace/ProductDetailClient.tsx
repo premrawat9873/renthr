@@ -21,6 +21,7 @@ import {
   ChevronLeft,
   Camera,
   Expand,
+  X,
   MapPin,
   CheckCircle2,
   Tag,
@@ -54,6 +55,7 @@ import {
   selectWishlistPendingIds,
   toggleWishlistOnServer,
 } from '@/store/slices/wishlistSlice';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 
 const PostListingFlowDialog = dynamic(
   () => import('@/components/marketplace/PostListingFlowDialog'),
@@ -238,6 +240,7 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
 
   const [activeCategory, setActiveCategory] = useState<string>('all');
   const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const [isImageViewerOpen, setIsImageViewerOpen] = useState(false);
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
   const [isOpeningChat, setIsOpeningChat] = useState(false);
   const [headerLocation, setHeaderLocation] = useState<string | null>(null);
@@ -375,13 +378,53 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
   const mapEmbedUrl = `https://www.google.com/maps?q=${encodedLocationQuery}&output=embed`;
   const directionsUrl = `https://www.google.com/maps/search/?api=1&query=${encodedLocationQuery}`;
 
-  const handleNextImage = () => {
+  const handleNextImage = useCallback(() => {
     setActiveImageIndex((current) => (current + 1) % images.length);
+  }, [images.length]);
+
+  const handlePreviousImage = useCallback(() => {
+    setActiveImageIndex((current) => (current - 1 + images.length) % images.length);
+  }, [images.length]);
+
+  const openImageViewer = (index?: number) => {
+    if (typeof index === 'number') {
+      const normalizedIndex = ((index % images.length) + images.length) % images.length;
+      setActiveImageIndex(normalizedIndex);
+    }
+
+    setIsImageViewerOpen(true);
   };
 
-  const handlePreviousImage = () => {
-    setActiveImageIndex((current) => (current - 1 + images.length) % images.length);
-  };
+  useEffect(() => {
+    if (!isImageViewerOpen) {
+      return;
+    }
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setIsImageViewerOpen(false);
+        return;
+      }
+
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        handlePreviousImage();
+        return;
+      }
+
+      if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        handleNextImage();
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [isImageViewerOpen, handleNextImage, handlePreviousImage]);
 
   const handleShare = async () => {
     const shareUrl = typeof window !== 'undefined' ? window.location.href : `/product/${product.id}`;
@@ -775,7 +818,18 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
         <div className="mt-6 lg:grid lg:grid-cols-12 lg:gap-8">
           <div className="space-y-6 lg:col-span-7">
             <section className="space-y-3">
-              <div className="group relative aspect-[4/3] overflow-hidden rounded-2xl bg-muted">
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => openImageViewer()}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    openImageViewer();
+                  }
+                }}
+                className="group relative aspect-[4/3] cursor-zoom-in overflow-hidden rounded-2xl bg-muted"
+              >
                 <Image
                   src={currentImage}
                   alt={product.title}
@@ -785,11 +839,14 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
                   priority
                 />
 
-                <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+                <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
 
                 <button
                   type="button"
-                  onClick={handlePreviousImage}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handlePreviousImage();
+                  }}
                   className="absolute left-3 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-card/90 opacity-0 shadow-lg backdrop-blur-sm transition-all duration-200 hover:scale-105 hover:bg-card group-hover:opacity-100"
                   aria-label="Previous image"
                 >
@@ -797,7 +854,10 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
                 </button>
                 <button
                   type="button"
-                  onClick={handleNextImage}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleNextImage();
+                  }}
                   className="absolute right-3 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-card/90 opacity-0 shadow-lg backdrop-blur-sm transition-all duration-200 hover:scale-105 hover:bg-card group-hover:opacity-100"
                   aria-label="Next image"
                 >
@@ -806,6 +866,10 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
 
                 <button
                   type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    openImageViewer();
+                  }}
                   className="absolute bottom-4 right-4 flex items-center gap-2 rounded-lg bg-card/90 px-4 py-2 opacity-0 shadow-lg backdrop-blur-sm transition-all duration-200 hover:bg-card group-hover:opacity-100"
                 >
                   <Camera className="h-4 w-4" />
@@ -814,6 +878,10 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
 
                 <button
                   type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    openImageViewer();
+                  }}
                   className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full bg-card/90 opacity-0 shadow-lg backdrop-blur-sm transition-all duration-200 hover:scale-105 hover:bg-card group-hover:opacity-100"
                   aria-label="Expand image"
                 >
@@ -1393,6 +1461,112 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
           </div>
         </div>
       </main>
+
+      <Dialog open={isImageViewerOpen} onOpenChange={setIsImageViewerOpen}>
+        <DialogContent
+          hideCloseButton
+          className="h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-[1280px] rounded-2xl border border-border/70 bg-background p-0 shadow-2xl"
+        >
+          <DialogTitle className="sr-only">{product.title} image viewer</DialogTitle>
+
+          <div className="flex h-full w-full flex-col">
+            <div className="flex items-center justify-between border-b border-border/70 bg-background px-4 py-3 sm:px-6">
+              <span className="text-sm font-semibold uppercase tracking-wide text-foreground">Images</span>
+
+              <button
+                type="button"
+                onClick={() => setIsImageViewerOpen(false)}
+                className="flex h-9 w-9 items-center justify-center rounded-full border border-border bg-background text-foreground transition-colors hover:bg-accent"
+                aria-label="Close image viewer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+              <div className="relative flex-1 bg-[#f3f4f6]">
+                {images.length > 1 ? (
+                  <button
+                    type="button"
+                    onClick={handlePreviousImage}
+                    className="absolute left-3 top-1/2 z-20 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/95 text-foreground shadow-md transition-colors hover:bg-white"
+                    aria-label="Previous image"
+                  >
+                    <ChevronLeft className="h-6 w-6" />
+                  </button>
+                ) : null}
+
+                <div className="relative h-[58vh] min-h-[340px] w-full lg:h-full">
+                  <Image
+                    src={currentImage}
+                    alt={`${product.title} image ${activeImageIndex + 1}`}
+                    fill
+                    sizes="(min-width: 1024px) 68vw, 92vw"
+                    className="object-contain p-4 sm:p-7"
+                    priority
+                  />
+                </div>
+
+                {images.length > 1 ? (
+                  <button
+                    type="button"
+                    onClick={handleNextImage}
+                    className="absolute right-3 top-1/2 z-20 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/95 text-foreground shadow-md transition-colors hover:bg-white"
+                    aria-label="Next image"
+                  >
+                    <ChevronRight className="h-6 w-6" />
+                  </button>
+                ) : null}
+
+                <div className="absolute bottom-4 left-4 z-20 rounded-full bg-black/60 px-3 py-1 text-sm font-medium text-white backdrop-blur-sm">
+                  {activeImageIndex + 1} / {images.length}
+                </div>
+              </div>
+
+              <aside className="w-full shrink-0 border-t border-border/70 bg-background p-4 lg:w-[340px] lg:border-l lg:border-t-0 lg:p-6">
+                <div className="space-y-2">
+                  <h3 className="text-lg font-semibold leading-snug text-foreground">{product.title}</h3>
+                  <p className="text-sm text-muted-foreground">
+                    {categoryLabel} · {product.location}
+                  </p>
+                </div>
+
+                {images.length > 1 ? (
+                  <div className="mt-5">
+                    <p className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Gallery
+                    </p>
+                    <div className="grid grid-cols-4 gap-2">
+                      {images.map((image, index) => (
+                        <button
+                          key={`${image}-fullscreen-${index}`}
+                          type="button"
+                          onClick={() => setActiveImageIndex(index)}
+                          className={cn(
+                            'relative aspect-square overflow-hidden rounded-md border transition-all',
+                            index === activeImageIndex
+                              ? 'border-primary ring-2 ring-primary/40'
+                              : 'border-border/70 hover:border-primary/50'
+                          )}
+                          aria-label={`View image ${index + 1}`}
+                        >
+                          <Image
+                            src={image}
+                            alt={`${product.title} fullscreen thumbnail ${index + 1}`}
+                            fill
+                            sizes="80px"
+                            className="object-cover"
+                          />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </aside>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {hasRentalPricing && selectedOption && (
         <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-border/50 bg-card/95 p-4 backdrop-blur-md lg:hidden">

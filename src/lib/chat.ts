@@ -58,6 +58,90 @@ function normalizeMessageContent(input: unknown) {
   return input.trim();
 }
 
+type ConversationPostSummaryRecord = {
+  id: number;
+  title: string;
+  listingType: 'RENT' | 'SELL' | 'BOTH';
+  currency: string;
+  sellPricePaise: number | null;
+  rentHourlyPaise: number | null;
+  rentDailyPaise: number | null;
+  rentWeeklyPaise: number | null;
+  rentMonthlyPaise: number | null;
+  images: {
+    url: string;
+  }[];
+};
+
+function formatCurrencyFromPaise(amountPaise: number, currency: string) {
+  const amount = amountPaise / 100;
+  const maxFractionDigits = amountPaise % 100 === 0 ? 0 : 2;
+
+  try {
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency,
+      maximumFractionDigits: maxFractionDigits,
+      minimumFractionDigits: 0,
+    }).format(amount);
+  } catch {
+    if (currency.toUpperCase() === 'INR') {
+      return `₹${amount.toFixed(maxFractionDigits)}`;
+    }
+
+    return `${currency} ${amount.toFixed(maxFractionDigits)}`;
+  }
+}
+
+function getConversationPostPriceLabel(post: ConversationPostSummaryRecord) {
+  if (
+    (post.listingType === 'RENT' || post.listingType === 'BOTH') &&
+    post.rentHourlyPaise != null
+  ) {
+    return `${formatCurrencyFromPaise(post.rentHourlyPaise, post.currency)}/hr`;
+  }
+
+  if (
+    (post.listingType === 'RENT' || post.listingType === 'BOTH') &&
+    post.rentDailyPaise != null
+  ) {
+    return `${formatCurrencyFromPaise(post.rentDailyPaise, post.currency)}/day`;
+  }
+
+  if (
+    (post.listingType === 'RENT' || post.listingType === 'BOTH') &&
+    post.rentWeeklyPaise != null
+  ) {
+    return `${formatCurrencyFromPaise(post.rentWeeklyPaise, post.currency)}/wk`;
+  }
+
+  if (
+    (post.listingType === 'RENT' || post.listingType === 'BOTH') &&
+    post.rentMonthlyPaise != null
+  ) {
+    return `${formatCurrencyFromPaise(post.rentMonthlyPaise, post.currency)}/mo`;
+  }
+
+  if ((post.listingType === 'SELL' || post.listingType === 'BOTH') && post.sellPricePaise != null) {
+    return formatCurrencyFromPaise(post.sellPricePaise, post.currency);
+  }
+
+  return null;
+}
+
+function mapConversationPostSummary(post: ConversationPostSummaryRecord | null | undefined) {
+  if (!post) {
+    return null;
+  }
+
+  return {
+    id: String(post.id),
+    title: post.title,
+    imageUrl: post.images[0]?.url ?? null,
+    priceLabel: getConversationPostPriceLabel(post),
+  };
+}
+
 async function assertConversationMembership(conversationId: number, userId: number) {
   const conversation = await prisma.conversation.findFirst({
     where: {
@@ -144,6 +228,20 @@ export async function listChatConversationsForUser(
         select: {
           id: true,
           title: true,
+          listingType: true,
+          currency: true,
+          sellPricePaise: true,
+          rentHourlyPaise: true,
+          rentDailyPaise: true,
+          rentWeeklyPaise: true,
+          rentMonthlyPaise: true,
+          images: {
+            select: {
+              url: true,
+            },
+            orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }, { id: 'asc' }],
+            take: 1,
+          },
         },
       },
       participants: {
@@ -215,12 +313,7 @@ export async function listChatConversationsForUser(
     return {
       id: String(conversation.id),
       type: conversation.type,
-      post: conversation.post
-        ? {
-            id: String(conversation.post.id),
-            title: conversation.post.title,
-          }
-        : null,
+      post: mapConversationPostSummary(conversation.post),
       peer: {
         id: String(peer?.id ?? userId),
         name: peer ? getDisplayName(peer.name, peer.email) : 'User',
@@ -441,6 +534,63 @@ export async function listMessagesForConversation(input: {
     },
   });
 
+  const conversationContext = await prisma.conversation.findFirst({
+    where: {
+      id: conversationId,
+      type: 'LISTING',
+      postId: {
+        not: null,
+      },
+      participants: {
+        some: {
+          userId,
+        },
+      },
+    },
+    select: {
+      id: true,
+      type: true,
+      post: {
+        select: {
+          id: true,
+          title: true,
+          listingType: true,
+          currency: true,
+          sellPricePaise: true,
+          rentHourlyPaise: true,
+          rentDailyPaise: true,
+          rentWeeklyPaise: true,
+          rentMonthlyPaise: true,
+          images: {
+            select: {
+              url: true,
+            },
+            orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }, { id: 'asc' }],
+            take: 1,
+          },
+        },
+      },
+      participants: {
+        select: {
+          userId: true,
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              avatarUrl: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  const peerParticipant = conversationContext?.participants.find(
+    (participant) => participant.userId !== userId
+  );
+  const peerUser = peerParticipant?.user;
+
   const hasMore = rows.length > limit;
   const visibleRows = hasMore ? rows.slice(0, limit) : rows;
   const nextCursor =
@@ -452,6 +602,20 @@ export async function listMessagesForConversation(input: {
     messages: visibleRows.reverse().map((message) => mapMessagePayload(message, userId)),
     nextCursor,
     hasMore,
+    conversation: conversationContext
+      ? {
+          id: String(conversationContext.id),
+          type: conversationContext.type,
+          post: mapConversationPostSummary(conversationContext.post),
+          peer: peerUser
+            ? {
+                id: String(peerUser.id),
+                name: getDisplayName(peerUser.name, peerUser.email),
+                avatarUrl: resolveProfileAvatarUrl(peerUser.avatarUrl),
+              }
+            : null,
+        }
+      : null,
   };
 }
 

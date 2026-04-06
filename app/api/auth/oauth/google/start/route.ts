@@ -10,6 +10,29 @@ function isSafeInternalPath(path: string | null) {
   return Boolean(path && path.startsWith('/') && !path.startsWith('//'));
 }
 
+function getConfiguredWebSiteOrigin() {
+  const configuredSiteUrl =
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    process.env.NEXTAUTH_URL ||
+    process.env.SITE_URL ||
+    '';
+
+  if (!configuredSiteUrl) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(configuredSiteUrl);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return null;
+    }
+
+    return parsed.origin;
+  } catch {
+    return null;
+  }
+}
+
 function getAllowedMobileRedirectSchemes() {
   const configuredSchemes = process.env.MOBILE_AUTH_REDIRECT_SCHEMES;
   if (!configuredSchemes) {
@@ -64,6 +87,16 @@ export async function GET(request: Request) {
 
   const isMobileFlow = redirectTarget.length > 0;
 
+  if (!isMobileFlow) {
+    const configuredOrigin = getConfiguredWebSiteOrigin();
+
+    if (configuredOrigin && configuredOrigin !== requestUrl.origin) {
+      const canonicalStartUrl = new URL('/api/auth/oauth/google/start', configuredOrigin);
+      canonicalStartUrl.searchParams.set('next', nextPath);
+      return NextResponse.redirect(canonicalStartUrl);
+    }
+  }
+
   if (isMobileFlow && !isAllowedMobileRedirect(redirectTarget)) {
     return NextResponse.json(
       { error: 'Invalid redirect URL for mobile OAuth flow.' },
@@ -86,7 +119,7 @@ export async function GET(request: Request) {
 
   const callbackUrl = isMobileFlow
     ? new URL('/api/auth/oauth/mobile/callback', requestUrl.origin)
-    : new URL('/auth/callback', requestUrl.origin);
+    : new URL('/auth/callback', getConfiguredWebSiteOrigin() || requestUrl.origin);
 
   if (isMobileFlow) {
     callbackUrl.searchParams.set('redirect', redirectTarget);

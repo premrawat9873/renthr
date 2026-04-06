@@ -343,9 +343,11 @@ export default function MarketplaceHeader({
 
       <div className="relative z-10 flex h-14 md:h-[58px] w-full items-center gap-2 pl-2 pr-3 md:gap-3 md:pl-3 md:pr-5">
         {/* Logo */}
-        <Link href="/" className="flex items-center gap-1 shrink-0 rounded-full border border-primary/30 bg-background/45 px-2.5 py-1 backdrop-blur-sm">
-          <span className="text-xl font-heading font-bold text-primary">rent</span>
-          <span className="text-xl font-heading font-bold text-highlight-foreground bg-highlight px-1.5 py-0.5 rounded-lg">
+        <Link href="/" aria-label="RentHour home" className="inline-flex items-center gap-1.5 shrink-0">
+          <span className="font-heading text-[1.32rem] sm:text-[1.5rem] font-semibold leading-none tracking-[-0.03em] text-foreground">
+            rent
+          </span>
+          <span className="rounded-lg sm:rounded-xl bg-[#d4e3d8] px-2 py-1 font-heading text-[1.32rem] sm:text-[1.5rem] font-semibold leading-none tracking-[-0.03em] text-[#2f5f52]">
             hour
           </span>
         </Link>
