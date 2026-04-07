@@ -5,6 +5,8 @@ import { getSiteUrl, SITE_DESCRIPTION, SITE_NAME } from "@/lib/site";
 import { Analytics } from "@vercel/analytics/next";
 
 const siteUrl = getSiteUrl();
+const FAVICON_VERSION = "20260407";
+const FAVICON_URL = `/icon.png?v=${FAVICON_VERSION}`;
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -15,9 +17,9 @@ export const metadata: Metadata = {
   description: SITE_DESCRIPTION,
   applicationName: SITE_NAME,
   icons: {
-    icon: [{ url: "/icon.png", type: "image/png" }],
-    shortcut: [{ url: "/icon.png", type: "image/png" }],
-    apple: [{ url: "/icon.png", type: "image/png" }],
+    icon: [{ url: FAVICON_URL, type: "image/png" }],
+    shortcut: [{ url: FAVICON_URL, type: "image/png" }],
+    apple: [{ url: FAVICON_URL, type: "image/png" }],
   },
   alternates: {
     canonical: "/",
@@ -48,6 +50,17 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="h-full antialiased">
+      <head>
+        <meta
+          name="google-adsense-account"
+          content="ca-pub-9411649869227225"
+        />
+        <script
+          async
+          src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9411649869227225"
+          crossOrigin="anonymous"
+        />
+      </head>
       <body className="min-h-full flex flex-col">
         <Providers>{children}</Providers>
         <Analytics />
