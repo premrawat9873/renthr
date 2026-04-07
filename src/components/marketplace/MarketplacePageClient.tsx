@@ -43,8 +43,7 @@ import {
 } from '@/store/slices/marketplaceSlice';
 import { useWishlistBootstrap } from '@/hooks/use-wishlist';
 
-const NEARBY_RADIUS_KM = 12;
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 8;
 const PostListingFlowDialog = dynamic(
   () => import('@/components/marketplace/PostListingFlowDialog'),
   { ssr: false }
@@ -820,12 +819,6 @@ export function MarketplacePageClient({
     if (safeFilter === 'sell') results = results.filter((p) => supportsSell(p));
 
     if (effectiveUserCoords) {
-      const nearbyResults = results.filter(
-        (p) => Number.isFinite(p.distance) && p.distance >= 0 && p.distance <= NEARBY_RADIUS_KM
-      );
-      if (nearbyResults.length > 0) {
-        results = nearbyResults;
-      }
       results.sort((a, b) => {
         const aDistance = normalizeDistanceForSorting(a.distance);
         const bDistance = normalizeDistanceForSorting(b.distance);

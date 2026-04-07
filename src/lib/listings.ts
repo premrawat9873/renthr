@@ -9,7 +9,7 @@ import type { Prisma } from "../../generated/prisma/client";
 import { resolveProfileAvatarUrl } from "@/lib/profile-avatar";
 import { prisma } from "@/lib/prisma";
 
-export const MARKETPLACE_DEFAULT_PAGE_SIZE = 10;
+export const MARKETPLACE_DEFAULT_PAGE_SIZE = 8;
 export const MARKETPLACE_MAX_PAGE_SIZE = 30;
 
 const DEFAULT_IMAGE_URL =
