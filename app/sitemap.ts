@@ -1,5 +1,6 @@
 import type { MetadataRoute } from 'next';
 import { getMarketplaceListingProductsPayload } from '@/lib/listings';
+import { getProductHref } from '@/lib/product-url';
 import { getSiteUrl } from '@/lib/site';
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
@@ -40,7 +41,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   ];
 
   const productRoutes: MetadataRoute.Sitemap = products.map((product) => ({
-    url: `${siteUrl}/product/${product.id}`,
+    url: `${siteUrl}${getProductHref(product)}`,
     lastModified: new Date(product.postedAt),
     changeFrequency: 'weekly',
     priority: 0.8,

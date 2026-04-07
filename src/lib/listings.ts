@@ -80,6 +80,37 @@ type ListingsByUserOptions = {
   includeInactive?: boolean;
 };
 
+export type PublicListingUserProfile = {
+  id: string;
+  name: string;
+  avatarUrl: string;
+  rating: number;
+  reviewCount: number;
+  joinedAt: Date;
+};
+
+export type PublicUserReviewHighlight = {
+  id: string;
+  rating: number;
+  comment: string | null;
+  createdAt: Date;
+  reviewer: {
+    id: string;
+    name: string;
+    avatarUrl: string;
+  };
+  post: {
+    id: string;
+    title: string;
+    category: string;
+    location: string;
+  };
+};
+
+type PublicUserReviewHighlightsOptions = {
+  limit?: number;
+};
+
 export type MarketplaceListingProductsPayloadPage = {
   products: ListingProductPayload[];
   nextCursor: string | null;
@@ -442,6 +473,58 @@ function parseListingId(id: string) {
   return parsed;
 }
 
+function formatUserDisplayName(name: string | null, email: string) {
+  const normalizedName = name?.trim();
+  if (normalizedName) {
+    return normalizedName;
+  }
+
+  const emailPrefix = email.split("@")[0]?.trim();
+  return emailPrefix || "User";
+}
+
+function normalizeReviewHighlightsLimit(limit?: number) {
+  if (!Number.isFinite(limit)) {
+    return 6;
+  }
+
+  const parsedLimit = Math.floor(limit as number);
+  if (parsedLimit <= 0) {
+    return 6;
+  }
+
+  return Math.min(parsedLimit, 20);
+}
+
+function formatReviewPostLocation(address: { city: string; state: string } | null) {
+  if (!address) {
+    return "Location not specified";
+  }
+
+  const parts = [address.city, address.state]
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+
+  return parts.length > 0 ? parts.join(", ") : "Location not specified";
+}
+
+function formatReviewPostCategory(category: {
+  name: string;
+  slug: string;
+} | null) {
+  const slug = category?.slug?.trim();
+  if (slug) {
+    return normalizeCategorySlug(slug);
+  }
+
+  const name = category?.name?.trim();
+  if (name) {
+    return normalizeCategorySlug(name) || "listing";
+  }
+
+  return "listing";
+}
+
 export async function getMarketplaceListingProducts() {
   const records = await withDatabaseReadFallback(
     "getMarketplaceListingProducts",
@@ -555,6 +638,10 @@ export async function getPublicListingUserProfileById(userId: string | number) {
           id: true,
           name: true,
           email: true,
+          avatarUrl: true,
+          rating: true,
+          reviewCount: true,
+          createdAt: true,
         },
       }),
     null
@@ -566,8 +653,113 @@ export async function getPublicListingUserProfileById(userId: string | number) {
 
   return {
     id: String(user.id),
-    name: user.name?.trim() || user.email.split("@")[0] || "User",
+    name: formatUserDisplayName(user.name, user.email),
+    avatarUrl: resolveProfileAvatarUrl(user.avatarUrl),
+    rating: Number((convertDecimalToNumber(user.rating) ?? 0).toFixed(1)),
+    reviewCount: user.reviewCount,
+    joinedAt: user.createdAt,
   };
+}
+
+export async function getPublicUserReviewHighlightsByUserId(
+  userId: number | string,
+  options: PublicUserReviewHighlightsOptions = {}
+): Promise<PublicUserReviewHighlight[]> {
+  const parsedUserId =
+    typeof userId === "number" ? userId : Number.parseInt(userId, 10);
+  if (!Number.isFinite(parsedUserId) || parsedUserId <= 0) {
+    return [];
+  }
+
+  const take = normalizeReviewHighlightsLimit(options.limit);
+
+  const rows = await withDatabaseReadFallback(
+    "getPublicUserReviewHighlightsByUserId",
+    () =>
+      prisma.review.findMany({
+        where: {
+          revieweeId: parsedUserId,
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
+        take,
+        select: {
+          id: true,
+          rating: true,
+          comment: true,
+          createdAt: true,
+          reviewer: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              avatarUrl: true,
+            },
+          },
+          post: {
+            select: {
+              id: true,
+              title: true,
+              category: {
+                select: {
+                  name: true,
+                  slug: true,
+                },
+              },
+              address: {
+                select: {
+                  city: true,
+                  state: true,
+                },
+              },
+            },
+          },
+        },
+      }),
+    [] as Array<{
+      id: number;
+      rating: Prisma.Decimal;
+      comment: string | null;
+      createdAt: Date;
+      reviewer: {
+        id: number;
+        name: string | null;
+        email: string;
+        avatarUrl: string | null;
+      };
+      post: {
+        id: number;
+        title: string;
+        category: {
+          name: string;
+          slug: string;
+        } | null;
+        address: {
+          city: string;
+          state: string;
+        } | null;
+      };
+    }>
+  );
+
+  return rows.map((row) => ({
+    id: String(row.id),
+    rating: Number((convertDecimalToNumber(row.rating) ?? 0).toFixed(1)),
+    comment: row.comment?.trim() || null,
+    createdAt: row.createdAt,
+    reviewer: {
+      id: String(row.reviewer.id),
+      name: formatUserDisplayName(row.reviewer.name, row.reviewer.email),
+      avatarUrl: resolveProfileAvatarUrl(row.reviewer.avatarUrl),
+    },
+    post: {
+      id: String(row.post.id),
+      title: row.post.title,
+      category: formatReviewPostCategory(row.post.category),
+      location: formatReviewPostLocation(row.post.address),
+    },
+  }));
 }
 
 export async function getListingProductById(id: string) {

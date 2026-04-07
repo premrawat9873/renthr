@@ -1,7 +1,9 @@
 import Image from "next/image";
 import Link from "next/link";
+import { Star } from "lucide-react";
 
 import { formatPrice, formatTimeAgo, type Product } from "@/data/marketplaceData";
+import { getProductHref } from "@/lib/product-url";
 
 function getPriceSummary(product: Product) {
   const rentDaily = product.rentPrices?.daily ?? null;
@@ -75,7 +77,7 @@ export default function UserListingsGrid({
           key={product.id}
           className="overflow-hidden rounded-2xl border border-border/50 bg-card shadow-sm transition-shadow hover:shadow-md"
         >
-          <Link href={`/product/${product.id}`} className="block">
+          <Link href={getProductHref(product)} className="block">
             <div className="relative aspect-[4/3] w-full overflow-hidden bg-muted/50">
               <Image
                 src={product.image}
@@ -87,6 +89,13 @@ export default function UserListingsGrid({
             </div>
             <div className="space-y-2 p-4">
               <p className="line-clamp-2 text-sm font-semibold text-foreground">{product.title}</p>
+              <div className="flex items-center gap-1.5">
+                <Star className="h-3.5 w-3.5 fill-current text-primary" />
+                <span className="text-xs font-medium text-foreground">
+                  {product.rating != null ? product.rating.toFixed(1) : "No ratings"}
+                </span>
+                <span className="text-xs text-muted-foreground">({product.reviewCount ?? 0} reviews)</span>
+              </div>
               <p className="text-xs font-medium uppercase tracking-wide text-primary">
                 {getListingTypeLabel(product.type)}
               </p>

@@ -10,6 +10,7 @@ import {
   toggleWishlistOnServer,
 } from "@/store/slices/wishlistSlice";
 import { toast } from "@/hooks/use-toast";
+import { getProductHref } from "@/lib/product-url";
 
 interface Props {
   product: Product;
@@ -43,10 +44,11 @@ export default function ProductCard({ product, rentDurations, priority = false }
   const reviewCount = product.reviewCount ?? 0;
   const ratingValue = product.rating;
   const hasReviews = typeof ratingValue === "number" && reviewCount > 0;
+  const productHref = getProductHref(product);
 
   return (
     <div
-      onClick={() => router.push(`/product/${product.id}`)}
+      onClick={() => router.push(productHref)}
       className={`group relative isolate flex h-full cursor-pointer flex-col overflow-hidden rounded-2xl border border-border/55 bg-card card-lift ${
         product.featured ? "shadow-md ring-1 ring-highlight/35" : ""
       }`}

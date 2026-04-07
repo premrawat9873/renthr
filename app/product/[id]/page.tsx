@@ -1,8 +1,9 @@
 import type { Metadata } from 'next';
-import { notFound } from 'next/navigation';
+import { notFound, permanentRedirect } from 'next/navigation';
 import ProductDetailClient from '@/components/marketplace/ProductDetailClient';
 import { formatPrice } from '@/data/marketplaceData';
 import { getListingProductPayloadById } from '@/lib/listings';
+import { getProductHref, getProductSeoSlug, parseProductIdFromRouteParam } from '@/lib/product-url';
 import { getSiteUrl, SITE_NAME } from '@/lib/site';
 
 type ProductPageParams = { id: string };
@@ -14,8 +15,20 @@ export async function generateMetadata({
 }: {
   params: Promise<ProductPageParams>;
 }): Promise<Metadata> {
-  const { id } = await params;
-  const product = await getListingProductPayloadById(id);
+  const { id: routeParam } = await params;
+  const listingId = parseProductIdFromRouteParam(routeParam);
+
+  if (!listingId) {
+    return {
+      title: 'Product Not Found',
+      robots: {
+        index: false,
+        follow: false,
+      },
+    };
+  }
+
+  const product = await getListingProductPayloadById(listingId);
 
   if (!product) {
     return {
@@ -40,17 +53,19 @@ export async function generateMetadata({
         : 'rental'
     }.`;
 
+  const canonicalPath = getProductHref(product);
+
   return {
     title: product.title,
     description: baseDescription,
     alternates: {
-      canonical: `/product/${product.id}`,
+      canonical: canonicalPath,
     },
     openGraph: {
       title: product.title,
       description: baseDescription,
       type: 'website',
-      url: `/product/${product.id}`,
+      url: canonicalPath,
       images: product.image
         ? [
             {
@@ -74,15 +89,26 @@ export default async function ProductDetailPage({
 }: {
   params: Promise<ProductPageParams>;
 }) {
-  const { id } = await params;
-  const product = await getListingProductPayloadById(id);
+  const { id: routeParam } = await params;
+  const listingId = parseProductIdFromRouteParam(routeParam);
+
+  if (!listingId) {
+    notFound();
+  }
+
+  const product = await getListingProductPayloadById(listingId);
 
   if (!product) {
     notFound();
   }
 
+  const canonicalSlug = getProductSeoSlug(product);
+  if (routeParam !== canonicalSlug) {
+    permanentRedirect(`/product/${canonicalSlug}`);
+  }
+
   const siteUrl = getSiteUrl();
-  const productUrl = `${siteUrl}/product/${product.id}`;
+  const productUrl = `${siteUrl}${getProductHref(product)}`;
   const hasSellPrice =
     (product.type === 'sell' || product.type === 'both') && product.price != null;
   const rentalPrices = [

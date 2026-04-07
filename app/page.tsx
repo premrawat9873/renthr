@@ -4,6 +4,7 @@ import {
   getMarketplaceListingProductsPayloadPage,
   MARKETPLACE_DEFAULT_PAGE_SIZE,
 } from '@/lib/listings';
+import { getProductHref } from '@/lib/product-url';
 import { getSiteUrl } from '@/lib/site';
 
 export const revalidate = 120;
@@ -39,7 +40,7 @@ export default async function HomePage() {
       '@type': 'ListItem',
       position: index + 1,
       name: product.title,
-      url: `${siteUrl}/product/${product.id}`,
+      url: `${siteUrl}${getProductHref(product)}`,
     })),
   };
 

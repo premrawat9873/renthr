@@ -64,9 +64,21 @@ import {
   getDefaultProfileAvatarUrl,
   resolveProfileAvatarUrl,
 } from '@/lib/profile-avatar';
+import { getProductHref } from '@/lib/product-url';
 import { cn } from '@/lib/utils';
 
 type TabKey = 'listings' | 'bookings' | 'wishlist' | 'settings';
+
+type SettingsItemKey =
+  | 'profile'
+  | 'address'
+  | 'payment'
+  | 'notifications'
+  | 'security'
+  | 'support'
+  | 'logout';
+
+type SettingsDialogKey = Exclude<SettingsItemKey, 'logout'>;
 
 type ProfileDashboardClientProps = {
   displayName: string;
@@ -83,6 +95,179 @@ type AvatarUploadResponse = {
   avatarUrl?: string | null;
   error?: string;
 };
+
+type ProfileDetailsResponse = {
+  user?: {
+    name: string | null;
+    email: string;
+    avatarUrl: string | null;
+  };
+  error?: string;
+};
+
+type AddressItem = {
+  id: string;
+  address: string;
+  state: string;
+  city: string;
+  pincode: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type AddressListResponse = {
+  addresses?: AddressItem[];
+  error?: string;
+};
+
+type AddressUpsertResponse = {
+  address?: AddressItem;
+  error?: string;
+};
+
+type AddressDeleteResponse = {
+  success?: boolean;
+  error?: string;
+};
+
+type AddressFormState = {
+  id: string | null;
+  address: string;
+  state: string;
+  city: string;
+  pincode: string;
+};
+
+type PaymentMethod = {
+  id: string;
+  label: string;
+  details: string;
+  isDefault: boolean;
+};
+
+type PaymentMethodForm = {
+  label: string;
+  details: string;
+  makeDefault: boolean;
+};
+
+type NotificationPreferences = {
+  bookingUpdates: boolean;
+  listingPerformance: boolean;
+  securityAlerts: boolean;
+  marketingEmails: boolean;
+};
+
+type SecurityFormState = {
+  currentPassword: string;
+  newPassword: string;
+  confirmPassword: string;
+};
+
+type PasswordUpdateResponse = {
+  success?: boolean;
+  message?: string;
+  error?: string;
+};
+
+const PAYMENT_METHODS_STORAGE_KEY = 'rh_profile_payment_methods';
+const NOTIFICATION_PREFS_STORAGE_KEY = 'rh_profile_notification_preferences';
+
+const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
+  bookingUpdates: true,
+  listingPerformance: true,
+  securityAlerts: true,
+  marketingEmails: false,
+};
+
+const EMPTY_ADDRESS_FORM: AddressFormState = {
+  id: null,
+  address: '',
+  state: '',
+  city: '',
+  pincode: '',
+};
+
+const EMPTY_PAYMENT_FORM: PaymentMethodForm = {
+  label: '',
+  details: '',
+  makeDefault: false,
+};
+
+const EMPTY_SECURITY_FORM: SecurityFormState = {
+  currentPassword: '',
+  newPassword: '',
+  confirmPassword: '',
+};
+
+function parseStoredPaymentMethods(input: string | null): PaymentMethod[] {
+  if (!input) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(input) as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed
+      .map((item) => {
+        if (
+          !item ||
+          typeof item !== 'object' ||
+          typeof (item as { id?: unknown }).id !== 'string' ||
+          typeof (item as { label?: unknown }).label !== 'string' ||
+          typeof (item as { details?: unknown }).details !== 'string'
+        ) {
+          return null;
+        }
+
+        return {
+          id: (item as { id: string }).id,
+          label: (item as { label: string }).label,
+          details: (item as { details: string }).details,
+          isDefault: Boolean((item as { isDefault?: unknown }).isDefault),
+        } satisfies PaymentMethod;
+      })
+      .filter((item): item is PaymentMethod => Boolean(item));
+  } catch {
+    return [];
+  }
+}
+
+function parseStoredNotificationPreferences(
+  input: string | null
+): NotificationPreferences {
+  if (!input) {
+    return DEFAULT_NOTIFICATION_PREFERENCES;
+  }
+
+  try {
+    const parsed = JSON.parse(input) as Partial<NotificationPreferences>;
+
+    return {
+      bookingUpdates:
+        typeof parsed.bookingUpdates === 'boolean'
+          ? parsed.bookingUpdates
+          : DEFAULT_NOTIFICATION_PREFERENCES.bookingUpdates,
+      listingPerformance:
+        typeof parsed.listingPerformance === 'boolean'
+          ? parsed.listingPerformance
+          : DEFAULT_NOTIFICATION_PREFERENCES.listingPerformance,
+      securityAlerts:
+        typeof parsed.securityAlerts === 'boolean'
+          ? parsed.securityAlerts
+          : DEFAULT_NOTIFICATION_PREFERENCES.securityAlerts,
+      marketingEmails:
+        typeof parsed.marketingEmails === 'boolean'
+          ? parsed.marketingEmails
+          : DEFAULT_NOTIFICATION_PREFERENCES.marketingEmails,
+    };
+  } catch {
+    return DEFAULT_NOTIFICATION_PREFERENCES;
+  }
+}
 
 type ListingEditForm = {
   productId: string;
@@ -197,6 +382,30 @@ export default function ProfileDashboardClient({
   const [editingForm, setEditingForm] = useState<ListingEditForm | null>(null);
   const [savingEditId, setSavingEditId] = useState<string | null>(null);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [settingsDialog, setSettingsDialog] = useState<SettingsDialogKey | null>(null);
+
+  const [profileDisplayName, setProfileDisplayName] = useState(displayName);
+  const [profileFormName, setProfileFormName] = useState(displayName);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+
+  const [addresses, setAddresses] = useState<AddressItem[]>([]);
+  const [addressForm, setAddressForm] = useState<AddressFormState>(EMPTY_ADDRESS_FORM);
+  const [isLoadingAddresses, setIsLoadingAddresses] = useState(false);
+  const [isSavingAddress, setIsSavingAddress] = useState(false);
+  const [deletingAddressId, setDeletingAddressId] = useState<string | null>(null);
+
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
+  const [paymentMethodForm, setPaymentMethodForm] = useState<PaymentMethodForm>(
+    EMPTY_PAYMENT_FORM
+  );
+
+  const [notificationPreferences, setNotificationPreferences] =
+    useState<NotificationPreferences>(DEFAULT_NOTIFICATION_PREFERENCES);
+
+  const [securityForm, setSecurityForm] = useState<SecurityFormState>(
+    EMPTY_SECURITY_FORM
+  );
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
 
   const editingProduct = useMemo(() => {
     if (!editingForm) {
@@ -218,6 +427,50 @@ export default function ProfileDashboardClient({
   useEffect(() => {
     setProfileAvatarUrl(resolveProfileAvatarUrl(avatarUrl));
   }, [avatarUrl]);
+
+  useEffect(() => {
+    setProfileDisplayName(displayName);
+    setProfileFormName(displayName);
+  }, [displayName]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    setPaymentMethods(
+      parseStoredPaymentMethods(
+        window.localStorage.getItem(PAYMENT_METHODS_STORAGE_KEY)
+      )
+    );
+    setNotificationPreferences(
+      parseStoredNotificationPreferences(
+        window.localStorage.getItem(NOTIFICATION_PREFS_STORAGE_KEY)
+      )
+    );
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    window.localStorage.setItem(
+      PAYMENT_METHODS_STORAGE_KEY,
+      JSON.stringify(paymentMethods)
+    );
+  }, [paymentMethods]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    window.localStorage.setItem(
+      NOTIFICATION_PREFS_STORAGE_KEY,
+      JSON.stringify(notificationPreferences)
+    );
+  }, [notificationPreferences]);
 
   useEffect(() => {
     if (!initialPostFlowOpen) {
@@ -252,6 +505,24 @@ export default function ProfileDashboardClient({
     { key: 'wishlist', label: 'Wishlist' },
     { key: 'settings', label: 'Settings' },
   ];
+
+  const settingsDialogTitleMap: Record<SettingsDialogKey, string> = {
+    profile: 'Profile',
+    address: 'Address',
+    payment: 'Payment Methods',
+    notifications: 'Notifications',
+    security: 'Security',
+    support: 'Help & Support',
+  };
+
+  const settingsDialogDescriptionMap: Record<SettingsDialogKey, string> = {
+    profile: 'Update your personal account details.',
+    address: 'Add, edit, and remove your saved addresses.',
+    payment: 'Manage your preferred payment methods on this device.',
+    notifications: 'Choose which alerts and updates you receive.',
+    security: 'Update your account password and security details.',
+    support: 'Get support and quick links to legal/help pages.',
+  };
 
   const handleBack = () => {
     if (typeof window !== 'undefined' && window.history.length > 1) {
@@ -390,36 +661,433 @@ export default function ProfileDashboardClient({
     }
   };
 
-  const handleSettingsItemClick = (itemKey: 'profile' | 'address' | 'payment' | 'notifications' | 'security' | 'support' | 'logout') => {
+  const resetAddressForm = () => {
+    setAddressForm(EMPTY_ADDRESS_FORM);
+  };
+
+  const loadAddresses = async () => {
+    setIsLoadingAddresses(true);
+
+    try {
+      const response = await fetch('/api/addresses', {
+        method: 'GET',
+      });
+
+      const payload = (await response
+        .json()
+        .catch(() => null)) as AddressListResponse | null;
+
+      if (!response.ok || !Array.isArray(payload?.addresses)) {
+        throw new Error(payload?.error || 'Unable to fetch your addresses right now.');
+      }
+
+      setAddresses(payload.addresses);
+    } catch (error) {
+      toast({
+        title: 'Could not load addresses',
+        description:
+          error instanceof Error
+            ? error.message
+            : 'Please try again in a moment.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoadingAddresses(false);
+    }
+  };
+
+  const handleSaveProfile = async () => {
+    const normalizedName = profileFormName.trim().replace(/\s+/g, ' ');
+
+    if (normalizedName.length > 0 && normalizedName.length < 2) {
+      toast({
+        title: 'Name is too short',
+        description: 'Name must be at least 2 characters.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (normalizedName.length > 80) {
+      toast({
+        title: 'Name is too long',
+        description: 'Name must be 80 characters or less.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsSavingProfile(true);
+
+    try {
+      const response = await fetch('/api/profile/details', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ name: normalizedName || null }),
+      });
+
+      const payload = (await response
+        .json()
+        .catch(() => null)) as ProfileDetailsResponse | null;
+
+      if (!response.ok || !payload?.user) {
+        throw new Error(payload?.error || 'Unable to update your profile.');
+      }
+
+      const nextDisplayName =
+        payload.user.name?.trim() || payload.user.email.split('@')[0] || 'User';
+
+      setProfileDisplayName(nextDisplayName);
+      setProfileFormName(nextDisplayName);
+
+      toast({
+        title: 'Profile updated',
+        description: 'Your display name has been saved.',
+      });
+
+      setSettingsDialog(null);
+      router.refresh();
+    } catch (error) {
+      toast({
+        title: 'Could not update profile',
+        description:
+          error instanceof Error
+            ? error.message
+            : 'Please try again in a moment.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
+
+  const handleAddressEdit = (address: AddressItem) => {
+    setAddressForm({
+      id: address.id,
+      address: address.address,
+      state: address.state,
+      city: address.city,
+      pincode: address.pincode,
+    });
+  };
+
+  const handleAddressSave = async () => {
+    const normalizedAddress = addressForm.address.trim().replace(/\s+/g, ' ');
+    const normalizedState = addressForm.state.trim().replace(/\s+/g, ' ');
+    const normalizedCity = addressForm.city.trim().replace(/\s+/g, ' ');
+    const normalizedPincode = addressForm.pincode.trim();
+
+    if (normalizedAddress.length < 5) {
+      toast({
+        title: 'Address is too short',
+        description: 'Address must be at least 5 characters.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (normalizedState.length < 2) {
+      toast({
+        title: 'State is required',
+        description: 'State must be at least 2 characters.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (normalizedCity.length < 2) {
+      toast({
+        title: 'City is required',
+        description: 'City must be at least 2 characters.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!/^\d{6}$/.test(normalizedPincode)) {
+      toast({
+        title: 'Invalid pincode',
+        description: 'Enter a valid 6-digit pincode.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsSavingAddress(true);
+
+    try {
+      const endpoint = addressForm.id
+        ? `/api/addresses/${encodeURIComponent(addressForm.id)}`
+        : '/api/addresses';
+      const method = addressForm.id ? 'PATCH' : 'POST';
+
+      const response = await fetch(endpoint, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          address: normalizedAddress,
+          state: normalizedState,
+          city: normalizedCity,
+          pincode: normalizedPincode,
+        }),
+      });
+
+      const payload = (await response
+        .json()
+        .catch(() => null)) as AddressUpsertResponse | null;
+
+      if (!response.ok || !payload?.address) {
+        throw new Error(payload?.error || 'Unable to save this address.');
+      }
+
+      toast({
+        title: addressForm.id ? 'Address updated' : 'Address added',
+        description: 'Your address list is now up to date.',
+      });
+
+      resetAddressForm();
+      await loadAddresses();
+    } catch (error) {
+      toast({
+        title: 'Could not save address',
+        description:
+          error instanceof Error
+            ? error.message
+            : 'Please try again in a moment.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSavingAddress(false);
+    }
+  };
+
+  const handleAddressDelete = async (addressId: string) => {
+    const confirmed =
+      typeof window !== 'undefined'
+        ? window.confirm('Delete this address?')
+        : false;
+
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingAddressId(addressId);
+
+    try {
+      const response = await fetch(`/api/addresses/${encodeURIComponent(addressId)}`, {
+        method: 'DELETE',
+      });
+
+      const payload = (await response
+        .json()
+        .catch(() => null)) as AddressDeleteResponse | null;
+
+      if (!response.ok || !payload?.success) {
+        throw new Error(payload?.error || 'Unable to delete this address.');
+      }
+
+      if (addressForm.id === addressId) {
+        resetAddressForm();
+      }
+
+      setAddresses((current) => current.filter((item) => item.id !== addressId));
+
+      toast({
+        title: 'Address deleted',
+        description: 'The address has been removed.',
+      });
+    } catch (error) {
+      toast({
+        title: 'Could not delete address',
+        description:
+          error instanceof Error
+            ? error.message
+            : 'Please try again in a moment.',
+        variant: 'destructive',
+      });
+    } finally {
+      setDeletingAddressId(null);
+    }
+  };
+
+  const handleAddPaymentMethod = () => {
+    const label = paymentMethodForm.label.trim().replace(/\s+/g, ' ');
+    const details = paymentMethodForm.details.trim().replace(/\s+/g, ' ');
+
+    if (label.length < 2) {
+      toast({
+        title: 'Method label is required',
+        description: 'Please enter a short label (e.g. UPI, Bank Account).',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (details.length < 4) {
+      toast({
+        title: 'Method details are incomplete',
+        description: 'Please enter details like UPI ID or account reference.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const nextMethod: PaymentMethod = {
+      id:
+        typeof crypto !== 'undefined' && 'randomUUID' in crypto
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      label,
+      details,
+      isDefault: paymentMethods.length === 0 || paymentMethodForm.makeDefault,
+    };
+
+    setPaymentMethods((current) => {
+      const withDefaultReset = nextMethod.isDefault
+        ? current.map((item) => ({ ...item, isDefault: false }))
+        : current;
+
+      return [...withDefaultReset, nextMethod];
+    });
+
+    setPaymentMethodForm(EMPTY_PAYMENT_FORM);
+
+    toast({
+      title: 'Payment method saved',
+      description: 'Your payment method was added for this browser.',
+    });
+  };
+
+  const handleRemovePaymentMethod = (methodId: string) => {
+    setPaymentMethods((current) => {
+      const methodToDelete = current.find((item) => item.id === methodId) ?? null;
+      const filtered = current.filter((item) => item.id !== methodId);
+
+      if (methodToDelete?.isDefault && filtered.length > 0) {
+        return filtered.map((item, index) => ({
+          ...item,
+          isDefault: index === 0,
+        }));
+      }
+
+      return filtered;
+    });
+  };
+
+  const handleSetDefaultPaymentMethod = (methodId: string) => {
+    setPaymentMethods((current) =>
+      current.map((item) => ({
+        ...item,
+        isDefault: item.id === methodId,
+      }))
+    );
+  };
+
+  const handleNotificationToggle = (
+    key: keyof NotificationPreferences,
+    value: boolean
+  ) => {
+    setNotificationPreferences((current) => ({
+      ...current,
+      [key]: value,
+    }));
+  };
+
+  const handleUpdatePassword = async () => {
+    const currentPassword = securityForm.currentPassword;
+    const newPassword = securityForm.newPassword;
+    const confirmPassword = securityForm.confirmPassword;
+
+    if (newPassword.length < 8) {
+      toast({
+        title: 'Password is too short',
+        description: 'New password must be at least 8 characters.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      toast({
+        title: 'Passwords do not match',
+        description: 'Confirm password must match the new password.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsUpdatingPassword(true);
+
+    try {
+      const response = await fetch('/api/profile/password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          currentPassword,
+          newPassword,
+        }),
+      });
+
+      const payload = (await response
+        .json()
+        .catch(() => null)) as PasswordUpdateResponse | null;
+
+      if (!response.ok || !payload?.success) {
+        throw new Error(payload?.error || 'Unable to update your password.');
+      }
+
+      setSecurityForm(EMPTY_SECURITY_FORM);
+
+      toast({
+        title: 'Password updated',
+        description: payload.message || 'Your password has been updated successfully.',
+      });
+
+      setSettingsDialog(null);
+    } catch (error) {
+      toast({
+        title: 'Could not update password',
+        description:
+          error instanceof Error
+            ? error.message
+            : 'Please try again in a moment.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsUpdatingPassword(false);
+    }
+  };
+
+  const handleSettingsItemClick = (itemKey: SettingsItemKey) => {
     if (itemKey === 'logout') {
       void handleLogout();
       return;
     }
 
     if (itemKey === 'profile') {
-      if (typeof window !== 'undefined') {
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      }
-
-      toast({
-        title: 'Profile details',
-        description: 'You can update your avatar and account details from the profile section above.',
-      });
-      return;
+      setProfileFormName(profileDisplayName);
     }
 
-    const upcomingLabels: Record<'address' | 'payment' | 'notifications' | 'security' | 'support', string> = {
-      address: 'Address management',
-      payment: 'Payment methods',
-      notifications: 'Notification preferences',
-      security: 'Security settings',
-      support: 'Help and support',
-    };
+    if (itemKey === 'address') {
+      resetAddressForm();
+      void loadAddresses();
+    }
 
-    toast({
-      title: `${upcomingLabels[itemKey]} coming soon`,
-      description: 'This settings section is added and will be connected in the next update.',
-    });
+    if (itemKey === 'payment') {
+      setPaymentMethodForm(EMPTY_PAYMENT_FORM);
+    }
+
+    if (itemKey === 'security') {
+      setSecurityForm(EMPTY_SECURITY_FORM);
+    }
+
+    setSettingsDialog(itemKey);
   };
 
   const toggleAvailability = async (productId: string) => {
@@ -740,7 +1408,7 @@ export default function ProfileDashboardClient({
           return (
             <article
               key={product.id}
-              onClick={() => router.push(`/product/${product.id}`)}
+              onClick={() => router.push(getProductHref(product))}
               className="group cursor-pointer overflow-hidden rounded-2xl border border-border/55 bg-card shadow-[0_2px_10px_-8px_hsl(var(--foreground)/0.35)] transition-all duration-300 hover:-translate-y-1 hover:border-primary/20 hover:shadow-[0_20px_32px_-22px_hsl(var(--foreground)/0.5)]"
             >
                 <div className="relative aspect-[4/3] overflow-hidden">
@@ -1086,7 +1754,7 @@ export default function ProfileDashboardClient({
                 <div className="relative h-28 w-28 overflow-hidden rounded-full ring-[3px] ring-card shadow-lg">
                   <Image
                     src={profileAvatarUrl}
-                    alt={displayName}
+                    alt={profileDisplayName}
                     fill
                     className="object-cover"
                     onError={() => {
@@ -1144,7 +1812,7 @@ export default function ProfileDashboardClient({
 
               <div className="space-y-3 text-center sm:text-left">
                 <div>
-                  <h1 className="text-[2.02rem] font-semibold leading-tight tracking-tight text-foreground">{displayName}</h1>
+                  <h1 className="text-[2.02rem] font-semibold leading-tight tracking-tight text-foreground">{profileDisplayName}</h1>
 
                   <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1">
                     <CheckCircle2 className="h-4 w-4 text-primary" />
@@ -1394,6 +2062,486 @@ export default function ProfileDashboardClient({
               {savingEditId ? 'Saving...' : 'Save changes'}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(settingsDialog)}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) {
+            setSettingsDialog(null);
+          }
+        }}
+      >
+        <DialogContent
+          className={cn(
+            'max-h-[85vh] overflow-y-auto sm:max-w-lg',
+            settingsDialog === 'address' && 'sm:max-w-2xl'
+          )}
+        >
+          {settingsDialog ? (
+            <>
+              <DialogHeader>
+                <DialogTitle>{settingsDialogTitleMap[settingsDialog]}</DialogTitle>
+                <DialogDescription>
+                  {settingsDialogDescriptionMap[settingsDialog]}
+                </DialogDescription>
+              </DialogHeader>
+
+              {settingsDialog === 'profile' ? (
+                <div className="space-y-4">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="profile-name">Display name</Label>
+                    <Input
+                      id="profile-name"
+                      value={profileFormName}
+                      onChange={(event) => setProfileFormName(event.target.value)}
+                      disabled={isSavingProfile}
+                      placeholder="Your name"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label htmlFor="profile-email">Email</Label>
+                    <Input id="profile-email" value={email} disabled readOnly />
+                    <p className="text-xs text-muted-foreground">
+                      Email changes are managed via authentication settings.
+                    </p>
+                  </div>
+                </div>
+              ) : null}
+
+              {settingsDialog === 'address' ? (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <div className="space-y-1.5 md:col-span-2">
+                      <Label htmlFor="address-line">Address line</Label>
+                      <Input
+                        id="address-line"
+                        value={addressForm.address}
+                        onChange={(event) =>
+                          setAddressForm((current) => ({
+                            ...current,
+                            address: event.target.value,
+                          }))
+                        }
+                        placeholder="House / street"
+                        disabled={isSavingAddress}
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label htmlFor="address-city">City</Label>
+                      <Input
+                        id="address-city"
+                        value={addressForm.city}
+                        onChange={(event) =>
+                          setAddressForm((current) => ({
+                            ...current,
+                            city: event.target.value,
+                          }))
+                        }
+                        placeholder="City"
+                        disabled={isSavingAddress}
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label htmlFor="address-state">State</Label>
+                      <Input
+                        id="address-state"
+                        value={addressForm.state}
+                        onChange={(event) =>
+                          setAddressForm((current) => ({
+                            ...current,
+                            state: event.target.value,
+                          }))
+                        }
+                        placeholder="State"
+                        disabled={isSavingAddress}
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label htmlFor="address-pincode">Pincode</Label>
+                      <Input
+                        id="address-pincode"
+                        value={addressForm.pincode}
+                        onChange={(event) =>
+                          setAddressForm((current) => ({
+                            ...current,
+                            pincode: event.target.value.replace(/\D/g, '').slice(0, 6),
+                          }))
+                        }
+                        placeholder="6-digit pincode"
+                        inputMode="numeric"
+                        disabled={isSavingAddress}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={resetAddressForm}
+                      disabled={isSavingAddress}
+                    >
+                      Clear form
+                    </Button>
+                    <Button
+                      onClick={() => void handleAddressSave()}
+                      disabled={isSavingAddress}
+                    >
+                      {isSavingAddress
+                        ? 'Saving...'
+                        : addressForm.id
+                          ? 'Update address'
+                          : 'Add address'}
+                    </Button>
+                  </div>
+
+                  <div className="rounded-lg border border-border/60">
+                    <div className="flex items-center justify-between border-b border-border/60 px-3 py-2">
+                      <p className="text-sm font-medium text-foreground">Saved addresses</p>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => void loadAddresses()}
+                        disabled={isLoadingAddresses}
+                      >
+                        {isLoadingAddresses ? 'Refreshing...' : 'Refresh'}
+                      </Button>
+                    </div>
+
+                    <div className="max-h-60 overflow-y-auto divide-y divide-border/50">
+                      {isLoadingAddresses ? (
+                        <div className="px-3 py-6 text-center text-sm text-muted-foreground">
+                          Loading addresses...
+                        </div>
+                      ) : null}
+
+                      {!isLoadingAddresses && addresses.length === 0 ? (
+                        <div className="px-3 py-6 text-center text-sm text-muted-foreground">
+                          No addresses saved yet.
+                        </div>
+                      ) : null}
+
+                      {!isLoadingAddresses
+                        ? addresses.map((address) => {
+                            const isDeleting = deletingAddressId === address.id;
+
+                            return (
+                              <div
+                                key={address.id}
+                                className="flex items-start justify-between gap-3 px-3 py-3"
+                              >
+                                <div className="min-w-0">
+                                  <p className="text-sm font-medium text-foreground">
+                                    {address.address}
+                                  </p>
+                                  <p className="text-xs text-muted-foreground">
+                                    {address.city}, {address.state} - {address.pincode}
+                                  </p>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => handleAddressEdit(address)}
+                                    disabled={isDeleting}
+                                  >
+                                    Edit
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="text-destructive hover:text-destructive"
+                                    onClick={() => void handleAddressDelete(address.id)}
+                                    disabled={isDeleting}
+                                  >
+                                    {isDeleting ? 'Deleting...' : 'Delete'}
+                                  </Button>
+                                </div>
+                              </div>
+                            );
+                          })
+                        : null}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              {settingsDialog === 'payment' ? (
+                <div className="space-y-4">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="payment-label">Method label</Label>
+                    <Input
+                      id="payment-label"
+                      value={paymentMethodForm.label}
+                      onChange={(event) =>
+                        setPaymentMethodForm((current) => ({
+                          ...current,
+                          label: event.target.value,
+                        }))
+                      }
+                      placeholder="UPI, Bank Account, Wallet"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label htmlFor="payment-details">Method details</Label>
+                    <Input
+                      id="payment-details"
+                      value={paymentMethodForm.details}
+                      onChange={(event) =>
+                        setPaymentMethodForm((current) => ({
+                          ...current,
+                          details: event.target.value,
+                        }))
+                      }
+                      placeholder="Example: renthour@upi"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Stored locally in this browser only.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center justify-between rounded-lg border border-border/60 bg-accent/25 px-3 py-2">
+                    <div>
+                      <p className="text-sm font-medium text-foreground">Make default</p>
+                      <p className="text-xs text-muted-foreground">
+                        Use this method as your primary payment option.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={paymentMethodForm.makeDefault}
+                      onCheckedChange={(checked) =>
+                        setPaymentMethodForm((current) => ({
+                          ...current,
+                          makeDefault: checked,
+                        }))
+                      }
+                      className="data-[state=checked]:bg-primary"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Button onClick={handleAddPaymentMethod}>Add method</Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => setPaymentMethodForm(EMPTY_PAYMENT_FORM)}
+                    >
+                      Clear
+                    </Button>
+                  </div>
+
+                  <div className="space-y-2 rounded-lg border border-border/60 p-3">
+                    <p className="text-sm font-medium text-foreground">Saved methods</p>
+
+                    {paymentMethods.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">
+                        No payment methods added yet.
+                      </p>
+                    ) : null}
+
+                    {paymentMethods.map((method) => (
+                      <div
+                        key={method.id}
+                        className="flex items-start justify-between gap-3 rounded-md border border-border/50 p-2.5"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-foreground">
+                            {method.label}
+                            {method.isDefault ? (
+                              <span className="ml-2 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] text-primary">
+                                Default
+                              </span>
+                            ) : null}
+                          </p>
+                          <p className="truncate text-xs text-muted-foreground">
+                            {method.details}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          {!method.isDefault ? (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleSetDefaultPaymentMethod(method.id)}
+                            >
+                              Set default
+                            </Button>
+                          ) : null}
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-destructive hover:text-destructive"
+                            onClick={() => handleRemovePaymentMethod(method.id)}
+                          >
+                            Remove
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {settingsDialog === 'notifications' ? (
+                <div className="space-y-3">
+                  {[
+                    {
+                      key: 'bookingUpdates' as const,
+                      label: 'Booking updates',
+                      description: 'Get notified about booking requests and status changes.',
+                    },
+                    {
+                      key: 'listingPerformance' as const,
+                      label: 'Listing performance',
+                      description: 'Receive updates on views, saves, and listing activity.',
+                    },
+                    {
+                      key: 'securityAlerts' as const,
+                      label: 'Security alerts',
+                      description: 'Important account and password notifications.',
+                    },
+                    {
+                      key: 'marketingEmails' as const,
+                      label: 'Marketing emails',
+                      description: 'Product updates, campaigns, and marketplace news.',
+                    },
+                  ].map((item) => (
+                    <div
+                      key={item.key}
+                      className="flex items-start justify-between gap-3 rounded-lg border border-border/60 p-3"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-foreground">{item.label}</p>
+                        <p className="text-xs text-muted-foreground">{item.description}</p>
+                      </div>
+                      <Switch
+                        checked={notificationPreferences[item.key]}
+                        onCheckedChange={(checked) =>
+                          handleNotificationToggle(item.key, checked)
+                        }
+                        className="data-[state=checked]:bg-primary"
+                      />
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+
+              {settingsDialog === 'security' ? (
+                <div className="space-y-4">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="security-current">Current password</Label>
+                    <Input
+                      id="security-current"
+                      type="password"
+                      value={securityForm.currentPassword}
+                      onChange={(event) =>
+                        setSecurityForm((current) => ({
+                          ...current,
+                          currentPassword: event.target.value,
+                        }))
+                      }
+                      placeholder="Enter current password"
+                      disabled={isUpdatingPassword}
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label htmlFor="security-new">New password</Label>
+                    <Input
+                      id="security-new"
+                      type="password"
+                      value={securityForm.newPassword}
+                      onChange={(event) =>
+                        setSecurityForm((current) => ({
+                          ...current,
+                          newPassword: event.target.value,
+                        }))
+                      }
+                      placeholder="At least 8 characters"
+                      disabled={isUpdatingPassword}
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label htmlFor="security-confirm">Confirm new password</Label>
+                    <Input
+                      id="security-confirm"
+                      type="password"
+                      value={securityForm.confirmPassword}
+                      onChange={(event) =>
+                        setSecurityForm((current) => ({
+                          ...current,
+                          confirmPassword: event.target.value,
+                        }))
+                      }
+                      placeholder="Repeat new password"
+                      disabled={isUpdatingPassword}
+                    />
+                  </div>
+                </div>
+              ) : null}
+
+              {settingsDialog === 'support' ? (
+                <div className="space-y-3">
+                  <p className="text-sm text-muted-foreground">
+                    Need help with listings, bookings, or account issues? Use one of these support channels.
+                  </p>
+
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <Button variant="outline" onClick={() => router.push('/messages')}>
+                      Open Messages
+                    </Button>
+                    <Button variant="outline" asChild>
+                      <a href="mailto:support@renthour.in">Email Support</a>
+                    </Button>
+                    <Button variant="outline" asChild>
+                      <Link href="/privacy-policy" target="_blank">
+                        Privacy Policy
+                      </Link>
+                    </Button>
+                    <Button variant="outline" asChild>
+                      <Link href="/terms-of-use" target="_blank">
+                        Terms Of Use
+                      </Link>
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => setSettingsDialog(null)}
+                  disabled={isSavingProfile || isSavingAddress || isUpdatingPassword}
+                >
+                  Close
+                </Button>
+
+                {settingsDialog === 'profile' ? (
+                  <Button
+                    onClick={() => void handleSaveProfile()}
+                    disabled={isSavingProfile}
+                  >
+                    {isSavingProfile ? 'Saving...' : 'Save profile'}
+                  </Button>
+                ) : null}
+
+                {settingsDialog === 'security' ? (
+                  <Button
+                    onClick={() => void handleUpdatePassword()}
+                    disabled={isUpdatingPassword}
+                  >
+                    {isUpdatingPassword ? 'Updating...' : 'Update password'}
+                  </Button>
+                ) : null}
+              </DialogFooter>
+            </>
+          ) : null}
         </DialogContent>
       </Dialog>
 

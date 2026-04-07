@@ -49,6 +49,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/hooks/use-toast';
 import { useWishlistBootstrap } from '@/hooks/use-wishlist';
 import { resolveProfileAvatarUrl } from '@/lib/profile-avatar';
+import { getProductHref } from '@/lib/product-url';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import {
   selectIsWishlisted,
@@ -256,6 +257,7 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
 
   const images = product.images.length > 0 ? product.images : [product.image];
+  const productHref = getProductHref(product);
   const distanceLabel = getDistanceLabel(product.distance);
   const currentImage = images[activeImageIndex] ?? images[0];
 
@@ -365,6 +367,41 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
   const ownerDisplayName = product.ownerName || 'User';
   const ownerAvatarUrl = resolveProfileAvatarUrl(product.ownerImage);
   const ownerProfileHref = product.ownerId ? `/profile/${product.ownerId}` : null;
+  const sellerIdentityContent = (
+    <>
+      <div className="relative">
+        <Avatar className="h-14 w-14 ring-2 ring-primary/20 ring-offset-2 ring-offset-background">
+          <AvatarImage src={ownerAvatarUrl} />
+          <AvatarFallback className="bg-primary/10 font-semibold text-primary">
+            {getOwnerInitials(ownerDisplayName)}
+          </AvatarFallback>
+        </Avatar>
+        <div className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full border-2 border-card bg-green-500">
+          <CheckCircle2 className="h-3 w-3 text-white" />
+        </div>
+      </div>
+
+      <div>
+        <div className="flex items-center gap-2">
+          <h3 className="font-semibold text-foreground">{ownerDisplayName}</h3>
+          {typeof product.rating === 'number' && (
+            <span className="flex items-center gap-0.5 rounded-full bg-primary/10 px-2 py-0.5 text-sm text-primary">
+              <Star className="h-3 w-3 fill-primary/80 text-primary" />
+              {product.rating.toFixed(1)}
+            </span>
+          )}
+        </div>
+        <div className="mt-1 flex items-center gap-1 text-sm text-green-600">
+          <CheckCircle2 className="h-3.5 w-3.5" />
+          Verified Seller
+        </div>
+        <div className="mt-1 flex items-center gap-1 text-sm text-muted-foreground">
+          <Clock className="h-3.5 w-3.5" />
+          Usually responds within 1 hour
+        </div>
+      </div>
+    </>
+  );
 
   const listingDescription =
     product.description ||
@@ -427,7 +464,7 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
   }, [isImageViewerOpen, handleNextImage, handlePreviousImage]);
 
   const handleShare = async () => {
-    const shareUrl = typeof window !== 'undefined' ? window.location.href : `/product/${product.id}`;
+    const shareUrl = typeof window !== 'undefined' ? window.location.href : productHref;
 
     try {
       if (typeof navigator !== 'undefined' && navigator.share) {
@@ -663,7 +700,7 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
         | null;
 
       if (response.status === 401) {
-        const nextPath = `/product/${product.id}`;
+        const nextPath = productHref;
         router.push(`/login?next=${encodeURIComponent(nextPath)}`);
         return;
       }
@@ -949,39 +986,17 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
 
             <section className="rounded-2xl border border-border/65 bg-card/95 p-5 shadow-[0_10px_22px_-18px_hsl(var(--foreground)/0.45)] transition-shadow duration-300 hover:shadow-md">
               <div className="flex items-start justify-between gap-4">
-                <div className="flex items-center gap-4">
-                  <div className="relative">
-                    <Avatar className="h-14 w-14 ring-2 ring-primary/20 ring-offset-2 ring-offset-background">
-                      <AvatarImage src={ownerAvatarUrl} />
-                      <AvatarFallback className="bg-primary/10 font-semibold text-primary">
-                        {getOwnerInitials(ownerDisplayName)}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full border-2 border-card bg-green-500">
-                      <CheckCircle2 className="h-3 w-3 text-white" />
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-semibold text-foreground">{ownerDisplayName}</h3>
-                      {typeof product.rating === 'number' && (
-                        <span className="flex items-center gap-0.5 rounded-full bg-primary/10 px-2 py-0.5 text-sm text-primary">
-                          <Star className="h-3 w-3 fill-primary/80 text-primary" />
-                          {product.rating.toFixed(1)}
-                        </span>
-                      )}
-                    </div>
-                    <div className="mt-1 flex items-center gap-1 text-sm text-green-600">
-                      <CheckCircle2 className="h-3.5 w-3.5" />
-                      Verified Seller
-                    </div>
-                    <div className="mt-1 flex items-center gap-1 text-sm text-muted-foreground">
-                      <Clock className="h-3.5 w-3.5" />
-                      Usually responds within 1 hour
-                    </div>
-                  </div>
-                </div>
+                {ownerProfileHref ? (
+                  <Link
+                    href={ownerProfileHref}
+                    className="-m-1 flex items-center gap-4 rounded-xl p-1 transition-colors hover:bg-accent/40"
+                    aria-label={`View ${ownerDisplayName} profile`}
+                  >
+                    {sellerIdentityContent}
+                  </Link>
+                ) : (
+                  <div className="flex items-center gap-4">{sellerIdentityContent}</div>
+                )}
 
                 {ownerProfileHref ? (
                   <Link href={ownerProfileHref}>
@@ -1158,7 +1173,7 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
                             className="mt-3"
                             onClick={() =>
                               router.push(
-                                `/login?next=${encodeURIComponent(`/product/${product.id}`)}`
+                                `/login?next=${encodeURIComponent(productHref)}`
                               )
                             }
                           >
