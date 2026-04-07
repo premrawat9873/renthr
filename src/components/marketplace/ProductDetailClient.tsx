@@ -872,7 +872,7 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
                   alt={product.title}
                   fill
                   sizes="(max-width: 1024px) 100vw, 58vw"
-                  className="object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+                  className="object-contain p-2 sm:p-3 transition-transform duration-500 group-hover:scale-[1.01]"
                   priority
                 />
 
@@ -948,7 +948,7 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
                       alt={`${product.title} thumbnail ${index + 1}`}
                       fill
                       sizes="80px"
-                      className="object-cover"
+                      className="object-contain p-1"
                     />
                   </button>
                 ))}

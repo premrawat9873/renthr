@@ -269,15 +269,87 @@ function parseStoredNotificationPreferences(
   }
 }
 
+type ListingPurpose = 'sell' | 'rent';
+
 type ListingEditForm = {
   productId: string;
   title: string;
   description: string;
-  location: string;
+  purposes: ListingPurpose[];
   sellPrice: string;
-  rentDailyPrice: string;
+  rentPrices: Record<RentDuration, string>;
+  locationLine1: string;
+  locationCity: string;
+  locationState: string;
+  locationPincode: string;
   featured: boolean;
 };
+
+const EDIT_PURPOSE_OPTIONS: Array<{
+  value: ListingPurpose;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: 'rent',
+    label: 'Rent',
+    description: 'List for hourly, daily, weekly, or monthly rental',
+  },
+  {
+    value: 'sell',
+    label: 'Sell',
+    description: 'List for one-time purchase',
+  },
+];
+
+const EDIT_RENT_DURATION_OPTIONS: Array<{ value: RentDuration; label: string }> = [
+  { value: 'hourly', label: 'Hourly' },
+  { value: 'daily', label: 'Daily' },
+  { value: 'weekly', label: 'Weekly' },
+  { value: 'monthly', label: 'Monthly' },
+];
+
+const LOCATION_PINCODE_PATTERN = /^\d{6}$/;
+
+function getEditPurposesFromProductType(type: Product['type']): ListingPurpose[] {
+  if (type === 'both') {
+    return ['rent', 'sell'];
+  }
+
+  return [type];
+}
+
+function parseListingLocationLabel(location: string) {
+  const normalized = location.trim();
+  if (!normalized || normalized.toLowerCase() === 'location not specified') {
+    return {
+      line1: '',
+      city: '',
+      state: '',
+    };
+  }
+
+  const parts = normalized
+    .split(',')
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+
+  if (parts.length >= 2) {
+    const [city, ...stateParts] = parts;
+
+    return {
+      line1: normalized,
+      city,
+      state: stateParts.join(', '),
+    };
+  }
+
+  return {
+    line1: normalized,
+    city: normalized,
+    state: '',
+  };
+}
 
 function getPrimaryRentPrice(product: Product) {
   if (!product.rentPrices) {
@@ -406,14 +478,6 @@ export default function ProfileDashboardClient({
     EMPTY_SECURITY_FORM
   );
   const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
-
-  const editingProduct = useMemo(() => {
-    if (!editingForm) {
-      return null;
-    }
-
-    return listingItems.find((item) => item.id === editingForm.productId) ?? null;
-  }, [editingForm, listingItems]);
 
   useEffect(() => {
     setListingItems(products);
@@ -1206,17 +1270,54 @@ export default function ProfileDashboardClient({
   };
 
   const openEditDialog = (product: Product) => {
+    const locationParts = parseListingLocationLabel(product.location);
+
     setEditingForm({
       productId: product.id,
       title: product.title,
       description: product.description ?? '',
-      location: product.location,
+      purposes: getEditPurposesFromProductType(product.type),
       sellPrice: product.price != null ? String(product.price) : '',
-      rentDailyPrice:
-        product.rentPrices?.daily != null
-          ? String(product.rentPrices.daily)
-          : '',
+      rentPrices: {
+        hourly:
+          product.rentPrices?.hourly != null
+            ? String(product.rentPrices.hourly)
+            : '',
+        daily:
+          product.rentPrices?.daily != null
+            ? String(product.rentPrices.daily)
+            : '',
+        weekly:
+          product.rentPrices?.weekly != null
+            ? String(product.rentPrices.weekly)
+            : '',
+        monthly:
+          product.rentPrices?.monthly != null
+            ? String(product.rentPrices.monthly)
+            : '',
+      },
+      locationLine1: locationParts.line1,
+      locationCity: locationParts.city,
+      locationState: locationParts.state,
+      locationPincode: '',
       featured: Boolean(product.featured),
+    });
+  };
+
+  const toggleEditPurpose = (purpose: ListingPurpose) => {
+    setEditingForm((current) => {
+      if (!current) {
+        return current;
+      }
+
+      const hasPurpose = current.purposes.includes(purpose);
+
+      return {
+        ...current,
+        purposes: hasPurpose
+          ? current.purposes.filter((value) => value !== purpose)
+          : [...current.purposes, purpose],
+      };
     });
   };
 
@@ -1225,9 +1326,27 @@ export default function ProfileDashboardClient({
       return;
     }
 
-    const title = editingForm.title.trim();
+    const title = editingForm.title.trim().replace(/\s+/g, ' ');
     const description = editingForm.description.trim();
-    const location = editingForm.location.trim();
+    const selectedPurposes = Array.from(new Set(editingForm.purposes));
+    const isSellSelected = selectedPurposes.includes('sell');
+    const isRentSelected = selectedPurposes.includes('rent');
+    const sellPrice = editingForm.sellPrice.trim();
+    const rentPrices: Record<RentDuration, string> = {
+      hourly: editingForm.rentPrices.hourly.trim(),
+      daily: editingForm.rentPrices.daily.trim(),
+      weekly: editingForm.rentPrices.weekly.trim(),
+      monthly: editingForm.rentPrices.monthly.trim(),
+    };
+    const locationCity = editingForm.locationCity.trim().replace(/\s+/g, ' ');
+    const locationState = editingForm.locationState.trim().replace(/\s+/g, ' ');
+    const locationLine1Input = editingForm.locationLine1
+      .trim()
+      .replace(/\s+/g, ' ');
+    const locationLine1 =
+      locationLine1Input ||
+      [locationCity, locationState].filter((value) => value.length > 0).join(', ');
+    const locationPincode = editingForm.locationPincode.trim();
 
     if (title.length < 3) {
       toast({
@@ -1247,10 +1366,97 @@ export default function ProfileDashboardClient({
       return;
     }
 
-    if (location.length < 2) {
+    if (selectedPurposes.length === 0) {
       toast({
-        title: 'Location is required',
-        description: 'Location must be at least 2 characters.',
+        title: 'Listing purpose is required',
+        description: 'Select rent, sell, or both before saving.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (isSellSelected) {
+      const parsedSellPrice = Number.parseFloat(sellPrice);
+      if (
+        sellPrice.length === 0 ||
+        !Number.isFinite(parsedSellPrice) ||
+        parsedSellPrice < 0
+      ) {
+        toast({
+          title: 'Invalid sell price',
+          description: 'Sell price must be a valid non-negative number.',
+          variant: 'destructive',
+        });
+        return;
+      }
+    }
+
+    if (isRentSelected) {
+      const hasAtLeastOneRentPrice = EDIT_RENT_DURATION_OPTIONS.some(
+        (option) => rentPrices[option.value].length > 0
+      );
+
+      if (!hasAtLeastOneRentPrice) {
+        toast({
+          title: 'Rent price required',
+          description: 'Add at least one rent duration price.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      for (const option of EDIT_RENT_DURATION_OPTIONS) {
+        const priceValue = rentPrices[option.value];
+        if (!priceValue) {
+          continue;
+        }
+
+        const parsedValue = Number.parseFloat(priceValue);
+        if (!Number.isFinite(parsedValue) || parsedValue < 0) {
+          toast({
+            title: `Invalid ${option.label.toLowerCase()} rent`,
+            description: `${option.label} rent must be a valid non-negative number.`,
+            variant: 'destructive',
+          });
+          return;
+        }
+      }
+    }
+
+    if (locationLine1.length < 2) {
+      toast({
+        title: 'Address line is required',
+        description: 'Address line must be at least 2 characters.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (locationCity.length < 2) {
+      toast({
+        title: 'City is required',
+        description: 'City must be at least 2 characters.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (locationState.length < 2) {
+      toast({
+        title: 'State is required',
+        description: 'State must be at least 2 characters.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (
+      locationPincode.length > 0 &&
+      !LOCATION_PINCODE_PATTERN.test(locationPincode)
+    ) {
+      toast({
+        title: 'Invalid pincode',
+        description: 'Pincode must be a 6-digit number.',
         variant: 'destructive',
       });
       return;
@@ -1262,24 +1468,32 @@ export default function ProfileDashboardClient({
       const requestBody: {
         title: string;
         description: string;
-        location: string;
+        purposes: ListingPurpose[];
+        location: {
+          line1: string;
+          city: string;
+          state: string;
+          pincode: string;
+          country: string;
+        };
         featured: boolean;
-        sellPrice?: string;
-        rentDailyPrice?: string;
+        sellPrice: string | null;
+        rentPrices: Partial<Record<RentDuration, string>>;
       } = {
         title,
         description,
-        location,
+        purposes: selectedPurposes,
+        location: {
+          line1: locationLine1,
+          city: locationCity,
+          state: locationState,
+          pincode: locationPincode,
+          country: 'IN',
+        },
         featured: editingForm.featured,
+        sellPrice: isSellSelected ? sellPrice : null,
+        rentPrices: isRentSelected ? rentPrices : {},
       };
-
-      if (editingProduct?.type === 'sell' || editingProduct?.type === 'both') {
-        requestBody.sellPrice = editingForm.sellPrice;
-      }
-
-      if (editingProduct?.type === 'rent' || editingProduct?.type === 'both') {
-        requestBody.rentDailyPrice = editingForm.rentDailyPrice;
-      }
 
       const response = await fetch(
         `/api/listings/${encodeURIComponent(editingForm.productId)}`,
@@ -1299,6 +1513,7 @@ export default function ProfileDashboardClient({
               id: string;
               title: string;
               description: string;
+              type: 'sell' | 'rent' | 'both';
               location: string;
               featured: boolean;
               price: number | null;
@@ -1332,6 +1547,7 @@ export default function ProfileDashboardClient({
             ...item,
             title: payload.listing.title,
             description: payload.listing.description,
+            type: payload.listing.type,
             location: payload.listing.location,
             featured: payload.listing.featured,
             price: payload.listing.price,
@@ -1346,6 +1562,7 @@ export default function ProfileDashboardClient({
       });
 
       setEditingForm(null);
+      router.refresh();
     } catch {
       toast({
         title: 'Could not update listing',
@@ -1914,16 +2131,16 @@ export default function ProfileDashboardClient({
           }
         }}
       >
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Edit listing info</DialogTitle>
             <DialogDescription>
-              Update your listing details. Changes are saved instantly.
+              Update purpose, pricing, and address details just like posting a new listing.
             </DialogDescription>
           </DialogHeader>
 
           {editingForm && (
-            <div className="space-y-4">
+            <div className="space-y-5">
               <div className="space-y-1.5">
                 <Label htmlFor="listing-title">Title</Label>
                 <Input
@@ -1961,22 +2178,168 @@ export default function ProfileDashboardClient({
                 />
               </div>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="listing-location">Location</Label>
-                <Input
-                  id="listing-location"
-                  value={editingForm.location}
-                  onChange={(event) =>
-                    setEditingForm((current) =>
-                      current
-                        ? {
-                            ...current,
-                            location: event.target.value,
+              <div className="space-y-2">
+                <Label>Listing purpose</Label>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {EDIT_PURPOSE_OPTIONS.map((option) => {
+                    const isSelected = editingForm.purposes.includes(option.value);
+
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => toggleEditPurpose(option.value)}
+                        disabled={Boolean(savingEditId)}
+                        className={cn(
+                          'rounded-xl border px-3 py-2 text-left transition-colors',
+                          isSelected
+                            ? 'border-primary bg-primary/10 text-foreground'
+                            : 'border-border/60 bg-card hover:border-primary/40 hover:bg-accent/30',
+                          Boolean(savingEditId) && 'cursor-not-allowed opacity-70'
+                        )}
+                      >
+                        <p className="text-sm font-medium">{option.label}</p>
+                        <p className="text-xs text-muted-foreground">{option.description}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Select one or both options.
+                </p>
+              </div>
+
+              {editingForm.purposes.includes('sell') && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="listing-sell-price">Sell price (INR)</Label>
+                  <Input
+                    id="listing-sell-price"
+                    inputMode="decimal"
+                    value={editingForm.sellPrice}
+                    onChange={(event) =>
+                      setEditingForm((current) =>
+                        current
+                          ? {
+                              ...current,
+                              sellPrice: event.target.value,
+                            }
+                          : current
+                      )
+                    }
+                  />
+                </div>
+              )}
+
+              {editingForm.purposes.includes('rent') && (
+                <div className="space-y-2">
+                  <Label>Rent prices (INR)</Label>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    {EDIT_RENT_DURATION_OPTIONS.map((option) => (
+                      <div key={option.value} className="space-y-1.5">
+                        <Label htmlFor={`listing-rent-${option.value}`}>{option.label} rent</Label>
+                        <Input
+                          id={`listing-rent-${option.value}`}
+                          inputMode="decimal"
+                          value={editingForm.rentPrices[option.value]}
+                          onChange={(event) =>
+                            setEditingForm((current) =>
+                              current
+                                ? {
+                                    ...current,
+                                    rentPrices: {
+                                      ...current.rentPrices,
+                                      [option.value]: event.target.value,
+                                    },
+                                  }
+                                : current
+                            )
                           }
-                        : current
-                    )
-                  }
-                />
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Add at least one rent duration price.
+                  </p>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <Label>Address details</Label>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="space-y-1.5 sm:col-span-2">
+                    <Label htmlFor="listing-address-line">Address line</Label>
+                    <Input
+                      id="listing-address-line"
+                      value={editingForm.locationLine1}
+                      onChange={(event) =>
+                        setEditingForm((current) =>
+                          current
+                            ? {
+                                ...current,
+                                locationLine1: event.target.value,
+                              }
+                            : current
+                        )
+                      }
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label htmlFor="listing-address-city">City</Label>
+                    <Input
+                      id="listing-address-city"
+                      value={editingForm.locationCity}
+                      onChange={(event) =>
+                        setEditingForm((current) =>
+                          current
+                            ? {
+                                ...current,
+                                locationCity: event.target.value,
+                              }
+                            : current
+                        )
+                      }
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label htmlFor="listing-address-state">State</Label>
+                    <Input
+                      id="listing-address-state"
+                      value={editingForm.locationState}
+                      onChange={(event) =>
+                        setEditingForm((current) =>
+                          current
+                            ? {
+                                ...current,
+                                locationState: event.target.value,
+                              }
+                            : current
+                        )
+                      }
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label htmlFor="listing-address-pincode">Pincode</Label>
+                    <Input
+                      id="listing-address-pincode"
+                      inputMode="numeric"
+                      value={editingForm.locationPincode}
+                      onChange={(event) =>
+                        setEditingForm((current) =>
+                          current
+                            ? {
+                                ...current,
+                                locationPincode: event.target.value.replace(/\D/g, '').slice(0, 6),
+                              }
+                            : current
+                        )
+                      }
+                    />
+                  </div>
+                </div>
               </div>
 
               <div className="flex items-center justify-between rounded-lg border border-border/60 bg-accent/30 px-3 py-2.5">
@@ -2002,48 +2365,6 @@ export default function ProfileDashboardClient({
                   className="data-[state=checked]:bg-primary"
                 />
               </div>
-
-              {(editingProduct?.type === 'sell' || editingProduct?.type === 'both') && (
-                <div className="space-y-1.5">
-                  <Label htmlFor="listing-sell-price">Sell price (INR)</Label>
-                  <Input
-                    id="listing-sell-price"
-                    inputMode="decimal"
-                    value={editingForm.sellPrice}
-                    onChange={(event) =>
-                      setEditingForm((current) =>
-                        current
-                          ? {
-                              ...current,
-                              sellPrice: event.target.value,
-                            }
-                          : current
-                      )
-                    }
-                  />
-                </div>
-              )}
-
-              {(editingProduct?.type === 'rent' || editingProduct?.type === 'both') && (
-                <div className="space-y-1.5">
-                  <Label htmlFor="listing-rent-daily">Daily rent (INR)</Label>
-                  <Input
-                    id="listing-rent-daily"
-                    inputMode="decimal"
-                    value={editingForm.rentDailyPrice}
-                    onChange={(event) =>
-                      setEditingForm((current) =>
-                        current
-                          ? {
-                              ...current,
-                              rentDailyPrice: event.target.value,
-                            }
-                          : current
-                      )
-                    }
-                  />
-                </div>
-              )}
             </div>
           )}
 

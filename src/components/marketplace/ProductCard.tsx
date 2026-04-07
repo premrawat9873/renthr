@@ -30,7 +30,7 @@ function formatDistanceLabel(distance: number) {
   return `${distance.toFixed(1)} km`;
 }
 
-export default function ProductCard({ product, rentDurations, priority = false }: Props) {
+export default function ProductCard({ product, priority = false }: Props) {
   const router = useRouter();
   const dispatch = useAppDispatch();
   const liked = useAppSelector((state) => selectIsWishlisted(state, product.id));
@@ -121,7 +121,27 @@ export default function ProductCard({ product, rentDurations, priority = false }
 
       {/* Content */}
       <div className="flex flex-1 flex-col space-y-2 p-3.5">
-        <h3 className="font-heading font-medium text-sm leading-snug line-clamp-2">
+        {/* Price */}
+        <div className="space-y-0.5">
+          {isSellAvailable && (
+            <p className="text-base font-extrabold text-foreground">
+              {product.price != null
+                ? `Sell ${formatPrice(product.price)}`
+                : "Selling price on request"}
+            </p>
+          )}
+          {isRentAvailable && (
+            product.rentPrices ? (
+              <div className="grid grid-cols-1 gap-0.5">
+                {renderRentPrice(product)}
+              </div>
+            ) : (
+              <p className="text-base font-extrabold text-foreground">Rent price on request</p>
+            )
+          )}
+        </div>
+
+        <h3 className="font-heading text-sm font-semibold leading-snug line-clamp-2 text-foreground">
           {product.title}
         </h3>
 
@@ -139,26 +159,6 @@ export default function ProductCard({ product, rentDurations, priority = false }
             </span>
           </div>
         )}
-
-        {/* Price */}
-        <div className="space-y-0.5">
-          {isSellAvailable && (
-            <p className="text-sm font-semibold text-foreground">
-              {product.price != null
-                ? `Selling price ${formatPrice(product.price)}`
-                : "Selling price on request"}
-            </p>
-          )}
-          {isRentAvailable && (
-            product.rentPrices ? (
-              <div className="flex flex-wrap gap-x-2 gap-y-0.5">
-                {renderRentPrice(product, rentDurations)}
-              </div>
-            ) : (
-              <p className="text-sm font-semibold text-foreground">Rent price on request</p>
-            )
-          )}
-        </div>
 
         {/* Meta */}
         <div className="mt-auto flex items-center justify-between gap-2 pt-1 text-xs text-muted-foreground">
@@ -179,32 +179,24 @@ export default function ProductCard({ product, rentDurations, priority = false }
   );
 }
 
-function renderRentPrice(product: Product, durations: RentDuration[]) {
+function renderRentPrice(product: Product) {
   const rp = product.rentPrices!;
-  const show = durations.length > 0 ? durations : (["daily"] as RentDuration[]);
-  const items: { label: string; price: number | null }[] = [];
+  const items: Array<{ key: RentDuration; label: string; suffix: string; price: number }> = [];
 
-  for (const d of show) {
-    if (d === "hourly" && rp.hourly != null) items.push({ label: "/hr", price: rp.hourly });
-    if (d === "daily" && rp.daily != null) items.push({ label: "/day", price: rp.daily });
-    if (d === "weekly" && rp.weekly != null) items.push({ label: "/wk", price: rp.weekly });
-    if (d === "monthly" && rp.monthly != null) items.push({ label: "/mo", price: rp.monthly });
+  if (rp.hourly != null) {
+    items.push({ key: "hourly", label: "Hourly", suffix: "/hr", price: rp.hourly });
   }
 
-  if (items.length === 0 && rp.daily != null) {
-    items.push({ label: "/day", price: rp.daily });
+  if (rp.daily != null) {
+    items.push({ key: "daily", label: "Daily", suffix: "/day", price: rp.daily });
   }
 
-  if (items.length === 0 && rp.hourly != null) {
-    items.push({ label: "/hr", price: rp.hourly });
+  if (rp.weekly != null) {
+    items.push({ key: "weekly", label: "Weekly", suffix: "/wk", price: rp.weekly });
   }
 
-  if (items.length === 0 && rp.weekly != null) {
-    items.push({ label: "/wk", price: rp.weekly });
-  }
-
-  if (items.length === 0 && rp.monthly != null) {
-    items.push({ label: "/mo", price: rp.monthly });
+  if (rp.monthly != null) {
+    items.push({ key: "monthly", label: "Monthly", suffix: "/mo", price: rp.monthly });
   }
 
   if (items.length === 0) {
@@ -214,8 +206,9 @@ function renderRentPrice(product: Product, durations: RentDuration[]) {
   }
 
   return items.map((item) => (
-    <span key={item.label} className="text-sm font-semibold text-foreground">
-      Rent {formatPrice(item.price!)}<span className="font-normal text-muted-foreground">{item.label}</span>
-    </span>
+    <p key={item.key} className="text-[0.95rem] font-bold text-foreground leading-tight">
+      {item.label} {formatPrice(item.price)}
+      <span className="font-normal text-muted-foreground">{item.suffix}</span>
+    </p>
   ));
 }

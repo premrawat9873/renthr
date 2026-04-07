@@ -7,6 +7,7 @@ import { Analytics } from "@vercel/analytics/next";
 const siteUrl = getSiteUrl();
 const FAVICON_VERSION = "20260407";
 const FAVICON_URL = `/icon.png?v=${FAVICON_VERSION}`;
+const SHORTCUT_ICON_URL = "/favicon.ico";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -18,7 +19,7 @@ export const metadata: Metadata = {
   applicationName: SITE_NAME,
   icons: {
     icon: [{ url: FAVICON_URL, type: "image/png" }],
-    shortcut: [{ url: FAVICON_URL, type: "image/png" }],
+    shortcut: [{ url: SHORTCUT_ICON_URL, type: "image/png" }],
     apple: [{ url: FAVICON_URL, type: "image/png" }],
   },
   alternates: {
