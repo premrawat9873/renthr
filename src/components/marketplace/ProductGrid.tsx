@@ -2,6 +2,7 @@ import { Product, RentDuration } from "@/data/marketplaceData";
 import ProductCard from "./ProductCard";
 import { PackageOpen, Loader } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import AdSenseInlineAd from "@/components/ui/AdSenseInlineAd";
 
 interface Props {
   products: Product[];
@@ -13,6 +14,7 @@ interface Props {
 
 const SKELETON_COUNT = 8;
 const CTA_INTERVAL = 6; // Insert CTA card after every 6th product
+const IN_FEED_AD_INTERVAL = 8; // Insert in-feed ad after every 8th product
 
 function CTACard() {
   return (
@@ -92,14 +94,23 @@ export default function ProductGrid({
   const displayedProducts = products;
   const skeletonCount = isLoadingMore ? SKELETON_COUNT : 0;
 
-  // Build grid items: interleave CTA cards
-  const gridItems: Array<{ type: "product"; product: Product } | { type: "cta" }> = [];
+  // Build grid items: interleave CTA cards and in-feed ad units.
+  const gridItems: Array<
+    | { type: "product"; product: Product }
+    | { type: "cta" }
+    | { type: "ad" }
+  > = [];
   let productCount = 0;
   for (const product of displayedProducts) {
     productCount++;
     gridItems.push({ type: "product", product });
+
     if (productCount % CTA_INTERVAL === 0 && productCount < displayedProducts.length) {
       gridItems.push({ type: "cta" });
+    }
+
+    if (productCount % IN_FEED_AD_INTERVAL === 0 && productCount < displayedProducts.length) {
+      gridItems.push({ type: "ad" });
     }
   }
 
@@ -108,12 +119,30 @@ export default function ProductGrid({
       <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4 items-stretch">
         {gridItems.map((item, i) => (
           <div
-            key={item.type === "product" ? `product-${item.product.id}` : `cta-${i}`}
-            className="h-full animate-fade-in"
+            key={
+              item.type === "product"
+                ? `product-${item.product.id}`
+                : item.type === "cta"
+                  ? `cta-${i}`
+                  : `feed-ad-${i}`
+            }
+            className={`h-full animate-fade-in ${item.type === "ad" ? "col-span-2 sm:col-span-3 lg:col-span-4" : ""}`}
             style={{ animationDelay: `${(i % SKELETON_COUNT) * 30}ms`, animationFillMode: "both" }}
           >
             {item.type === "cta" ? (
               <CTACard />
+            ) : item.type === "ad" ? (
+              <div className="rounded-2xl border border-border/50 bg-card p-3 sm:p-4">
+                <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Sponsored
+                </p>
+                <AdSenseInlineAd
+                  adSlot="3466919594"
+                  adFormat="fluid"
+                  adLayoutKey="-6l+ca+3p+n+s"
+                  fullWidthResponsive={false}
+                />
+              </div>
             ) : (
               <ProductCard
                 product={item.product}

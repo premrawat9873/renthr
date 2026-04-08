@@ -3,6 +3,7 @@ import "./globals.css";
 import { Providers } from "@/providers";
 import { getSiteUrl, SITE_DESCRIPTION, SITE_NAME } from "@/lib/site";
 import { Analytics } from "@vercel/analytics/next";
+import AdSenseInlineAd from "@/components/ui/AdSenseInlineAd";
 
 const siteUrl = getSiteUrl();
 const FAVICON_VERSION = "20260407";
@@ -64,6 +65,11 @@ export default function RootLayout({
       </head>
       <body className="min-h-full flex flex-col">
         <Providers>{children}</Providers>
+        <div className="w-full px-4 pb-6">
+          <div className="mx-auto w-full max-w-6xl">
+            <AdSenseInlineAd adSlot="2120281974" />
+          </div>
+        </div>
         <Analytics />
       </body>
     </html>
