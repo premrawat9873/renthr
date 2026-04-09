@@ -11,7 +11,7 @@ import {
   deserializeListingProduct,
   type ListingProductPayload,
 } from '@/data/listings';
-import type { ListingFilter, Product, RentDuration } from '@/data/marketplaceData';
+import type { RentDuration } from '@/data/marketplaceData';
 import type { LocationData } from '@/components/marketplace/LocationSelector';
 import { MapPin } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
@@ -118,77 +118,6 @@ function getKnownCoordinates(rawLocation: string) {
   return null;
 }
 
-function getProductCoordinates(
-  product: Product,
-  resolvedCoordinatesByLocation: Record<string, { lat: number; lng: number }>
-) {
-  if (
-    Number.isFinite(product.locationLatitude) &&
-    Number.isFinite(product.locationLongitude)
-  ) {
-    return {
-      lat: product.locationLatitude as number,
-      lng: product.locationLongitude as number,
-    };
-  }
-
-  const candidates = getLocationCandidates(product.location);
-  for (const candidate of candidates) {
-    const resolved = resolvedCoordinatesByLocation[normalizeLocationKey(candidate)];
-    if (resolved) {
-      return resolved;
-    }
-  }
-
-  return getKnownCoordinates(product.location);
-}
-
-const CATEGORY_FILTER_ALIASES: Record<string, string> = {
-  "home-appliances": "appliances",
-  "baby-kids": "baby",
-  kids: "baby",
-};
-
-function normalizeCategoryFilterKey(value: string) {
-  const normalized = value
-    .trim()
-    .toLowerCase()
-    .replace(/&/g, ' and ')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-
-  return CATEGORY_FILTER_ALIASES[normalized] ?? normalized;
-}
-
-function normalizeDistanceForSorting(distance: number) {
-  if (!Number.isFinite(distance) || distance < 0) {
-    return Number.POSITIVE_INFINITY;
-  }
-
-  return distance;
-}
-
-function toRad(value: number) {
-  return (value * Math.PI) / 180;
-}
-
-function haversineDistanceKm(
-  from: { latitude: number; longitude: number },
-  to: { lat: number; lng: number }
-) {
-  const earthRadiusKm = 6371;
-  const dLat = toRad(to.lat - from.latitude);
-  const dLng = toRad(to.lng - from.longitude);
-  const lat1 = toRad(from.latitude);
-  const lat2 = toRad(to.lat);
-
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.sin(dLng / 2) * Math.sin(dLng / 2) * Math.cos(lat1) * Math.cos(lat2);
-
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return earthRadiusKm * c;
-}
 
 type ReverseGeocodeResult = {
   city: string;
@@ -279,56 +208,6 @@ async function reverseGeocodeLocation(
   }
 }
 
-function compareById(aId: string, bId: string) {
-  return aId.localeCompare(bId, undefined, { numeric: true });
-}
-
-function supportsRent(product: Product) {
-  return product.type === 'rent' || product.type === 'both';
-}
-
-function supportsSell(product: Product) {
-  return product.type === 'sell' || product.type === 'both';
-}
-
-function getPrimaryRentPrice(product: Product) {
-  if (!product.rentPrices) {
-    return null;
-  }
-
-  return (
-    product.rentPrices.daily ??
-    product.rentPrices.hourly ??
-    product.rentPrices.weekly ??
-    product.rentPrices.monthly ??
-    null
-  );
-}
-
-function getComparablePrice(product: Product, filter: ListingFilter) {
-  if (filter === 'sell') {
-    return product.price;
-  }
-
-  if (filter === 'rent') {
-    return getPrimaryRentPrice(product);
-  }
-
-  if (product.type === 'sell') {
-    return product.price;
-  }
-
-  if (product.type === 'rent') {
-    return getPrimaryRentPrice(product);
-  }
-
-  const candidates = [product.price, getPrimaryRentPrice(product)].filter(
-    (value): value is number => value != null
-  );
-
-  return candidates.length > 0 ? Math.min(...candidates) : null;
-}
-
 interface MarketplacePageClientProps {
   initialProducts: ListingProductPayload[];
   initialNextCursor: string | null;
@@ -354,12 +233,10 @@ export function MarketplacePageClient({
   const [nextCursor, setNextCursor] = useState<string | null>(initialNextCursor);
   const [hasMorePages, setHasMorePages] = useState(initialHasMore);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [isRefreshingProducts, setIsRefreshingProducts] = useState(false);
   const [hasManualSortSelection, setHasManualSortSelection] = useState(false);
-  const [resolvedLocationCoordinates, setResolvedLocationCoordinates] = useState<
-    Record<string, { lat: number; lng: number }>
-  >({});
   const [isPostFlowOpen, setIsPostFlowOpen] = useState(false);
-  const resolvingLocationKeysRef = useRef<Set<string>>(new Set());
+  const listingRequestSequenceRef = useRef(0);
   const reduxAuthenticated = useAppSelector(selectIsAuthenticated);
   const location = useAppSelector(selectLocation);
   const userLocation = useAppSelector(selectUserLocation);
@@ -405,28 +282,89 @@ export function MarketplacePageClient({
     isHydrated && isAuthenticated && !hasManualSortSelection && safeSort === 'newest'
       ? 'distance'
       : safeSort;
+  const listingQuery = useMemo(
+    () => ({
+      searchQuery: safeSearchQuery.trim(),
+      selectedCategory: safeSelectedCategory,
+      filter: safeFilter,
+      rentDurations: [...safeRentDurations].sort(),
+      sort: effectiveSort,
+      minPrice: safePriceRange[0],
+      maxPrice: safePriceRange[1],
+      latitude: effectiveUserCoords?.latitude ?? null,
+      longitude: effectiveUserCoords?.longitude ?? null,
+    }),
+    [
+      effectiveSort,
+      effectiveUserCoords,
+      safeFilter,
+      safePriceRange,
+      safeRentDurations,
+      safeSearchQuery,
+      safeSelectedCategory,
+    ]
+  );
+
+  const buildListingsParams = useCallback(
+    (cursor: string | null = null) => {
+      const params = new URLSearchParams();
+      params.set('limit', String(PAGE_SIZE));
+
+      if (cursor) {
+        params.set('cursor', cursor);
+      }
+
+      if (listingQuery.searchQuery) {
+        params.set('q', listingQuery.searchQuery);
+      }
+
+      if (listingQuery.selectedCategory) {
+        params.set('category', listingQuery.selectedCategory);
+      }
+
+      if (listingQuery.filter !== 'all') {
+        params.set('filter', listingQuery.filter);
+      }
+
+      if (listingQuery.rentDurations.length > 0) {
+        params.set('rentDurations', listingQuery.rentDurations.join(','));
+      }
+
+      if (listingQuery.sort !== 'newest') {
+        params.set('sort', listingQuery.sort);
+      }
+
+      if (listingQuery.minPrice > 0) {
+        params.set('minPrice', String(listingQuery.minPrice));
+      }
+
+      if (listingQuery.maxPrice < MAX_PRICE) {
+        params.set('maxPrice', String(listingQuery.maxPrice));
+      }
+
+      if (listingQuery.latitude != null && listingQuery.longitude != null) {
+        params.set('latitude', String(listingQuery.latitude));
+        params.set('longitude', String(listingQuery.longitude));
+      }
+
+      return params;
+    },
+    [listingQuery]
+  );
+
   const availableProducts = useMemo(
     () => loadedProducts.map(deserializeListingProduct),
     [loadedProducts]
   );
 
-  const loadMoreProducts = useCallback(async () => {
-    if (isLoadingMore || !hasMorePages) {
-      return;
-    }
-
-    setIsLoadingMore(true);
-
-    try {
-      const params = new URLSearchParams();
-      params.set('limit', String(PAGE_SIZE));
-      if (nextCursor) {
-        params.set('cursor', nextCursor);
-      }
-
-      const response = await fetch(`/api/listings?${params.toString()}`, {
-        cache: 'no-store',
-      });
+  const fetchListingsPage = useCallback(
+    async (cursor: string | null) => {
+      const response = await fetch(
+        `/api/listings?${buildListingsParams(cursor).toString()}`,
+        {
+          cache: 'no-store',
+        }
+      );
 
       const payload = (await response
         .json()
@@ -434,8 +372,27 @@ export function MarketplacePageClient({
 
       if (!response.ok || !payload || !Array.isArray(payload.products)) {
         throw new Error(
-          payload?.error || 'Unable to load more listings right now. Please try again.'
+          payload?.error || 'Unable to load listings right now. Please try again.'
         );
+      }
+
+      return payload;
+    },
+    [buildListingsParams]
+  );
+
+  const loadMoreProducts = useCallback(async () => {
+    if (isLoadingMore || isRefreshingProducts || !hasMorePages) {
+      return;
+    }
+
+    setIsLoadingMore(true);
+
+    try {
+      const requestIdAtStart = listingRequestSequenceRef.current;
+      const payload = await fetchListingsPage(nextCursor);
+      if (requestIdAtStart !== listingRequestSequenceRef.current) {
+        return;
       }
 
       setLoadedProducts((current) => {
@@ -466,7 +423,7 @@ export function MarketplacePageClient({
     } finally {
       setIsLoadingMore(false);
     }
-  }, [hasMorePages, isLoadingMore, nextCursor]);
+  }, [fetchListingsPage, hasMorePages, isLoadingMore, isRefreshingProducts, nextCursor]);
 
   const handleLocationChange = useCallback((locData: LocationData | null) => {
     if (!locData) return;
@@ -613,86 +570,50 @@ export function MarketplacePageClient({
   }, [dispatch, isHydrated, safeLocation, safeUserCoords]);
 
   useEffect(() => {
-    if (!effectiveUserCoords) {
+    if (!isHydrated) {
       return;
     }
 
-    const locationsToResolve = Array.from(
-      new Set(
-        availableProducts
-          .filter(
-            (product) =>
-              !(
-                Number.isFinite(product.locationLatitude) &&
-                Number.isFinite(product.locationLongitude)
-              )
-          )
-          .map((product) => product.location.trim())
-          .filter((locationText) => {
-            if (!locationText) {
-              return false;
-            }
-
-            if (getKnownCoordinates(locationText)) {
-              return false;
-            }
-
-            const normalizedKey = normalizeLocationKey(locationText);
-            return (
-              !resolvedLocationCoordinates[normalizedKey] &&
-              !resolvingLocationKeysRef.current.has(normalizedKey)
-            );
-          })
-      )
-    );
-
-    if (locationsToResolve.length === 0) {
-      return;
-    }
-
+    const requestId = listingRequestSequenceRef.current + 1;
+    listingRequestSequenceRef.current = requestId;
     let cancelled = false;
 
-    const resolveMissingLocationCoordinates = async () => {
-      // Keep API usage low by resolving only a handful of unknown locations per render pass.
-      for (const locationText of locationsToResolve.slice(0, 12)) {
-        const normalizedKey = normalizeLocationKey(locationText);
-        resolvingLocationKeysRef.current.add(normalizedKey);
+    setIsRefreshingProducts(true);
 
-        try {
-          const suggestion = await searchLocationSuggestion(locationText);
-          if (!suggestion || cancelled) {
-            continue;
-          }
-
-          setResolvedLocationCoordinates((current) => {
-            if (current[normalizedKey]) {
-              return current;
-            }
-
-            return {
-              ...current,
-              [normalizedKey]: {
-                lat: suggestion.latitude,
-                lng: suggestion.longitude,
-              },
-            };
-          });
-        } finally {
-          resolvingLocationKeysRef.current.delete(normalizedKey);
-        }
-
-        if (cancelled) {
+    void (async () => {
+      try {
+        const payload = await fetchListingsPage(null);
+        if (cancelled || requestId !== listingRequestSequenceRef.current) {
           return;
         }
-      }
-    };
 
-    void resolveMissingLocationCoordinates();
+        setLoadedProducts(payload.products ?? []);
+        setNextCursor(typeof payload.nextCursor === 'string' ? payload.nextCursor : null);
+        setHasMorePages(Boolean(payload.hasMore));
+      } catch (error) {
+        if (cancelled || requestId !== listingRequestSequenceRef.current) {
+          return;
+        }
+
+        toast({
+          title: 'Could not refresh listings',
+          description:
+            error instanceof Error
+              ? error.message
+              : 'Please try again in a moment.',
+          variant: 'destructive',
+        });
+      } finally {
+        if (!cancelled && requestId === listingRequestSequenceRef.current) {
+          setIsRefreshingProducts(false);
+        }
+      }
+    })();
 
     return () => {
       cancelled = true;
     };
-  }, [availableProducts, effectiveUserCoords, resolvedLocationCoordinates]);
+  }, [fetchListingsPage, isHydrated]);
 
   const handleManualLocation = useCallback((city: string, selection?: LocationData) => {
     const normalizedLocation = city.trim();
@@ -782,108 +703,6 @@ export function MarketplacePageClient({
     setIsPostFlowOpen(true);
   }, []);
 
-  const filteredProducts = useMemo(() => {
-    let results = [...availableProducts];
-
-    results = results.map((product) => {
-      if (!effectiveUserCoords) return product;
-      const productCoords = getProductCoordinates(product, resolvedLocationCoordinates);
-      if (!productCoords) {
-        return {
-          ...product,
-          distance: Number.isFinite(product.distance) && product.distance >= 0
-            ? product.distance
-            : -1,
-        };
-      }
-
-      const computedDistance = haversineDistanceKm(effectiveUserCoords, productCoords);
-      return { ...product, distance: Number(computedDistance.toFixed(1)) };
-    });
-
-    if (safeSearchQuery) {
-      const q = safeSearchQuery.toLowerCase();
-      results = results.filter(
-        (p) => p.title.toLowerCase().includes(q) || p.category.toLowerCase().includes(q)
-      );
-    }
-
-    if (safeSelectedCategory) {
-      const selectedCategoryKey = normalizeCategoryFilterKey(safeSelectedCategory);
-      results = results.filter(
-        (p) => normalizeCategoryFilterKey(p.category) === selectedCategoryKey
-      );
-    }
-
-    if (safeFilter === 'rent') results = results.filter((p) => supportsRent(p));
-    if (safeFilter === 'sell') results = results.filter((p) => supportsSell(p));
-
-    if (effectiveUserCoords) {
-      results.sort((a, b) => {
-        const aDistance = normalizeDistanceForSorting(a.distance);
-        const bDistance = normalizeDistanceForSorting(b.distance);
-        if (aDistance === bDistance) {
-          return compareById(a.id, b.id);
-        }
-        const byDistance = aDistance - bDistance;
-        return byDistance !== 0 ? byDistance : compareById(a.id, b.id);
-      });
-    }
-
-    if (safeFilter === 'rent' && safeRentDurations.length > 0) {
-      results = results.filter((p) => {
-        if (!supportsRent(p) || !p.rentPrices) return false;
-        return safeRentDurations.some((d) => p.rentPrices![d] != null);
-      });
-    }
-
-    if (safePriceRange[0] > 0 || safePriceRange[1] < MAX_PRICE) {
-      results = results.filter((p) => {
-        const price = getComparablePrice(p, safeFilter);
-        if (price == null) {
-          return false;
-        }
-        return price >= safePriceRange[0] && price <= safePriceRange[1];
-      });
-    }
-
-    if (effectiveSort === 'newest') {
-      results.sort((a, b) => {
-        const byTime = b.postedAt.getTime() - a.postedAt.getTime();
-        return byTime !== 0 ? byTime : compareById(a.id, b.id);
-      });
-    }
-    if (effectiveSort === 'distance') {
-      results.sort((a, b) => {
-        const aDistance = normalizeDistanceForSorting(a.distance);
-        const bDistance = normalizeDistanceForSorting(b.distance);
-        if (aDistance === bDistance) {
-          return compareById(a.id, b.id);
-        }
-        const byDistance = aDistance - bDistance;
-        return byDistance !== 0 ? byDistance : compareById(a.id, b.id);
-      });
-    }
-    if (effectiveSort === 'price-asc') {
-      results.sort((a, b) => {
-        const pa = getComparablePrice(a, safeFilter) ?? Infinity;
-        const pb = getComparablePrice(b, safeFilter) ?? Infinity;
-        const byPrice = pa - pb;
-        return byPrice !== 0 ? byPrice : compareById(a.id, b.id);
-      });
-    }
-    if (effectiveSort === 'price-desc') {
-      results.sort((a, b) => {
-        const pa = getComparablePrice(a, safeFilter) ?? 0;
-        const pb = getComparablePrice(b, safeFilter) ?? 0;
-        const byPrice = pb - pa;
-        return byPrice !== 0 ? byPrice : compareById(a.id, b.id);
-      });
-    }
-
-    return results;
-  }, [availableProducts, effectiveSort, effectiveUserCoords, resolvedLocationCoordinates, safeFilter, safePriceRange, safeRentDurations, safeSearchQuery, safeSelectedCategory]);
-
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <MarketplaceHeader
@@ -935,9 +754,9 @@ export function MarketplacePageClient({
         />
 
         <ProductGrid
-          products={filteredProducts}
+          products={availableProducts}
           rentDurations={safeRentDurations}
-          hasMore={hasMorePages}
+          hasMore={hasMorePages && !isRefreshingProducts}
           isLoadingMore={isLoadingMore}
           onLoadMore={loadMoreProducts}
         />

@@ -21,6 +21,8 @@ export const runtime = "nodejs";
 type ListingPurpose = "sell" | "rent";
 type StoredListingType = "SELL" | "RENT" | "BOTH";
 type RentPriceKey = "hourly" | "daily" | "weekly" | "monthly";
+type QueryListingFilter = "all" | "rent" | "sell";
+type QuerySortOption = "newest" | "price-asc" | "price-desc" | "distance";
 type CreateListingBody = {
   title?: unknown;
   description?: unknown;
@@ -39,6 +41,19 @@ const MAX_IMAGE_COUNT = 3;
 const LOCATION_MIN_LENGTH = 2;
 const LOCATION_PINCODE_PATTERN = /^\d{6}$/;
 const LOCATION_PLACEHOLDER_VALUES = new Set(["unknown", "na", "n/a"]);
+const VALID_QUERY_FILTERS: QueryListingFilter[] = ["all", "rent", "sell"];
+const VALID_QUERY_SORTS: QuerySortOption[] = [
+  "newest",
+  "price-asc",
+  "price-desc",
+  "distance",
+];
+const VALID_QUERY_RENT_DURATIONS: RentPriceKey[] = [
+  "hourly",
+  "daily",
+  "weekly",
+  "monthly",
+];
 
 function normalizeCategorySlug(value: string) {
   return value
@@ -397,15 +412,83 @@ function parseRentPrices(value: unknown) {
   return parsed;
 }
 
+function parseOptionalQueryNumber(value: string | null) {
+  if (value == null || value.trim() === "") {
+    return null;
+  }
+
+  const parsed = Number.parseFloat(value);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+
+  return parsed;
+}
+
+function parseQueryFilter(value: string | null): QueryListingFilter | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  return VALID_QUERY_FILTERS.includes(value as QueryListingFilter)
+    ? (value as QueryListingFilter)
+    : undefined;
+}
+
+function parseQuerySort(value: string | null): QuerySortOption | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  return VALID_QUERY_SORTS.includes(value as QuerySortOption)
+    ? (value as QuerySortOption)
+    : undefined;
+}
+
+function parseQueryRentDurations(value: string | null): RentPriceKey[] {
+  if (!value) {
+    return [];
+  }
+
+  const durations = value
+    .split(",")
+    .map((segment) => segment.trim().toLowerCase())
+    .filter((segment): segment is RentPriceKey =>
+      VALID_QUERY_RENT_DURATIONS.includes(segment as RentPriceKey)
+    );
+
+  return Array.from(new Set(durations));
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const limitParam = searchParams.get("limit");
   const cursorParam = searchParams.get("cursor");
+  const searchQueryParam = searchParams.get("q");
+  const categoryParam = searchParams.get("category");
+  const filterParam = parseQueryFilter(searchParams.get("filter"));
+  const rentDurationsParam = parseQueryRentDurations(
+    searchParams.get("rentDurations")
+  );
+  const sortParam = parseQuerySort(searchParams.get("sort"));
+  const minPriceParam = parseOptionalQueryNumber(searchParams.get("minPrice"));
+  const maxPriceParam = parseOptionalQueryNumber(searchParams.get("maxPrice"));
+  const latitudeParam = parseOptionalQueryNumber(searchParams.get("latitude"));
+  const longitudeParam = parseOptionalQueryNumber(searchParams.get("longitude"));
   const parsedLimit = limitParam ? Number.parseInt(limitParam, 10) : NaN;
 
   const page = await getMarketplaceListingProductsPayloadPage({
     limit: Number.isFinite(parsedLimit) ? parsedLimit : MARKETPLACE_DEFAULT_PAGE_SIZE,
     cursor: cursorParam,
+    searchQuery: searchQueryParam,
+    category: categoryParam,
+    filter: filterParam,
+    rentDurations: rentDurationsParam,
+    sort: sortParam,
+    minPrice: minPriceParam,
+    maxPrice: maxPriceParam,
+    latitude: latitudeParam,
+    longitude: longitudeParam,
   });
 
   return NextResponse.json(page);

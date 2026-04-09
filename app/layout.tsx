@@ -6,9 +6,11 @@ import { Analytics } from "@vercel/analytics/next";
 import AdSenseInlineAd from "@/components/ui/AdSenseInlineAd";
 
 const siteUrl = getSiteUrl();
-const FAVICON_VERSION = "20260407";
-const FAVICON_URL = `/icon.png?v=${FAVICON_VERSION}`;
-const SHORTCUT_ICON_URL = "/favicon.ico";
+const FAVICON_VERSION = "20260408";
+const FAVICON_48_URL = `/favicon-48.png?v=${FAVICON_VERSION}`;
+const FAVICON_192_URL = `/favicon-192.png?v=${FAVICON_VERSION}`;
+const APPLE_TOUCH_ICON_URL = `/apple-touch-icon.png?v=${FAVICON_VERSION}`;
+const SHORTCUT_ICON_URL = `/favicon.ico?v=${FAVICON_VERSION}`;
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -19,9 +21,14 @@ export const metadata: Metadata = {
   description: SITE_DESCRIPTION,
   applicationName: SITE_NAME,
   icons: {
-    icon: [{ url: FAVICON_URL, type: "image/png" }],
-    shortcut: [{ url: SHORTCUT_ICON_URL, type: "image/png" }],
-    apple: [{ url: FAVICON_URL, type: "image/png" }],
+    icon: [
+      { url: FAVICON_48_URL, type: "image/png", sizes: "48x48" },
+      { url: FAVICON_192_URL, type: "image/png", sizes: "192x192" },
+    ],
+    shortcut: [{ url: SHORTCUT_ICON_URL, type: "image/x-icon" }],
+    apple: [
+      { url: APPLE_TOUCH_ICON_URL, type: "image/png", sizes: "180x180" },
+    ],
   },
   alternates: {
     canonical: "/",

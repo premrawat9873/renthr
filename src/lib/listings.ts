@@ -1,6 +1,11 @@
 import "server-only";
 
-import type { Product } from "@/data/marketplaceData";
+import type {
+  ListingFilter,
+  Product,
+  RentDuration,
+  SortOption,
+} from "@/data/marketplaceData";
 import {
   serializeListingProduct,
   type ListingProductPayload,
@@ -14,6 +19,25 @@ export const MARKETPLACE_MAX_PAGE_SIZE = 30;
 
 const DEFAULT_IMAGE_URL =
   "https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=1200&h=900&fit=crop";
+
+const VALID_LISTING_FILTERS: ListingFilter[] = ["all", "rent", "sell"];
+const VALID_SORT_OPTIONS: SortOption[] = [
+  "newest",
+  "price-asc",
+  "price-desc",
+  "distance",
+];
+const VALID_RENT_DURATIONS: RentDuration[] = [
+  "hourly",
+  "daily",
+  "weekly",
+  "monthly",
+];
+const CATEGORY_FILTER_ALIASES: Record<string, string> = {
+  "home-appliances": "appliances",
+  "baby-kids": "baby",
+  kids: "baby",
+};
 
 const listingSelect = {
   id: true,
@@ -69,11 +93,15 @@ type ListingRecord = Prisma.PostGetPayload<{ select: typeof listingSelect }>;
 type MarketplaceListingsPageOptions = {
   limit?: number;
   cursor?: number | string | null;
-};
-
-type FindManyListingsPageOptions = {
-  limit: number;
-  cursorId: number | null;
+  searchQuery?: string | null;
+  category?: string | null;
+  filter?: ListingFilter;
+  rentDurations?: RentDuration[];
+  sort?: SortOption;
+  minPrice?: number | null;
+  maxPrice?: number | null;
+  latitude?: number | null;
+  longitude?: number | null;
 };
 
 type ListingsByUserOptions = {
@@ -205,11 +233,53 @@ function parseListingCursor(cursor: number | string | null | undefined) {
   const parsed =
     typeof cursor === "number" ? cursor : Number.parseInt(String(cursor), 10);
 
-  if (!Number.isFinite(parsed) || parsed <= 0) {
+  if (!Number.isFinite(parsed) || parsed < 0) {
     return null;
   }
 
-  return parsed;
+  return Math.floor(parsed);
+}
+
+function normalizeListingFilter(value: unknown): ListingFilter {
+  return VALID_LISTING_FILTERS.includes(value as ListingFilter)
+    ? (value as ListingFilter)
+    : "all";
+}
+
+function normalizeSortOption(value: unknown): SortOption {
+  return VALID_SORT_OPTIONS.includes(value as SortOption)
+    ? (value as SortOption)
+    : "newest";
+}
+
+function normalizeRentDurations(value: unknown): RentDuration[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const normalized = value
+    .filter((duration): duration is RentDuration =>
+      VALID_RENT_DURATIONS.includes(duration as RentDuration)
+    )
+    .map((duration) => duration);
+
+  return Array.from(new Set(normalized));
+}
+
+function normalizeSearchQuery(value: string | null | undefined) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  return value.trim();
+}
+
+function normalizePriceValue(value: number | null | undefined) {
+  if (!Number.isFinite(value)) {
+    return null;
+  }
+
+  return Math.max(0, Math.floor(value as number));
 }
 
 function convertPaiseToAmount(value: number | null) {
@@ -278,6 +348,15 @@ function normalizeCategorySlug(value: string) {
     .replace(/&/g, " and ")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
+}
+
+function normalizeCategoryFilterKey(value: string | null | undefined) {
+  const normalized = normalizeCategorySlug(value ?? "");
+  if (!normalized) {
+    return "";
+  }
+
+  return CATEGORY_FILTER_ALIASES[normalized] ?? normalized;
 }
 
 function resolveCategoryId(category: ListingRecord["category"]) {
@@ -375,6 +454,309 @@ function mapListingRecordToProduct(record: ListingRecord): Product {
   };
 }
 
+function supportsRent(product: Product) {
+  return product.type === "rent" || product.type === "both";
+}
+
+function getPrimaryRentPrice(product: Product) {
+  if (!product.rentPrices) {
+    return null;
+  }
+
+  return (
+    product.rentPrices.daily ??
+    product.rentPrices.hourly ??
+    product.rentPrices.weekly ??
+    product.rentPrices.monthly ??
+    null
+  );
+}
+
+function getComparablePrice(product: Product, filter: ListingFilter) {
+  if (filter === "sell") {
+    return product.price;
+  }
+
+  if (filter === "rent") {
+    return getPrimaryRentPrice(product);
+  }
+
+  if (product.type === "sell") {
+    return product.price;
+  }
+
+  if (product.type === "rent") {
+    return getPrimaryRentPrice(product);
+  }
+
+  const candidates = [product.price, getPrimaryRentPrice(product)].filter(
+    (value): value is number => value != null
+  );
+
+  return candidates.length > 0 ? Math.min(...candidates) : null;
+}
+
+function compareProductIds(left: Product, right: Product) {
+  return left.id.localeCompare(right.id, undefined, { numeric: true });
+}
+
+function normalizeDistanceForSorting(distance: number) {
+  if (!Number.isFinite(distance) || distance < 0) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  return distance;
+}
+
+function toRad(value: number) {
+  return (value * Math.PI) / 180;
+}
+
+function haversineDistanceKm(
+  from: { latitude: number; longitude: number },
+  to: { latitude: number; longitude: number }
+) {
+  const earthRadiusKm = 6371;
+  const dLat = toRad(to.latitude - from.latitude);
+  const dLng = toRad(to.longitude - from.longitude);
+  const lat1 = toRad(from.latitude);
+  const lat2 = toRad(to.latitude);
+
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.sin(dLng / 2) * Math.sin(dLng / 2) * Math.cos(lat1) * Math.cos(lat2);
+
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return earthRadiusKm * c;
+}
+
+function normalizeUserCoordinates(
+  latitude: number | null | undefined,
+  longitude: number | null | undefined
+) {
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    return null;
+  }
+
+  const normalizedLatitude = latitude as number;
+  const normalizedLongitude = longitude as number;
+
+  if (
+    normalizedLatitude < -90 ||
+    normalizedLatitude > 90 ||
+    normalizedLongitude < -180 ||
+    normalizedLongitude > 180
+  ) {
+    return null;
+  }
+
+  return {
+    latitude: normalizedLatitude,
+    longitude: normalizedLongitude,
+  };
+}
+
+function applyDistanceToProducts(
+  products: Product[],
+  userCoordinates: { latitude: number; longitude: number } | null
+) {
+  if (!userCoordinates) {
+    return products.map((product) => ({ ...product, distance: -1 }));
+  }
+
+  return products.map((product) => {
+    if (
+      !Number.isFinite(product.locationLatitude) ||
+      !Number.isFinite(product.locationLongitude)
+    ) {
+      return {
+        ...product,
+        distance: -1,
+      };
+    }
+
+    const computedDistance = haversineDistanceKm(userCoordinates, {
+      latitude: product.locationLatitude as number,
+      longitude: product.locationLongitude as number,
+    });
+
+    return {
+      ...product,
+      distance: Number(computedDistance.toFixed(1)),
+    };
+  });
+}
+
+function applyRentDurationFilter(
+  products: Product[],
+  filter: ListingFilter,
+  rentDurations: RentDuration[]
+) {
+  if (filter !== "rent" || rentDurations.length === 0) {
+    return products;
+  }
+
+  return products.filter((product) => {
+    if (!supportsRent(product) || !product.rentPrices) {
+      return false;
+    }
+
+    return rentDurations.some((duration) => product.rentPrices?.[duration] != null);
+  });
+}
+
+function applyPriceRangeFilter(
+  products: Product[],
+  filter: ListingFilter,
+  minPrice: number | null,
+  maxPrice: number | null
+) {
+  if (minPrice == null && maxPrice == null) {
+    return products;
+  }
+
+  const floor = minPrice ?? 0;
+  const ceiling = maxPrice ?? Number.POSITIVE_INFINITY;
+
+  return products.filter((product) => {
+    const comparablePrice = getComparablePrice(product, filter);
+    if (comparablePrice == null) {
+      return false;
+    }
+
+    return comparablePrice >= floor && comparablePrice <= ceiling;
+  });
+}
+
+function sortMarketplaceProducts(
+  products: Product[],
+  sort: SortOption,
+  filter: ListingFilter,
+  hasUserCoordinates: boolean
+) {
+  const sorted = [...products];
+
+  if (sort === "price-asc") {
+    sorted.sort((left, right) => {
+      const leftPrice = getComparablePrice(left, filter) ?? Number.POSITIVE_INFINITY;
+      const rightPrice = getComparablePrice(right, filter) ?? Number.POSITIVE_INFINITY;
+      const byPrice = leftPrice - rightPrice;
+      return byPrice !== 0 ? byPrice : compareProductIds(left, right);
+    });
+    return sorted;
+  }
+
+  if (sort === "price-desc") {
+    sorted.sort((left, right) => {
+      const leftPrice = getComparablePrice(left, filter) ?? 0;
+      const rightPrice = getComparablePrice(right, filter) ?? 0;
+      const byPrice = rightPrice - leftPrice;
+      return byPrice !== 0 ? byPrice : compareProductIds(left, right);
+    });
+    return sorted;
+  }
+
+  if (sort === "distance" && hasUserCoordinates) {
+    sorted.sort((left, right) => {
+      const leftDistance = normalizeDistanceForSorting(left.distance);
+      const rightDistance = normalizeDistanceForSorting(right.distance);
+      if (leftDistance === rightDistance) {
+        return compareProductIds(left, right);
+      }
+
+      const byDistance = leftDistance - rightDistance;
+      return byDistance !== 0 ? byDistance : compareProductIds(left, right);
+    });
+    return sorted;
+  }
+
+  sorted.sort((left, right) => {
+    const byTime = right.postedAt.getTime() - left.postedAt.getTime();
+    return byTime !== 0 ? byTime : compareProductIds(left, right);
+  });
+  return sorted;
+}
+
+function buildMarketplaceListingsWhere(
+  options: MarketplaceListingsPageOptions
+): Prisma.PostWhereInput {
+  const filter = normalizeListingFilter(options.filter);
+  const normalizedCategory = normalizeCategoryFilterKey(options.category);
+  const normalizedSearchQuery = normalizeSearchQuery(options.searchQuery);
+
+  const where: Prisma.PostWhereInput = {
+    status: "ACTIVE",
+    publishedAt: {
+      not: null,
+    },
+  };
+
+  if (filter === "rent") {
+    where.listingType = {
+      in: ["RENT", "BOTH"],
+    };
+  }
+
+  if (filter === "sell") {
+    where.listingType = {
+      in: ["SELL", "BOTH"],
+    };
+  }
+
+  if (normalizedCategory) {
+    where.category = {
+      is: {
+        slug: normalizedCategory,
+      },
+    };
+  }
+
+  if (normalizedSearchQuery) {
+    const normalizedSearchSlug = normalizeCategorySlug(normalizedSearchQuery);
+    const searchConditions: Prisma.PostWhereInput[] = [
+      {
+        title: {
+          contains: normalizedSearchQuery,
+          mode: "insensitive",
+        },
+      },
+      {
+        description: {
+          contains: normalizedSearchQuery,
+          mode: "insensitive",
+        },
+      },
+      {
+        category: {
+          is: {
+            name: {
+              contains: normalizedSearchQuery,
+              mode: "insensitive",
+            },
+          },
+        },
+      },
+    ];
+
+    if (normalizedSearchSlug) {
+      searchConditions.push({
+        category: {
+          is: {
+            slug: {
+              contains: normalizedSearchSlug,
+              mode: "insensitive",
+            },
+          },
+        },
+      });
+    }
+
+    where.OR = searchConditions;
+  }
+
+  return where;
+}
+
 async function findManyListings() {
   return prisma.post.findMany({
     where: {
@@ -390,28 +772,14 @@ async function findManyListings() {
   });
 }
 
-async function findManyListingsPage({
-  limit,
-  cursorId,
-}: FindManyListingsPageOptions) {
+async function findManyListingsForMarketplaceQuery(
+  where: Prisma.PostWhereInput
+) {
   return prisma.post.findMany({
-    where: {
-      status: "ACTIVE",
-      publishedAt: {
-        not: null,
-      },
-      ...(cursorId
-        ? {
-            id: {
-              lt: cursorId,
-            },
-          }
-        : {}),
-    },
+    where,
     orderBy: {
       id: "desc",
     },
-    take: limit + 1,
     select: listingSelect,
   });
 }
@@ -543,25 +911,53 @@ export async function getMarketplaceListingProductsPayloadPage(
   options: MarketplaceListingsPageOptions = {}
 ): Promise<MarketplaceListingProductsPayloadPage> {
   const limit = normalizePageSize(options.limit);
-  const cursorId = parseListingCursor(options.cursor);
+  const cursorOffset = parseListingCursor(options.cursor) ?? 0;
+  const filter = normalizeListingFilter(options.filter);
+  const sort = normalizeSortOption(options.sort);
+  const rentDurations = normalizeRentDurations(options.rentDurations ?? []);
+  const minPrice = normalizePriceValue(options.minPrice);
+  const maxPrice = normalizePriceValue(options.maxPrice);
+  const userCoordinates = normalizeUserCoordinates(
+    options.latitude,
+    options.longitude
+  );
+
+  const where = buildMarketplaceListingsWhere(options);
   const records = await withDatabaseReadFallback(
     "getMarketplaceListingProductsPayloadPage",
-    () => findManyListingsPage({ limit, cursorId }),
+    () => findManyListingsForMarketplaceQuery(where),
     [] as ListingRecord[]
   );
 
-  const hasMore = records.length > limit;
-  const visibleRecords = hasMore ? records.slice(0, limit) : records;
-  const products = visibleRecords.map((record) =>
-    serializeListingProduct(mapListingRecordToProduct(record))
+  const products = records.map(mapListingRecordToProduct);
+  const withDistances = applyDistanceToProducts(products, userCoordinates);
+  const withRentDurationFilter = applyRentDurationFilter(
+    withDistances,
+    filter,
+    rentDurations
   );
-  const nextCursor =
-    hasMore && visibleRecords.length > 0
-      ? String(visibleRecords[visibleRecords.length - 1].id)
-      : null;
+  const withPriceRangeFilter = applyPriceRangeFilter(
+    withRentDurationFilter,
+    filter,
+    minPrice,
+    maxPrice
+  );
+  const sortedProducts = sortMarketplaceProducts(
+    withPriceRangeFilter,
+    sort,
+    filter,
+    Boolean(userCoordinates)
+  );
+
+  const visibleProducts = sortedProducts.slice(cursorOffset, cursorOffset + limit);
+  const nextOffset = cursorOffset + visibleProducts.length;
+  const hasMore = nextOffset < sortedProducts.length;
+  const nextCursor = hasMore ? String(nextOffset) : null;
+
+  const payload = visibleProducts.map((product) => serializeListingProduct(product));
 
   return {
-    products,
+    products: payload,
     nextCursor,
     hasMore,
   };
