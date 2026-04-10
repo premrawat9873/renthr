@@ -23,7 +23,7 @@ export default function AdSenseInlineAd({
   adLayoutKey,
   fullWidthResponsive = true,
 }: AdSenseInlineAdProps) {
-  const adRef = useRef<HTMLElement | null>(null);
+  const adRef = useRef<HTMLModElement | null>(null);
 
   useEffect(() => {
     const adElement = adRef.current;
