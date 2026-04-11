@@ -77,6 +77,10 @@ const listingSelect = {
     },
   },
   featured: true,
+  videoUrl: true,
+  videoDurationSeconds: true,
+  videoSizeBytes: true,
+  videoMimeType: true,
   createdAt: true,
   author: {
     select: {
@@ -447,6 +451,10 @@ function mapListingRecordToProduct(record: ListingRecord): Product {
     featured: record.featured,
     ...(reviewCount > 0 ? { reviewCount } : {}),
     description: record.description ?? undefined,
+    videoUrl: record.videoUrl ?? undefined,
+    videoDurationSeconds: record.videoDurationSeconds ?? undefined,
+    videoSizeBytes: record.videoSizeBytes ?? undefined,
+    videoContentType: record.videoMimeType ?? undefined,
     ownerId: String(record.author.id),
     ownerName,
     ownerImage: resolveProfileAvatarUrl(record.author.avatarUrl),

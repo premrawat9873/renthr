@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowRight, Check, Loader2, MapPin, Search } from "lucide-react";
+import { ArrowRight, Check, Loader2, MapPin, Search, Video } from "lucide-react";
 import Image from "next/image";
 
 import LocationMapPicker, {
@@ -40,6 +40,17 @@ type UploadImagesResponse = {
   error?: string;
 };
 
+type UploadVideoResponse = {
+  video?: {
+    url: string;
+    key: string;
+    sizeBytes: number;
+    contentType: string;
+    durationSeconds: number;
+  };
+  error?: string;
+};
+
 type CreateListingResponse = {
   id?: string;
   error?: string;
@@ -48,6 +59,8 @@ type CreateListingResponse = {
 const MAX_CATEGORY_SELECTION = 2;
 const MAX_PHOTO_UPLOADS = 3;
 const MAX_SINGLE_UPLOAD_PAYLOAD_BYTES = 4 * 1024 * 1024;
+const MAX_SINGLE_VIDEO_UPLOAD_BYTES = 20 * 1024 * 1024;
+const MAX_VIDEO_DURATION_SECONDS = 60;
 const TARGET_CLIENT_IMAGE_SIZE_BYTES = 1.5 * 1024 * 1024;
 const CLIENT_MAX_IMAGE_DIMENSION = 1600;
 const CLIENT_INITIAL_JPEG_QUALITY = 0.84;
@@ -59,6 +72,11 @@ const ALLOWED_IMAGE_TYPES = new Set([
   "image/webp",
   "image/avif",
   "image/gif",
+]);
+const ALLOWED_VIDEO_TYPES = new Set([
+  "video/mp4",
+  "video/webm",
+  "video/quicktime",
 ]);
 const AGE_UNITS: Array<{ value: AgeUnit; label: string }> = [
   { value: "days", label: "Days" },
@@ -234,6 +252,34 @@ function loadImageElement(file: File) {
   });
 }
 
+function loadVideoDurationSeconds(file: File) {
+  return new Promise<number>((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const videoElement = document.createElement("video");
+
+    videoElement.preload = "metadata";
+
+    videoElement.onloadedmetadata = () => {
+      const duration = videoElement.duration;
+      URL.revokeObjectURL(objectUrl);
+
+      if (!Number.isFinite(duration) || duration <= 0) {
+        reject(new Error("Unable to read video duration."));
+        return;
+      }
+
+      resolve(duration);
+    };
+
+    videoElement.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("Unable to read selected video."));
+    };
+
+    videoElement.src = objectUrl;
+  });
+}
+
 async function prepareImageForUpload(file: File) {
   if (file.size <= MAX_SINGLE_UPLOAD_PAYLOAD_BYTES) {
     return file;
@@ -347,7 +393,10 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
   const [isStatesLoading, setIsStatesLoading] = useState(false);
   const [isCitiesLoading, setIsCitiesLoading] = useState(false);
   const [selectedPhotoFiles, setSelectedPhotoFiles] = useState<File[]>([]);
+  const [selectedVideoFile, setSelectedVideoFile] = useState<File | null>(null);
+  const [selectedVideoDurationSeconds, setSelectedVideoDurationSeconds] = useState<number | null>(null);
   const [isPreparingPhotos, setIsPreparingPhotos] = useState(false);
+  const [isPreparingVideo, setIsPreparingVideo] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const pinResolveRequestIdRef = useRef(0);
 
@@ -387,6 +436,10 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
     () => selectedPhotoFiles.map((file) => ({ file, previewUrl: URL.createObjectURL(file) })),
     [selectedPhotoFiles],
   );
+  const selectedVideoPreviewUrl = useMemo(
+    () => (selectedVideoFile ? URL.createObjectURL(selectedVideoFile) : null),
+    [selectedVideoFile],
+  );
 
   const selectedCityOption = useMemo(
     () => findMatchingCity(cityOptions, locationCity),
@@ -400,6 +453,14 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
       });
     };
   }, [photoPreviews]);
+
+  useEffect(() => {
+    return () => {
+      if (selectedVideoPreviewUrl) {
+        URL.revokeObjectURL(selectedVideoPreviewUrl);
+      }
+    };
+  }, [selectedVideoPreviewUrl]);
 
   const reachedCategoryLimit = selectedCategoryIds.length >= MAX_CATEGORY_SELECTION;
   const normalizedAge = Number(ageValue);
@@ -468,6 +529,9 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
     setIsResolvingPinAddress(false);
     setIsUsingCurrentLocation(false);
     setSelectedPhotoFiles([]);
+    setSelectedVideoFile(null);
+    setSelectedVideoDurationSeconds(null);
+    setIsPreparingVideo(false);
     setIsSubmitting(false);
   };
 
@@ -507,7 +571,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
   };
 
   const goToLocation = () => {
-    if (!hasPhotoSelection || isPreparingPhotos) return;
+    if (!hasPhotoSelection || isPreparingPhotos || isPreparingVideo) return;
     setStep("location");
   };
 
@@ -685,6 +749,64 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
 
   const removePhoto = (indexToRemove: number) => {
     setSelectedPhotoFiles((current) => current.filter((_, index) => index !== indexToRemove));
+  };
+
+  const handleVideoSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = event.target.files?.[0] ?? null;
+    event.currentTarget.value = "";
+
+    if (!selectedFile) {
+      return;
+    }
+
+    if (!ALLOWED_VIDEO_TYPES.has(selectedFile.type)) {
+      toast({
+        title: "Unsupported video format",
+        description: "Use MP4, WEBM, or MOV format.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (selectedFile.size > MAX_SINGLE_VIDEO_UPLOAD_BYTES) {
+      toast({
+        title: "Video too large",
+        description: "Video must be 20MB or smaller.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsPreparingVideo(true);
+
+    try {
+      const duration = await loadVideoDurationSeconds(selectedFile);
+
+      if (duration > MAX_VIDEO_DURATION_SECONDS) {
+        throw new Error(`Video must be ${MAX_VIDEO_DURATION_SECONDS} seconds or shorter.`);
+      }
+
+      setSelectedVideoFile(selectedFile);
+      setSelectedVideoDurationSeconds(Math.ceil(duration));
+    } catch (error) {
+      setSelectedVideoFile(null);
+      setSelectedVideoDurationSeconds(null);
+      toast({
+        title: "Video validation failed",
+        description:
+          error instanceof Error
+            ? error.message
+            : "Please choose another video.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsPreparingVideo(false);
+    }
+  };
+
+  const removeVideo = () => {
+    setSelectedVideoFile(null);
+    setSelectedVideoDurationSeconds(null);
   };
 
   const togglePurpose = (purpose: ListingPurpose) => {
@@ -893,6 +1015,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
 
     try {
       const uploadedImageUrls: string[] = [];
+      let uploadedVideo: UploadVideoResponse["video"] | null = null;
 
       for (const file of selectedPhotoFiles) {
         const uploadFormData = new FormData();
@@ -922,6 +1045,38 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
         }
 
         uploadedImageUrls.push(...uploadPayload.images);
+      }
+
+      if (selectedVideoFile) {
+        if (!selectedVideoDurationSeconds) {
+          throw new Error("Unable to verify video duration. Please reselect your video.");
+        }
+
+        const videoUploadFormData = new FormData();
+        videoUploadFormData.append("video", selectedVideoFile);
+        videoUploadFormData.append(
+          "durationSeconds",
+          String(selectedVideoDurationSeconds)
+        );
+
+        const videoUploadResponse = await fetch("/api/videos/upload", {
+          method: "POST",
+          body: videoUploadFormData,
+        });
+
+        const videoUploadPayload = (await videoUploadResponse
+          .json()
+          .catch(() => null)) as UploadVideoResponse | null;
+
+        if (!videoUploadResponse.ok || !videoUploadPayload?.video) {
+          throw new Error(
+            typeof videoUploadPayload?.error === "string"
+              ? videoUploadPayload.error
+              : "Video upload failed. Please try again."
+          );
+        }
+
+        uploadedVideo = videoUploadPayload.video;
       }
 
       const selectedRentPricePayload = selectedRentDurations.reduce(
@@ -965,6 +1120,15 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
           sellPrice,
           rentPrices: selectedRentPricePayload,
           imageUrls: uploadedImageUrls,
+          video: uploadedVideo
+            ? {
+                url: uploadedVideo.url,
+                key: uploadedVideo.key,
+                sizeBytes: uploadedVideo.sizeBytes,
+                contentType: uploadedVideo.contentType,
+                durationSeconds: uploadedVideo.durationSeconds,
+              }
+            : null,
           location: locationPayload,
         }),
       });
@@ -1000,7 +1164,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
           `${name.trim()} in ${selectedLabels}. Purpose: ${selectedPurposeLabels}. ` +
           `${isSellSelected ? `Sell price INR ${sellPrice}. ` : ""}` +
           `${isRentSelected ? `Rent: ${selectedRentSummary}. ` : ""}` +
-          `Condition age: ${ageValue} ${ageUnit} old. Location: ${listingLocationSummary}. Uploaded ${uploadedImageUrls.length} photo${uploadedImageUrls.length > 1 ? "s" : ""} to Cloudflare R2. Listing ID: ${saveListingPayload.id}.`,
+          `Condition age: ${ageValue} ${ageUnit} old. Location: ${listingLocationSummary}. Uploaded ${uploadedImageUrls.length} photo${uploadedImageUrls.length > 1 ? "s" : ""}${uploadedVideo ? " and 1 video" : ""} to Cloudflare R2. Listing ID: ${saveListingPayload.id}.`,
       });
 
       handleOpenChange(false);
@@ -1027,7 +1191,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
               Post a new listing
             </DialogTitle>
             <DialogDescription>
-              Visual flow: select categories, add product details, upload photos, add location, then choose rent/sell purpose.
+              Visual flow: select categories, add product details, upload photos and an optional short video, add location, then choose rent/sell purpose.
             </DialogDescription>
           </DialogHeader>
 
@@ -1061,7 +1225,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
               complete={step === "location" || step === "purpose"}
               stepNumber={3}
               title="Window 3"
-              subtitle="Upload up to 3 photos"
+              subtitle="Upload up to 3 photos + 1 video"
             />
 
             <div className="hidden md:flex items-center justify-center text-muted-foreground">
@@ -1262,7 +1426,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
         ) : step === "photos" ? (
           <section key="post-step-photos" className="flex min-h-0 flex-1 flex-col">
             <div className="flex-1 space-y-4 overflow-y-auto p-4 sm:p-6">
-              <h3 className="font-heading text-lg">Step 3: Upload photos</h3>
+              <h3 className="font-heading text-lg">Step 3: Upload media</h3>
 
               <div className="space-y-2">
                 <Label htmlFor="post-listing-photos">Upload product photos</Label>
@@ -1321,6 +1485,62 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
                   No photo uploaded yet.
                 </div>
               )}
+
+              <div className="space-y-2 rounded-xl border border-primary/25 bg-accent/15 p-3">
+                <div className="flex items-center gap-2">
+                  <Video className="h-4 w-4 text-primary" />
+                  <Label htmlFor="post-listing-video" className="text-sm font-semibold">
+                    Optional: upload one video
+                  </Label>
+                </div>
+                <Input
+                  id="post-listing-video"
+                  type="file"
+                  accept="video/mp4,video/webm,video/quicktime"
+                  onChange={handleVideoSelected}
+                  disabled={isPreparingVideo || isSubmitting}
+                  className={cn(FIELD_BORDER_CLASS, "cursor-pointer")}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Max 1 video, up to {MAX_VIDEO_DURATION_SECONDS} seconds and 20MB.
+                </p>
+
+                {isPreparingVideo ? (
+                  <p className="text-xs text-muted-foreground">Validating video...</p>
+                ) : null}
+
+                {selectedVideoFile && selectedVideoPreviewUrl ? (
+                  <div className="space-y-2 rounded-lg border border-primary/30 bg-background p-3">
+                    <video
+                      src={selectedVideoPreviewUrl}
+                      controls
+                      preload="metadata"
+                      className="aspect-video w-full rounded-lg bg-black"
+                    />
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="truncate text-xs text-muted-foreground" title={selectedVideoFile.name}>
+                        {selectedVideoFile.name}
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">
+                          {selectedVideoDurationSeconds ?? 0}s
+                        </span>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-7 border-primary/45 px-2 text-xs"
+                          onClick={removeVideo}
+                        >
+                          Remove
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">No video selected.</p>
+                )}
+              </div>
             </div>
 
             <div className="flex flex-col gap-3 border-t border-primary/10 bg-background px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-4">
@@ -1331,7 +1551,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
                 type="button"
                 variant="highlight"
                 onClick={goToLocation}
-                disabled={!hasPhotoSelection || isPreparingPhotos}
+                disabled={!hasPhotoSelection || isPreparingPhotos || isPreparingVideo}
                 className={cn("gap-2", ACTION_BUTTON_BORDER_CLASS)}
               >
                 Continue to next window
@@ -1685,10 +1905,14 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
               <Button
                 type="submit"
                 variant="highlight"
-                disabled={!canSubmit || isSubmitting || isPreparingPhotos}
+                disabled={!canSubmit || isSubmitting || isPreparingPhotos || isPreparingVideo}
                 className={cn("gap-2", ACTION_BUTTON_BORDER_CLASS)}
               >
-                {isPreparingPhotos ? "Preparing photos..." : isSubmitting ? "Uploading photos..." : "Save listing draft"}
+                {isPreparingPhotos || isPreparingVideo
+                  ? "Preparing media..."
+                  : isSubmitting
+                    ? "Uploading media..."
+                    : "Save listing draft"}
               </Button>
             </div>
           </form>

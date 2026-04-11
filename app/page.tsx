@@ -7,7 +7,7 @@ import {
 import { getProductHref } from '@/lib/product-url';
 import { getSiteUrl } from '@/lib/site';
 
-export const revalidate = 120;
+export const revalidate = 60;
 
 export const metadata: Metadata = {
   title: 'Rent, Buy, and Sell Near You',

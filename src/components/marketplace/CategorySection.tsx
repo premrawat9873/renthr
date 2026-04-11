@@ -14,6 +14,7 @@ interface Props {
 }
 
 const CATEGORY_ICONS: Record<string, LucideIcon> = {
+  "flats-pg": Home,
   electronics: Smartphone,
   vehicles: Car,
   furniture: Sofa,
@@ -38,10 +39,21 @@ export default function CategorySection({ selected, onSelect }: Props) {
   const [showMore, setShowMore] = useState(false);
   const visible = CATEGORIES.slice(0, VISIBLE_COUNT);
   const hidden = CATEGORIES.slice(VISIBLE_COUNT);
+  const isAllSelected = selected == null;
 
   return (
     <section className="py-5">
       <div className="flex flex-wrap gap-2">
+        <button
+          onClick={() => onSelect(null)}
+          className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium transition-colors duration-150 border ${
+            isAllSelected
+              ? "bg-accent text-foreground border-primary/55"
+              : "bg-card border-border text-foreground hover:bg-accent/45 hover:border-primary/35"
+          }`}
+        >
+          All
+        </button>
         {visible.map((cat) => (
           <CategoryPill
             key={cat.id}
@@ -52,7 +64,7 @@ export default function CategorySection({ selected, onSelect }: Props) {
         ))}
         <button
           onClick={() => setShowMore(true)}
-          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium border border-border/60 text-muted-foreground hover:bg-accent hover:text-accent-foreground hover:shadow-sm transition-all duration-200"
+          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-medium border border-border text-foreground/80 hover:bg-accent/45 hover:text-foreground hover:border-primary/35 transition-colors duration-150"
         >
           Others +{hidden.length}
         </button>
@@ -90,10 +102,10 @@ function CategoryPill({ cat, active, onClick }: { cat: Category; active: boolean
   return (
     <button
       onClick={onClick}
-      className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 border ${
+      className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium transition-colors duration-150 border ${
         active
-          ? "bg-primary text-primary-foreground border-primary shadow-sm"
-          : "bg-card border-border/60 text-foreground hover:bg-accent hover:border-accent hover:shadow-sm"
+          ? "bg-accent text-foreground border-primary/55"
+          : "bg-card border-border text-foreground hover:bg-accent/45 hover:border-primary/35"
       }`}
     >
       {Icon && <Icon className="h-4 w-4" strokeWidth={1.75} />}

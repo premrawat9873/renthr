@@ -3,6 +3,7 @@ import { randomUUID } from "crypto";
 import sharp from "sharp";
 
 const MAX_IMAGE_SIZE_BYTES = 8 * 1024 * 1024;
+const MAX_VIDEO_SIZE_BYTES = 20 * 1024 * 1024;
 const TARGET_COMPRESSED_IMAGE_SIZE_BYTES = 250 * 1024;
 const MAX_COMPRESSED_IMAGE_SIZE_BYTES = 300 * 1024;
 const COMPRESSION_WIDTH_STEPS = [800, 720, 640];
@@ -14,6 +15,11 @@ const ALLOWED_IMAGE_MIME_TYPES = new Set([
   "image/avif",
   "image/gif",
 ]);
+const ALLOWED_VIDEO_MIME_TYPES = new Set([
+  "video/mp4",
+  "video/webm",
+  "video/quicktime",
+]);
 
 const MIME_EXTENSION_MAP: Record<string, string> = {
   "image/jpeg": "jpg",
@@ -21,6 +27,9 @@ const MIME_EXTENSION_MAP: Record<string, string> = {
   "image/webp": "webp",
   "image/avif": "avif",
   "image/gif": "gif",
+  "video/mp4": "mp4",
+  "video/webm": "webm",
+  "video/quicktime": "mov",
 };
 
 type R2Config = {
@@ -41,6 +50,13 @@ export class R2UploadError extends Error {
 }
 
 export type UploadedR2Image = {
+  key: string;
+  url: string;
+  size: number;
+  contentType: string;
+};
+
+export type UploadedR2Video = {
   key: string;
   url: string;
   size: number;
@@ -123,7 +139,7 @@ function toUploadServiceError(error: unknown) {
       : "Unknown provider error.";
 
   return new R2UploadError(
-    `Image upload to Cloudflare R2 failed (${code}). ${providerMessage}`,
+    `Media upload to Cloudflare R2 failed (${code}). ${providerMessage}`,
     502
   );
 }
@@ -321,6 +337,50 @@ export async function uploadImageToR2(
     key,
     url: toPublicImageUrl(config.publicBaseUrl, key),
     size: compressedBody.length,
+    contentType,
+  };
+}
+
+export async function uploadVideoToR2(
+  file: File,
+  options?: { prefix?: string }
+): Promise<UploadedR2Video> {
+  if (!ALLOWED_VIDEO_MIME_TYPES.has(file.type)) {
+    throw new R2UploadError("Only MP4, WEBM, and MOV videos are supported.", 400);
+  }
+
+  if (file.size <= 0) {
+    throw new R2UploadError("The selected video is empty.", 400);
+  }
+
+  if (file.size > MAX_VIDEO_SIZE_BYTES) {
+    throw new R2UploadError("Video must be 20MB or less.", 400);
+  }
+
+  const config = getR2Config();
+  const client = getR2Client();
+  const body = Buffer.from(await file.arrayBuffer());
+  const contentType = file.type;
+  const key = toUploadKey(file.name, contentType, options?.prefix ?? "listings/videos");
+
+  try {
+    await client.send(
+      new PutObjectCommand({
+        Bucket: config.bucketName,
+        Key: key,
+        Body: body,
+        ContentType: contentType,
+        CacheControl: "public, max-age=31536000, immutable",
+      })
+    );
+  } catch (error) {
+    throw toUploadServiceError(error);
+  }
+
+  return {
+    key,
+    url: toPublicImageUrl(config.publicBaseUrl, key),
+    size: body.length,
     contentType,
   };
 }

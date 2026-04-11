@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 type AdSenseWindow = Window & {
   adsbygoogle?: Array<Record<string, never>>;
@@ -24,8 +24,20 @@ export default function AdSenseInlineAd({
   fullWidthResponsive = true,
 }: AdSenseInlineAdProps) {
   const adRef = useRef<HTMLModElement | null>(null);
+<<<<<<< HEAD
+=======
+  const [isMounted, setIsMounted] = useState(false);
+>>>>>>> fbc0c29 (adds videos to upload on site)
 
   useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isMounted) {
+      return;
+    }
+
     const adElement = adRef.current;
     if (!adElement) {
       return;
@@ -43,7 +55,11 @@ export default function AdSenseInlineAd({
     } catch {
       // If AdSense is blocked/unavailable, fail silently without crashing UI.
     }
-  }, []);
+  }, [isMounted]);
+
+  if (!isMounted) {
+    return null;
+  }
 
   return (
     <ins

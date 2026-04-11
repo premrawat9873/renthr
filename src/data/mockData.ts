@@ -1,6 +1,7 @@
 import { Product, Category } from "./marketplaceData";
 
 export const CATEGORIES: Category[] = [
+  { id: "flats-pg", label: "Flats & PG", icon: "🏢" },
   { id: "electronics", label: "Electronics", icon: "📱" },
   { id: "vehicles", label: "Vehicles", icon: "🚗" },
   { id: "furniture", label: "Furniture", icon: "🛋️" },

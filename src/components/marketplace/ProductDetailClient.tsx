@@ -35,6 +35,7 @@ import {
   Info,
   Shield,
   Loader2,
+  Video,
 } from 'lucide-react';
 
 import MarketplaceHeader from '@/components/marketplace/MarketplaceHeader';
@@ -153,6 +154,27 @@ function getDistanceLabel(distance: number) {
   return `${distance.toFixed(1)} km away`;
 }
 
+function formatVideoDurationLabel(seconds: number | undefined) {
+  if (!Number.isFinite(seconds) || seconds == null || seconds <= 0) {
+    return null;
+  }
+
+  const rounded = Math.max(1, Math.round(seconds));
+  const minutes = Math.floor(rounded / 60);
+  const remainingSeconds = rounded % 60;
+
+  return `${minutes}:${String(remainingSeconds).padStart(2, '0')}`;
+}
+
+function formatVideoSizeLabel(bytes: number | undefined) {
+  if (!Number.isFinite(bytes) || bytes == null || bytes <= 0) {
+    return null;
+  }
+
+  const mb = bytes / (1024 * 1024);
+  return `${mb.toFixed(1)} MB`;
+}
+
 function getOwnerInitials(name: string) {
   const parts = name
     .split(' ')
@@ -260,6 +282,9 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
   const productHref = getProductHref(product);
   const distanceLabel = getDistanceLabel(product.distance);
   const currentImage = images[activeImageIndex] ?? images[0];
+  const hasListingVideo = Boolean(product.videoUrl && product.videoUrl.trim().length > 0);
+  const listingVideoDurationLabel = formatVideoDurationLabel(product.videoDurationSeconds);
+  const listingVideoSizeLabel = formatVideoSizeLabel(product.videoSizeBytes);
 
   const availablePricing = useMemo(() => {
     if (!product.rentPrices) {
@@ -854,6 +879,28 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
 
         <div className="mt-6 lg:grid lg:grid-cols-12 lg:gap-8">
           <div className="space-y-6 lg:col-span-7">
+            {hasListingVideo && product.videoUrl ? (
+              <section className="overflow-hidden rounded-2xl border border-border/60 bg-card/95 shadow-[0_10px_22px_-18px_hsl(var(--foreground)/0.45)]">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/50 px-4 py-3">
+                  <span className="inline-flex items-center gap-2 text-sm font-semibold text-foreground">
+                    <Video className="h-4 w-4 text-primary" />
+                    Listing video
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {listingVideoDurationLabel ?? 'Short clip'}
+                    {listingVideoSizeLabel ? ` • ${listingVideoSizeLabel}` : ''}
+                  </span>
+                </div>
+                <video
+                  src={product.videoUrl}
+                  controls
+                  preload="metadata"
+                  playsInline
+                  className="aspect-video w-full bg-black"
+                />
+              </section>
+            ) : null}
+
             <section className="space-y-3">
               <div
                 role="button"

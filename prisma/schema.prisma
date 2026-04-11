@@ -58,93 +58,93 @@ enum BookingStatus {
 }
 
 model User {
-  id                 Int                @id @default(autoincrement())
-  email              String             @unique
-  phone              String?            @unique
-  name               String?
-  avatarUrl          String?
-  passwordHash       String?
-  otpCodeHash        String?
-  otpExpiresAt       DateTime?
-  otpRequestedAt     DateTime?
+  id             Int       @id @default(autoincrement())
+  email          String    @unique
+  phone          String?   @unique
+  name           String?
+  avatarUrl      String?
+  passwordHash   String?
+  otpCodeHash    String?
+  otpExpiresAt   DateTime?
+  otpRequestedAt DateTime?
 
   isVerified         Boolean            @default(false)
   verificationStatus VerificationStatus @default(UNVERIFIED)
 
   // Derived trust metrics (update from review writes)
-  rating             Decimal            @default(0) @db.Decimal(3,2)
-  reviewCount        Int                @default(0)
+  rating      Decimal @default(0) @db.Decimal(3, 2)
+  reviewCount Int     @default(0)
 
-  createdAt          DateTime           @default(now())
-  updatedAt          DateTime           @default(now()) @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
 
-  posts              Post[]
-  addresses          Address[]
-  reviewsWritten     Review[]           @relation("ReviewerReviews")
-  reviewsReceived    Review[]           @relation("RevieweeReviews")
-  sentMessages       Message[]          @relation("MessageSender")
-  conversationParts  ConversationParticipant[]
-  bookings           Booking[]          @relation("RenterBookings")
-  wishlistItems      WishlistItem[]
+  posts             Post[]
+  addresses         Address[]
+  reviewsWritten    Review[]                  @relation("ReviewerReviews")
+  reviewsReceived   Review[]                  @relation("RevieweeReviews")
+  sentMessages      Message[]                 @relation("MessageSender")
+  conversationParts ConversationParticipant[]
+  bookings          Booking[]                 @relation("RenterBookings")
+  wishlistItems     WishlistItem[]
 }
 
 model Address {
-  id         Int      @id @default(autoincrement())
-  label      String?
-  line1      String
-  line2      String?
-  landmark   String?
-  city       String
-  state      String
-  pincode    String
-  country    String   @default("IN")
-  latitude   Decimal? @db.Decimal(10,7)
-  longitude  Decimal? @db.Decimal(10,7)
+  id        Int      @id @default(autoincrement())
+  label     String?
+  line1     String
+  line2     String?
+  landmark  String?
+  city      String
+  state     String
+  pincode   String
+  country   String   @default("IN")
+  latitude  Decimal? @db.Decimal(10, 7)
+  longitude Decimal? @db.Decimal(10, 7)
 
-  userId     Int?
-  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId Int?
+  user   User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
-  posts      Post[]
+  posts Post[]
 
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([userId])
   @@index([city, state])
 }
 
 model Category {
-  id        Int      @id @default(autoincrement())
-  name      String   @unique
-  slug      String   @unique
+  id        Int     @id @default(autoincrement())
+  name      String  @unique
+  slug      String  @unique
   icon      String?
-  sortOrder Int      @default(0)
-  isActive  Boolean  @default(true)
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
 
-  posts     Post[]
+  posts Post[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
 model Post {
-  id                   Int          @id @default(autoincrement())
-  title                String
-  description          String?
+  id          Int     @id @default(autoincrement())
+  title       String
+  description String?
 
-  status               PostStatus   @default(DRAFT)
-  listingType          ListingType
+  status      PostStatus  @default(DRAFT)
+  listingType ListingType
 
-  authorId             Int
-  author               User         @relation(fields: [authorId], references: [id], onDelete: Cascade)
-
-  // Keep optional initially for migration safety, enforce required after backfill
-  categoryId           Int?
-  category             Category?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  authorId Int
+  author   User @relation(fields: [authorId], references: [id], onDelete: Cascade)
 
   // Keep optional initially for migration safety, enforce required after backfill
-  addressId            Int?
-  address              Address?     @relation(fields: [addressId], references: [id], onDelete: SetNull)
+  categoryId Int?
+  category   Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  // Keep optional initially for migration safety, enforce required after backfill
+  addressId Int?
+  address   Address? @relation(fields: [addressId], references: [id], onDelete: SetNull)
 
   // Store money in paise
   sellPricePaise       Int?
@@ -153,17 +153,22 @@ model Post {
   rentWeeklyPaise      Int?
   rentMonthlyPaise     Int?
   securityDepositPaise Int?
-  currency             String       @default("INR")
+  currency             String @default("INR")
 
-  featured             Boolean      @default(false)
-  viewCount            Int          @default(0)
-  favoriteCount        Int          @default(0)
+  featured      Boolean @default(false)
+  viewCount     Int     @default(0)
+  favoriteCount Int     @default(0)
 
-  publishedAt          DateTime?
-  createdAt            DateTime     @default(now())
-  updatedAt            DateTime     @updatedAt
+  publishedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   images               Image[]
+  videoUrl             String?
+  videoStorageKey      String?        @unique
+  videoDurationSeconds Int?
+  videoSizeBytes       Int?
+  videoMimeType        String?
   reviews              Review[]
   conversations        Conversation[]
   bookings             Booking[]
@@ -176,43 +181,43 @@ model Post {
 }
 
 model Image {
-  id         Int      @id @default(autoincrement())
-  postId     Int
-  post       Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  id     Int  @id @default(autoincrement())
+  postId Int
+  post   Post @relation(fields: [postId], references: [id], onDelete: Cascade)
 
   url        String
-  provider   String?  // r2, s3, etc
-  storageKey String?  @unique
+  provider   String? // r2, s3, etc
+  storageKey String? @unique
 
-  width      Int?
-  height     Int?
-  alt        String?
-  sortOrder  Int      @default(0)
-  isPrimary  Boolean  @default(false)
+  width     Int?
+  height    Int?
+  alt       String?
+  sortOrder Int     @default(0)
+  isPrimary Boolean @default(false)
 
-  createdAt  DateTime @default(now())
+  createdAt DateTime @default(now())
 
   @@unique([postId, sortOrder])
   @@index([postId, isPrimary])
 }
 
 model Review {
-  id         Int      @id @default(autoincrement())
-  postId     Int
-  post       Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  id     Int  @id @default(autoincrement())
+  postId Int
+  post   Post @relation(fields: [postId], references: [id], onDelete: Cascade)
 
   reviewerId Int
-  reviewer   User     @relation("ReviewerReviews", fields: [reviewerId], references: [id], onDelete: Cascade)
+  reviewer   User @relation("ReviewerReviews", fields: [reviewerId], references: [id], onDelete: Cascade)
 
   revieweeId Int
-  reviewee   User     @relation("RevieweeReviews", fields: [revieweeId], references: [id], onDelete: Cascade)
+  reviewee   User @relation("RevieweeReviews", fields: [revieweeId], references: [id], onDelete: Cascade)
 
   // 1.0 to 5.0 (enforce range in app logic)
-  rating     Decimal  @db.Decimal(2,1)
-  comment    String?
+  rating  Decimal @db.Decimal(2, 1)
+  comment String?
 
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Anti-spam: one review per user per listing
   @@unique([postId, reviewerId])
@@ -221,18 +226,18 @@ model Review {
 }
 
 model Conversation {
-  id            Int               @id @default(autoincrement())
-  type          ConversationType  @default(DIRECT)
+  id   Int              @id @default(autoincrement())
+  type ConversationType @default(DIRECT)
 
-  postId        Int?
-  post          Post?             @relation(fields: [postId], references: [id], onDelete: SetNull)
+  postId Int?
+  post   Post? @relation(fields: [postId], references: [id], onDelete: SetNull)
 
   lastMessageAt DateTime?
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-  participants  ConversationParticipant[]
-  messages      Message[]
+  participants ConversationParticipant[]
+  messages     Message[]
 
   @@index([postId, lastMessageAt])
   @@index([lastMessageAt])
@@ -243,65 +248,65 @@ model ConversationParticipant {
   conversationId Int
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
-  userId         Int
-  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId Int
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  joinedAt       DateTime     @default(now())
-  lastReadAt     DateTime?
-  isMuted        Boolean      @default(false)
+  joinedAt   DateTime  @default(now())
+  lastReadAt DateTime?
+  isMuted    Boolean   @default(false)
 
   @@unique([conversationId, userId])
   @@index([userId, lastReadAt])
 }
 
 model Message {
-  id             Int         @id @default(autoincrement())
+  id             Int          @id @default(autoincrement())
   conversationId Int
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
-  senderId       Int
-  sender         User        @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  senderId Int
+  sender   User @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
 
-  type           MessageType @default(TEXT)
-  content        String
-  imageUrl       String?
+  type     MessageType @default(TEXT)
+  content  String
+  imageUrl String?
 
-  createdAt      DateTime    @default(now())
-  editedAt       DateTime?
-  deletedAt      DateTime?
+  createdAt DateTime  @default(now())
+  editedAt  DateTime?
+  deletedAt DateTime?
 
   @@index([conversationId, createdAt])
   @@index([senderId, createdAt])
 }
 
 model Booking {
-  id              Int           @id @default(autoincrement())
-  postId          Int
-  post            Post          @relation(fields: [postId], references: [id], onDelete: Restrict)
+  id     Int  @id @default(autoincrement())
+  postId Int
+  post   Post @relation(fields: [postId], references: [id], onDelete: Restrict)
 
-  renterId        Int
-  renter          User          @relation("RenterBookings", fields: [renterId], references: [id], onDelete: Cascade)
+  renterId Int
+  renter   User @relation("RenterBookings", fields: [renterId], references: [id], onDelete: Cascade)
 
-  unit            RentUnit
-  startAt         DateTime
-  endAt           DateTime
-  status          BookingStatus @default(PENDING)
+  unit    RentUnit
+  startAt DateTime
+  endAt   DateTime
+  status  BookingStatus @default(PENDING)
 
   // Snapshot pricing at booking time
   unitPricePaise  Int
   totalUnits      Int
   subtotalPaise   Int
-  serviceFeePaise Int           @default(0)
+  serviceFeePaise Int    @default(0)
   totalPricePaise Int
-  currency        String        @default("INR")
+  currency        String @default("INR")
 
-  notes           String?
+  notes String?
 
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-  confirmedAt     DateTime?
-  cancelledAt     DateTime?
-  completedAt     DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  confirmedAt DateTime?
+  cancelledAt DateTime?
+  completedAt DateTime?
 
   @@index([postId, status, startAt])
   @@index([renterId, status, createdAt])
@@ -309,12 +314,12 @@ model Booking {
 }
 
 model WishlistItem {
-  id        Int      @id @default(autoincrement())
-  userId    Int
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id     Int  @id @default(autoincrement())
+  userId Int
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  postId    Int
-  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  postId Int
+  post   Post @relation(fields: [postId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
 

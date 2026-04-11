@@ -234,9 +234,11 @@ export function MarketplacePageClient({
   const [hasMorePages, setHasMorePages] = useState(initialHasMore);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isRefreshingProducts, setIsRefreshingProducts] = useState(false);
+  const [isApplyingListingQuery, setIsApplyingListingQuery] = useState(false);
   const [hasManualSortSelection, setHasManualSortSelection] = useState(false);
   const [isPostFlowOpen, setIsPostFlowOpen] = useState(false);
   const listingRequestSequenceRef = useRef(0);
+  const hasCompletedInitialRefreshRef = useRef(false);
   const reduxAuthenticated = useAppSelector(selectIsAuthenticated);
   const location = useAppSelector(selectLocation);
   const userLocation = useAppSelector(selectUserLocation);
@@ -577,8 +579,10 @@ export function MarketplacePageClient({
     const requestId = listingRequestSequenceRef.current + 1;
     listingRequestSequenceRef.current = requestId;
     let cancelled = false;
+    const shouldShowRefreshSkeleton = hasCompletedInitialRefreshRef.current;
 
     setIsRefreshingProducts(true);
+    setIsApplyingListingQuery(shouldShowRefreshSkeleton);
 
     void (async () => {
       try {
@@ -606,6 +610,8 @@ export function MarketplacePageClient({
       } finally {
         if (!cancelled && requestId === listingRequestSequenceRef.current) {
           setIsRefreshingProducts(false);
+          setIsApplyingListingQuery(false);
+          hasCompletedInitialRefreshRef.current = true;
         }
       }
     })();
@@ -758,6 +764,7 @@ export function MarketplacePageClient({
           rentDurations={safeRentDurations}
           hasMore={hasMorePages && !isRefreshingProducts}
           isLoadingMore={isLoadingMore}
+          isRefreshingResults={isApplyingListingQuery}
           onLoadMore={loadMoreProducts}
         />
       </main>

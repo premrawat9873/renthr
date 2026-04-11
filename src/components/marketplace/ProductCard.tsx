@@ -49,8 +49,8 @@ export default function ProductCard({ product, priority = false }: Props) {
   return (
     <div
       onClick={() => router.push(productHref)}
-      className={`group relative isolate flex h-full cursor-pointer flex-col overflow-hidden rounded-2xl border border-border/55 bg-card card-lift ${
-        product.featured ? "shadow-md ring-1 ring-highlight/35" : ""
+      className={`group relative isolate flex h-full cursor-pointer flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-[0_8px_18px_-14px_hsl(var(--foreground)/0.55)] transition-shadow duration-200 card-lift ${
+        product.featured ? "shadow-md ring-1 ring-highlight/35" : "hover:shadow-[0_12px_24px_-14px_hsl(var(--foreground)/0.5)]"
       }`}
     >
       {product.featured && (

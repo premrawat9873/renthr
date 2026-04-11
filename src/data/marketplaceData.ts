@@ -14,6 +14,10 @@ export interface Product {
   category: string;
   image: string;
   images: string[];
+  videoUrl?: string;
+  videoDurationSeconds?: number;
+  videoSizeBytes?: number;
+  videoContentType?: string;
   location: string;
   locationLatitude?: number;
   locationLongitude?: number;

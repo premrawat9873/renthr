@@ -33,14 +33,22 @@ type CreateListingBody = {
   sellPrice?: unknown;
   rentPrices?: unknown;
   imageUrls?: unknown;
+  video?: unknown;
   location?: unknown;
   featured?: unknown;
 };
 
 const MAX_IMAGE_COUNT = 3;
+const MAX_VIDEO_DURATION_SECONDS = 60;
+const MAX_VIDEO_SIZE_BYTES = 20 * 1024 * 1024;
 const LOCATION_MIN_LENGTH = 2;
 const LOCATION_PINCODE_PATTERN = /^\d{6}$/;
 const LOCATION_PLACEHOLDER_VALUES = new Set(["unknown", "na", "n/a"]);
+const ALLOWED_VIDEO_CONTENT_TYPES = new Set([
+  "video/mp4",
+  "video/webm",
+  "video/quicktime",
+]);
 const VALID_QUERY_FILTERS: QueryListingFilter[] = ["all", "rent", "sell"];
 const VALID_QUERY_SORTS: QuerySortOption[] = [
   "newest",
@@ -89,6 +97,14 @@ type ParsedListingLocation = {
   label: string | null;
   latitude: number | null;
   longitude: number | null;
+};
+
+type ParsedListingVideo = {
+  url: string;
+  storageKey: string | null;
+  durationSeconds: number;
+  sizeBytes: number;
+  contentType: string;
 };
 
 function isDatabaseNotReachableError(error: unknown) {
@@ -293,6 +309,57 @@ function parseListingLocation(value: unknown): ParsedListingLocation | null {
     label,
     latitude: hasCoordinates ? latitude : null,
     longitude: hasCoordinates ? longitude : null,
+  };
+}
+
+function parseListingVideo(value: unknown): ParsedListingVideo | null {
+  if (value == null) {
+    return null;
+  }
+
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const source = value as Record<string, unknown>;
+  const url = normalizeText(source.url);
+  const storageKey = normalizeText(source.key ?? source.storageKey);
+  const contentType = normalizeText(source.contentType).toLowerCase();
+  const durationSeconds = parseNonNegativeFloat(source.durationSeconds);
+  const sizeBytes = parseNonNegativeInt(source.sizeBytes);
+
+  if (!url || !isHttpUrl(url)) {
+    return null;
+  }
+
+  if (!ALLOWED_VIDEO_CONTENT_TYPES.has(contentType)) {
+    return null;
+  }
+
+  if (
+    durationSeconds == null ||
+    Number.isNaN(durationSeconds) ||
+    durationSeconds <= 0 ||
+    durationSeconds > MAX_VIDEO_DURATION_SECONDS
+  ) {
+    return null;
+  }
+
+  if (
+    sizeBytes == null ||
+    Number.isNaN(sizeBytes) ||
+    sizeBytes <= 0 ||
+    sizeBytes > MAX_VIDEO_SIZE_BYTES
+  ) {
+    return null;
+  }
+
+  return {
+    url,
+    storageKey: storageKey || null,
+    durationSeconds: Math.ceil(durationSeconds),
+    sizeBytes,
+    contentType,
   };
 }
 
@@ -513,6 +580,8 @@ export async function POST(request: Request) {
     const sellPrice = parseNonNegativeInt(body.sellPrice);
     const rentPrices = parseRentPrices(body.rentPrices);
     const imageUrls = uniqueStringArray(body.imageUrls).slice(0, MAX_IMAGE_COUNT);
+    const hasVideoInput = Object.prototype.hasOwnProperty.call(body, "video");
+    const video = parseListingVideo(body.video);
     const ageValue = parseNonNegativeFloat(body.ageValue);
     const location = parseListingLocation(body.location);
     const featured = parseBoolean(body.featured, false);
@@ -548,6 +617,16 @@ export async function POST(request: Request) {
     if (imageUrls.some((imageUrl) => !isHttpUrl(imageUrl))) {
       return NextResponse.json(
         { error: "One or more image URLs are invalid." },
+        { status: 400 }
+      );
+    }
+
+    if (hasVideoInput && body.video != null && !video) {
+      return NextResponse.json(
+        {
+          error:
+            "Video metadata is invalid. Upload one MP4/WEBM/MOV video that is 60 seconds or shorter.",
+        },
         { status: 400 }
       );
     }
@@ -759,6 +838,11 @@ export async function POST(request: Request) {
           supportsRent && rentPrices.monthly != null
             ? rentPrices.monthly * 100
             : null,
+        videoUrl: video?.url ?? null,
+        videoStorageKey: video?.storageKey ?? null,
+        videoDurationSeconds: video?.durationSeconds ?? null,
+        videoSizeBytes: video?.sizeBytes ?? null,
+        videoMimeType: video?.contentType ?? null,
         images: {
           create: imageUrls.map((url, index) => ({
             url,
