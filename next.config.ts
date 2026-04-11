@@ -31,6 +31,14 @@ const remotePatterns: NonNullable<NextConfig["images"]>["remotePatterns"] = [
     protocol: "https",
     hostname: "lh3.googleusercontent.com",
   },
+  {
+    protocol: "https",
+    hostname: "pub-cfd7a093c0904912849f7177f850e62f.r2.dev",
+  },
+  {
+    protocol: "https",
+    hostname: "**.r2.dev",
+  },
 ];
 
 const r2Pattern = getR2RemotePattern();
@@ -39,6 +47,15 @@ if (r2Pattern) {
 }
 
 const nextConfig: NextConfig = {
+  async redirects() {
+    return [
+      {
+        source: "/home",
+        destination: "/",
+        permanent: true,
+      },
+    ];
+  },
   images: {
     // Keep image optimization enabled in all environments so repeated renders
     // hit Next's cache instead of directly hammering the R2 origin.
