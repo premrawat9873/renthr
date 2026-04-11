@@ -75,12 +75,14 @@ export default function ImageCarousel({ images, alt, className = "", priority = 
         <>
           <button
             onClick={prev}
+            aria-label="Previous image"
             className="absolute left-2 top-1/2 -translate-y-1/2 h-7 w-7 rounded-full bg-card/90 backdrop-blur-sm flex items-center justify-center shadow-sm hover:bg-card hover:shadow-md transition-all duration-200 z-10"
           >
             <ChevronLeft className="h-4 w-4 text-foreground" />
           </button>
           <button
             onClick={next}
+            aria-label="Next image"
             className="absolute right-2 top-1/2 -translate-y-1/2 h-7 w-7 rounded-full bg-card/90 backdrop-blur-sm flex items-center justify-center shadow-sm hover:bg-card hover:shadow-md transition-all duration-200 z-10"
           >
             <ChevronRight className="h-4 w-4 text-foreground" />
@@ -94,12 +96,17 @@ export default function ImageCarousel({ images, alt, className = "", priority = 
           <button
             key={i}
             onClick={(e) => { e.stopPropagation(); e.preventDefault(); setCurrent(i); }}
-            className={`rounded-full transition-all duration-200 ${
-              i === current
-                ? "w-2 h-2 bg-card shadow-sm"
-                : "w-1.5 h-1.5 bg-card/60"
-            }`}
-          />
+            aria-label={`Go to image ${i + 1}`}
+            className="inline-flex h-6 w-6 items-center justify-center rounded-full transition-all duration-200"
+          >
+            <span
+              className={`rounded-full transition-all duration-200 ${
+                i === current
+                  ? "h-2 w-2 bg-card shadow-sm"
+                  : "h-1.5 w-1.5 bg-card/60"
+              }`}
+            />
+          </button>
         ))}
       </div>
     </div>

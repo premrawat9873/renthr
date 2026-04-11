@@ -111,6 +111,7 @@ export default function ProductCard({ product, priority = false }: Props) {
           }}
           disabled={isUpdating}
           aria-busy={isUpdating}
+          aria-label={liked ? `Remove ${product.title} from wishlist` : `Save ${product.title} to wishlist`}
           className="absolute top-2.5 right-2.5 h-8 w-8 rounded-full bg-card/80 backdrop-blur-sm flex items-center justify-center transition-all duration-200 hover:bg-card hover:scale-110 active:scale-95 z-10 disabled:opacity-70"
         >
           <Heart

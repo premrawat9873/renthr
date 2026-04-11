@@ -10,46 +10,46 @@ export default function Footer() {
           <div className="space-y-3">
             <h4 className="font-heading font-medium text-sm text-primary-foreground">Support</h4>
             <ul className="space-y-2 text-sm text-primary-foreground/75">
-              <li><a href="#" className="hover:text-highlight transition-colors duration-200">Help Centre</a></li>
-              <li><a href="#" className="hover:text-highlight transition-colors duration-200">Safety Information</a></li>
-              <li><a href="#" className="hover:text-highlight transition-colors duration-200">Cancellation Options</a></li>
-              <li><a href="#" className="hover:text-highlight transition-colors duration-200">Report a Concern</a></li>
+              <li><Link href="/privacy-policy" className="hover:text-highlight transition-colors duration-200">Help Centre</Link></li>
+              <li><Link href="/privacy-policy" className="hover:text-highlight transition-colors duration-200">Safety Information</Link></li>
+              <li><Link href="/terms-of-use" className="hover:text-highlight transition-colors duration-200">Cancellation Options</Link></li>
+              <li><Link href="/privacy-policy" className="hover:text-highlight transition-colors duration-200">Report a Concern</Link></li>
             </ul>
           </div>
           {/* Listing */}
           <div className="space-y-3">
             <h4 className="font-heading font-medium text-sm text-primary-foreground">Listing</h4>
             <ul className="space-y-2 text-sm text-primary-foreground/75">
-              <li><a href="#" className="hover:text-highlight transition-colors duration-200">List Your Item</a></li>
-              <li><a href="#" className="hover:text-highlight transition-colors duration-200">How Renting Works</a></li>
-              <li><a href="#" className="hover:text-highlight transition-colors duration-200">Seller Guidelines</a></li>
-              <li><a href="#" className="hover:text-highlight transition-colors duration-200">Pricing Tips</a></li>
+              <li><Link href="/profile" className="hover:text-highlight transition-colors duration-200">List Your Item</Link></li>
+              <li><Link href="/terms-of-use" className="hover:text-highlight transition-colors duration-200">How Renting Works</Link></li>
+              <li><Link href="/terms-of-use" className="hover:text-highlight transition-colors duration-200">Seller Guidelines</Link></li>
+              <li><Link href="/terms-of-use" className="hover:text-highlight transition-colors duration-200">Pricing Tips</Link></li>
             </ul>
           </div>
           {/* Company */}
           <div className="space-y-3">
             <h4 className="font-heading font-medium text-sm text-primary-foreground">Company</h4>
             <ul className="space-y-2 text-sm text-primary-foreground/75">
-              <li><a href="#" className="hover:text-highlight transition-colors duration-200">About Us</a></li>
-              <li><a href="#" className="hover:text-highlight transition-colors duration-200">Careers</a></li>
-              <li><a href="#" className="hover:text-highlight transition-colors duration-200">Blog</a></li>
-              <li><a href="#" className="hover:text-highlight transition-colors duration-200">Contact</a></li>
+              <li><Link href="/" className="hover:text-highlight transition-colors duration-200">About Us</Link></li>
+              <li><Link href="/" className="hover:text-highlight transition-colors duration-200">Careers</Link></li>
+              <li><Link href="/" className="hover:text-highlight transition-colors duration-200">Blog</Link></li>
+              <li><Link href="/" className="hover:text-highlight transition-colors duration-200">Contact</Link></li>
             </ul>
           </div>
           {/* Connect */}
           <div className="space-y-3">
             <h4 className="font-heading font-medium text-sm text-primary-foreground">Connect</h4>
             <div className="flex items-center gap-3">
-              <a href="#" className="h-9 w-9 rounded-full border border-primary-foreground/30 bg-primary-foreground/10 flex items-center justify-center text-primary-foreground/80 hover:text-highlight hover:border-highlight/70 hover:bg-primary-foreground/15 transition-all duration-200">
+              <a href="https://instagram.com" aria-label="Instagram" className="h-9 w-9 rounded-full border border-primary-foreground/30 bg-primary-foreground/10 flex items-center justify-center text-primary-foreground/80 hover:text-highlight hover:border-highlight/70 hover:bg-primary-foreground/15 transition-all duration-200">
                 <Instagram className="h-4 w-4" />
               </a>
-              <a href="#" className="h-9 w-9 rounded-full border border-primary-foreground/30 bg-primary-foreground/10 flex items-center justify-center text-primary-foreground/80 hover:text-highlight hover:border-highlight/70 hover:bg-primary-foreground/15 transition-all duration-200">
+              <a href="https://x.com" aria-label="X (Twitter)" className="h-9 w-9 rounded-full border border-primary-foreground/30 bg-primary-foreground/10 flex items-center justify-center text-primary-foreground/80 hover:text-highlight hover:border-highlight/70 hover:bg-primary-foreground/15 transition-all duration-200">
                 <Twitter className="h-4 w-4" />
               </a>
-              <a href="#" className="h-9 w-9 rounded-full border border-primary-foreground/30 bg-primary-foreground/10 flex items-center justify-center text-primary-foreground/80 hover:text-highlight hover:border-highlight/70 hover:bg-primary-foreground/15 transition-all duration-200">
+              <a href="https://facebook.com" aria-label="Facebook" className="h-9 w-9 rounded-full border border-primary-foreground/30 bg-primary-foreground/10 flex items-center justify-center text-primary-foreground/80 hover:text-highlight hover:border-highlight/70 hover:bg-primary-foreground/15 transition-all duration-200">
                 <Facebook className="h-4 w-4" />
               </a>
-              <a href="#" className="h-9 w-9 rounded-full border border-primary-foreground/30 bg-primary-foreground/10 flex items-center justify-center text-primary-foreground/80 hover:text-highlight hover:border-highlight/70 hover:bg-primary-foreground/15 transition-all duration-200">
+              <a href="https://youtube.com" aria-label="YouTube" className="h-9 w-9 rounded-full border border-primary-foreground/30 bg-primary-foreground/10 flex items-center justify-center text-primary-foreground/80 hover:text-highlight hover:border-highlight/70 hover:bg-primary-foreground/15 transition-all duration-200">
                 <Youtube className="h-4 w-4" />
               </a>
             </div>
@@ -77,7 +77,7 @@ export default function Footer() {
             <a href="/sitemap.xml" className="hover:text-highlight transition-colors">Sitemap</a>
           </div>
           <div className="flex items-center gap-3">
-            <button className="flex items-center gap-1 hover:text-highlight transition-colors">
+            <button aria-label="Current language English" className="flex items-center gap-1 hover:text-highlight transition-colors">
               <Globe className="h-3.5 w-3.5" />
               English
             </button>

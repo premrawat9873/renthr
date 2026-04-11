@@ -4,6 +4,7 @@ import { Providers } from "@/providers";
 import { getSiteUrl, SITE_DESCRIPTION, SITE_NAME } from "@/lib/site";
 import { Analytics } from "@vercel/analytics/next";
 import AdSenseInlineAd from "@/components/ui/AdSenseInlineAd";
+import Script from "next/script";
 
 const siteUrl = getSiteUrl();
 const FAVICON_VERSION = "20260408";
@@ -60,12 +61,18 @@ export default function RootLayout({
   return (
     <html lang="en" className="h-full antialiased">
       <head>
+        <link rel="preconnect" href="https://pagead2.googlesyndication.com" />
+        <link rel="preconnect" href="https://googleads.g.doubleclick.net" />
+        <link rel="preconnect" href="https://fundingchoicesmessages.google.com" />
+        <link rel="dns-prefetch" href="//pagead2.googlesyndication.com" />
+        <link rel="dns-prefetch" href="//googleads.g.doubleclick.net" />
+        <link rel="dns-prefetch" href="//fundingchoicesmessages.google.com" />
         <meta
           name="google-adsense-account"
           content="ca-pub-9411649869227225"
         />
-        <script
-          async
+        <Script
+          strategy="lazyOnload"
           src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9411649869227225"
           crossOrigin="anonymous"
         />

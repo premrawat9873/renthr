@@ -24,14 +24,20 @@ export default function AdSenseInlineAd({
   fullWidthResponsive = true,
 }: AdSenseInlineAdProps) {
   const adRef = useRef<HTMLModElement | null>(null);
-  const [isMounted, setIsMounted] = useState(false);
+  const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
-    setIsMounted(true);
+    const timer = window.setTimeout(() => {
+      setIsReady(true);
+    }, 2200);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
   }, []);
 
   useEffect(() => {
-    if (!isMounted) {
+    if (!isReady) {
       return;
     }
 
@@ -52,9 +58,9 @@ export default function AdSenseInlineAd({
     } catch {
       // If AdSense is blocked/unavailable, fail silently without crashing UI.
     }
-  }, [isMounted]);
+  }, [isReady]);
 
-  if (!isMounted) {
+  if (!isReady) {
     return null;
   }
 

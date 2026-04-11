@@ -356,6 +356,7 @@ export default function MarketplaceHeader({
         <div className="relative shrink-0" ref={dropRef}>
           <button
             onClick={() => setLocOpen((current) => !current)}
+            aria-label={`Choose location, current ${displayLocation || "India"}`}
             className="flex h-10 w-10 sm:w-[210px] lg:w-[240px] items-center justify-between gap-2 rounded-full border border-primary/25 bg-background/45 px-3 sm:px-4 text-sm text-foreground backdrop-blur-sm transition-colors duration-200 hover:border-primary/45"
           >
             <span className="inline-flex items-center gap-2 truncate">
@@ -582,6 +583,7 @@ export default function MarketplaceHeader({
           {searchQuery && (
             <button
               onClick={() => onSearchChange("")}
+              aria-label="Clear search"
               className="absolute right-10 top-1/2 -translate-y-1/2"
             >
               <X className="h-4 w-4 text-muted-foreground hover:text-foreground transition-colors" />
@@ -597,6 +599,7 @@ export default function MarketplaceHeader({
                 isAuthenticated ? "/profile" : "/login?next=/profile"
               )
             }
+            aria-label={safeWishlistCount > 0 ? `Wishlist, ${safeWishlistCount} items` : "Wishlist"}
             className="hidden md:flex flex-col items-center justify-center text-[11px] leading-none text-primary hover:text-primary/80 transition-colors min-w-[48px]"
           >
             <Heart className="h-4 w-4 mb-1" />
@@ -620,7 +623,10 @@ export default function MarketplaceHeader({
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="hidden md:flex items-center gap-1.5 h-10 rounded-full border border-primary/25 bg-background/45 px-3 text-xs font-medium text-primary backdrop-blur-sm transition-colors min-w-[96px] hover:border-primary/40 hover:bg-background/55">
+              <button
+                aria-label={isAuthenticated ? "Open account menu" : "Open login menu"}
+                className="hidden md:flex items-center gap-1.5 h-10 rounded-full border border-primary/25 bg-background/45 px-3 text-xs font-medium text-primary backdrop-blur-sm transition-colors min-w-[96px] hover:border-primary/40 hover:bg-background/55"
+              >
                 <User className="h-4 w-4" />
                 <span className="max-w-[92px] truncate">
                   {isAuthenticated ? accountLabel : "Login"}
@@ -650,6 +656,7 @@ export default function MarketplaceHeader({
           <Button
             variant="highlight"
             size="sm"
+            aria-label="Add post"
             className="gap-1.5 rounded-full border border-highlight/55"
             onClick={handleAddPost}
           >
