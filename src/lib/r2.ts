@@ -3,7 +3,7 @@ import { randomUUID } from "crypto";
 import sharp from "sharp";
 
 const MAX_IMAGE_SIZE_BYTES = 8 * 1024 * 1024;
-const MAX_VIDEO_SIZE_BYTES = 20 * 1024 * 1024;
+const MAX_VIDEO_SIZE_BYTES = 23 * 1024 * 1024;
 const TARGET_COMPRESSED_IMAGE_SIZE_BYTES = 250 * 1024;
 const MAX_COMPRESSED_IMAGE_SIZE_BYTES = 300 * 1024;
 const COMPRESSION_WIDTH_STEPS = [800, 720, 640];
@@ -354,7 +354,7 @@ export async function uploadVideoToR2(
   }
 
   if (file.size > MAX_VIDEO_SIZE_BYTES) {
-    throw new R2UploadError("Video must be 20MB or less.", 400);
+    throw new R2UploadError("Video must be 23MB or less.", 400);
   }
 
   const config = getR2Config();

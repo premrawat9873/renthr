@@ -59,8 +59,16 @@ type CreateListingResponse = {
 const MAX_CATEGORY_SELECTION = 2;
 const MAX_PHOTO_UPLOADS = 3;
 const MAX_SINGLE_UPLOAD_PAYLOAD_BYTES = 4 * 1024 * 1024;
-const MAX_SINGLE_VIDEO_UPLOAD_BYTES = 20 * 1024 * 1024;
+const MAX_SOURCE_VIDEO_UPLOAD_BYTES = 100 * 1024 * 1024;
+const MAX_OPTIMIZED_VIDEO_UPLOAD_BYTES = 23 * 1024 * 1024;
 const MAX_VIDEO_DURATION_SECONDS = 60;
+const TARGET_VIDEO_BITRATE = 900_000;
+const TARGET_AUDIO_BITRATE = 96_000;
+
+type StreamCapableVideoElement = HTMLVideoElement & {
+  captureStream?: () => MediaStream;
+  mozCaptureStream?: () => MediaStream;
+};
 const TARGET_CLIENT_IMAGE_SIZE_BYTES = 1.5 * 1024 * 1024;
 const CLIENT_MAX_IMAGE_DIMENSION = 1600;
 const CLIENT_INITIAL_JPEG_QUALITY = 0.84;
@@ -280,6 +288,142 @@ function loadVideoDurationSeconds(file: File) {
   });
 }
 
+function toOptimizedVideoFileName(name: string) {
+  const baseName = name.replace(/\.[^.]+$/, "");
+  return `${baseName || "clip"}-optimized.webm`;
+}
+
+function formatDurationLabel(seconds: number) {
+  const safeSeconds = Math.max(0, Math.floor(seconds));
+  const minutes = Math.floor(safeSeconds / 60);
+  const remainingSeconds = safeSeconds % 60;
+  return `${minutes}:${String(remainingSeconds).padStart(2, "0")}`;
+}
+
+function clampNumber(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+async function createOptimizedVideoClip(
+  file: File,
+  startSeconds: number,
+  endSeconds: number,
+) {
+  const clipDuration = endSeconds - startSeconds;
+  if (clipDuration <= 0) {
+    throw new Error("Selected clip duration is invalid.");
+  }
+
+  if (clipDuration > MAX_VIDEO_DURATION_SECONDS) {
+    throw new Error(`Selected clip must be ${MAX_VIDEO_DURATION_SECONDS} seconds or shorter.`);
+  }
+
+  const objectUrl = URL.createObjectURL(file);
+  const videoElement = document.createElement("video");
+  videoElement.src = objectUrl;
+  videoElement.preload = "auto";
+  videoElement.muted = true;
+  videoElement.playsInline = true;
+  videoElement.crossOrigin = "anonymous";
+
+  await new Promise<void>((resolve, reject) => {
+    videoElement.onloadedmetadata = () => resolve();
+    videoElement.onerror = () => reject(new Error("Unable to prepare video for trimming."));
+  });
+
+  const streamSource = videoElement as StreamCapableVideoElement;
+  const stream =
+    typeof streamSource.captureStream === "function"
+      ? streamSource.captureStream()
+      : typeof streamSource.mozCaptureStream === "function"
+        ? streamSource.mozCaptureStream()
+        : null;
+
+  if (!stream) {
+    URL.revokeObjectURL(objectUrl);
+    throw new Error("Video trimming is not supported in this browser.");
+  }
+
+  const preferredMimeTypes = [
+    "video/webm;codecs=vp9,opus",
+    "video/webm;codecs=vp8,opus",
+    "video/webm",
+  ];
+  const supportedMimeType = preferredMimeTypes.find((mime) =>
+    typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(mime),
+  );
+
+  if (!supportedMimeType) {
+    URL.revokeObjectURL(objectUrl);
+    throw new Error("Video encoding is not supported in this browser.");
+  }
+
+  const chunks: BlobPart[] = [];
+  const recorder = new MediaRecorder(stream, {
+    mimeType: supportedMimeType,
+    videoBitsPerSecond: TARGET_VIDEO_BITRATE,
+    audioBitsPerSecond: TARGET_AUDIO_BITRATE,
+  });
+
+  recorder.ondataavailable = (event) => {
+    if (event.data && event.data.size > 0) {
+      chunks.push(event.data);
+    }
+  };
+
+  const stopPromise = new Promise<void>((resolve) => {
+    recorder.onstop = () => resolve();
+  });
+
+  videoElement.currentTime = startSeconds;
+  await new Promise<void>((resolve) => {
+    videoElement.onseeked = () => resolve();
+  });
+
+  recorder.start(250);
+  await videoElement.play().catch(() => {
+    // Playback may require user gesture in some browsers.
+  });
+
+  await new Promise<void>((resolve) => {
+    const poll = () => {
+      if (videoElement.currentTime >= endSeconds || videoElement.ended) {
+        resolve();
+        return;
+      }
+      requestAnimationFrame(poll);
+    };
+    poll();
+  });
+
+  videoElement.pause();
+  if (recorder.state !== "inactive") {
+    recorder.stop();
+  }
+  await stopPromise;
+
+  URL.revokeObjectURL(objectUrl);
+
+  const outputType = recorder.mimeType || "video/webm";
+  const outputBlob = new Blob(chunks, { type: outputType });
+
+  if (outputBlob.size <= 0) {
+    throw new Error("Unable to generate optimized clip. Try another video.");
+  }
+
+  if (outputBlob.size > MAX_OPTIMIZED_VIDEO_UPLOAD_BYTES) {
+    throw new Error("Optimized clip is still larger than 23MB. Select a shorter range.");
+  }
+
+  return {
+    file: new File([outputBlob], toOptimizedVideoFileName(file.name), {
+      type: outputType,
+      lastModified: Date.now(),
+    }),
+    durationSeconds: Math.ceil(clipDuration),
+  };
+}
+
 async function prepareImageForUpload(file: File) {
   if (file.size <= MAX_SINGLE_UPLOAD_PAYLOAD_BYTES) {
     return file;
@@ -395,10 +539,13 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
   const [selectedPhotoFiles, setSelectedPhotoFiles] = useState<File[]>([]);
   const [selectedVideoFile, setSelectedVideoFile] = useState<File | null>(null);
   const [selectedVideoDurationSeconds, setSelectedVideoDurationSeconds] = useState<number | null>(null);
+  const [videoTrimStartSeconds, setVideoTrimStartSeconds] = useState(0);
+  const [videoTrimEndSeconds, setVideoTrimEndSeconds] = useState(0);
   const [isPreparingPhotos, setIsPreparingPhotos] = useState(false);
   const [isPreparingVideo, setIsPreparingVideo] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const pinResolveRequestIdRef = useRef(0);
+  const videoPreviewRef = useRef<HTMLVideoElement | null>(null);
 
   const selectedCategories = useMemo(
     () => CATEGORIES.filter((category) => selectedCategoryIds.includes(category.id)),
@@ -440,6 +587,16 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
     () => (selectedVideoFile ? URL.createObjectURL(selectedVideoFile) : null),
     [selectedVideoFile],
   );
+  const selectedClipDurationSeconds = useMemo(() => {
+    if (!selectedVideoFile || !selectedVideoDurationSeconds) {
+      return 0;
+    }
+
+    return Math.max(0, videoTrimEndSeconds - videoTrimStartSeconds);
+  }, [selectedVideoDurationSeconds, selectedVideoFile, videoTrimEndSeconds, videoTrimStartSeconds]);
+  const videoTrimSliderMax = Math.max(1, selectedVideoDurationSeconds ?? 1);
+  const videoTrimStartPercent = (videoTrimStartSeconds / videoTrimSliderMax) * 100;
+  const videoTrimEndPercent = (videoTrimEndSeconds / videoTrimSliderMax) * 100;
 
   const selectedCityOption = useMemo(
     () => findMatchingCity(cityOptions, locationCity),
@@ -531,6 +688,8 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
     setSelectedPhotoFiles([]);
     setSelectedVideoFile(null);
     setSelectedVideoDurationSeconds(null);
+    setVideoTrimStartSeconds(0);
+    setVideoTrimEndSeconds(0);
     setIsPreparingVideo(false);
     setIsSubmitting(false);
   };
@@ -768,10 +927,10 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
       return;
     }
 
-    if (selectedFile.size > MAX_SINGLE_VIDEO_UPLOAD_BYTES) {
+    if (selectedFile.size > MAX_SOURCE_VIDEO_UPLOAD_BYTES) {
       toast({
         title: "Video too large",
-        description: "Video must be 20MB or smaller.",
+        description: "Source video must be 100MB or smaller.",
         variant: "destructive",
       });
       return;
@@ -782,15 +941,24 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
     try {
       const duration = await loadVideoDurationSeconds(selectedFile);
 
-      if (duration > MAX_VIDEO_DURATION_SECONDS) {
-        throw new Error(`Video must be ${MAX_VIDEO_DURATION_SECONDS} seconds or shorter.`);
-      }
-
       setSelectedVideoFile(selectedFile);
       setSelectedVideoDurationSeconds(Math.ceil(duration));
+      setVideoTrimStartSeconds(0);
+      setVideoTrimEndSeconds(
+        Math.max(1, Math.min(MAX_VIDEO_DURATION_SECONDS, Math.floor(duration)))
+      );
+
+      if (duration > MAX_VIDEO_DURATION_SECONDS) {
+        toast({
+          title: "Select clip range",
+          description: `This video is longer than ${MAX_VIDEO_DURATION_SECONDS}s. Choose the part you want to upload.`,
+        });
+      }
     } catch (error) {
       setSelectedVideoFile(null);
       setSelectedVideoDurationSeconds(null);
+      setVideoTrimStartSeconds(0);
+      setVideoTrimEndSeconds(0);
       toast({
         title: "Video validation failed",
         description:
@@ -807,7 +975,86 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
   const removeVideo = () => {
     setSelectedVideoFile(null);
     setSelectedVideoDurationSeconds(null);
+    setVideoTrimStartSeconds(0);
+    setVideoTrimEndSeconds(0);
   };
+
+  const seekVideoPreviewTo = useCallback((seconds: number) => {
+    const preview = videoPreviewRef.current;
+    if (!preview || !Number.isFinite(seconds)) {
+      return;
+    }
+
+    const maxSecond = Math.max(0, (selectedVideoDurationSeconds ?? 0) - 0.05);
+    const safeSecond = clampNumber(seconds, 0, maxSecond);
+
+    try {
+      preview.currentTime = safeSecond;
+    } catch {
+      // Ignore seek failures when metadata is still loading.
+    }
+  }, [selectedVideoDurationSeconds]);
+
+  const handleVideoTrimStartChange = (value: number) => {
+    const maxValue = Math.max(0, videoTrimEndSeconds - 1);
+    const nextStart = clampNumber(value, 0, maxValue);
+    let nextEnd = videoTrimEndSeconds;
+
+    if (nextEnd - nextStart > MAX_VIDEO_DURATION_SECONDS) {
+      nextEnd = nextStart + MAX_VIDEO_DURATION_SECONDS;
+      setVideoTrimEndSeconds(nextEnd);
+    }
+
+    setVideoTrimStartSeconds(nextStart);
+    seekVideoPreviewTo(nextStart);
+  };
+
+  const handleVideoTrimEndChange = (value: number) => {
+    const maxDurationBound = selectedVideoDurationSeconds ?? 0;
+    const minValue = videoTrimStartSeconds + 1;
+    let nextEnd = clampNumber(value, minValue, maxDurationBound);
+
+    if (nextEnd - videoTrimStartSeconds > MAX_VIDEO_DURATION_SECONDS) {
+      nextEnd = videoTrimStartSeconds + MAX_VIDEO_DURATION_SECONDS;
+    }
+
+    setVideoTrimEndSeconds(nextEnd);
+    seekVideoPreviewTo(nextEnd);
+  };
+
+  useEffect(() => {
+    const preview = videoPreviewRef.current;
+    if (!preview || !selectedVideoFile) {
+      return;
+    }
+
+    const clipStart = videoTrimStartSeconds;
+    const clipEnd = Math.max(videoTrimEndSeconds, clipStart + 0.1);
+
+    const resetToClipStart = () => {
+      if (preview.currentTime < clipStart || preview.currentTime >= clipEnd) {
+        preview.currentTime = clipStart;
+      }
+    };
+
+    const handlePlay = () => {
+      resetToClipStart();
+    };
+
+    const handleTimeUpdate = () => {
+      if (preview.currentTime >= clipEnd) {
+        preview.currentTime = clipStart;
+      }
+    };
+
+    preview.addEventListener("play", handlePlay);
+    preview.addEventListener("timeupdate", handleTimeUpdate);
+
+    return () => {
+      preview.removeEventListener("play", handlePlay);
+      preview.removeEventListener("timeupdate", handleTimeUpdate);
+    };
+  }, [selectedVideoFile, videoTrimEndSeconds, videoTrimStartSeconds]);
 
   const togglePurpose = (purpose: ListingPurpose) => {
     setSelectedPurposes((current) => {
@@ -1052,11 +1299,26 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
           throw new Error("Unable to verify video duration. Please reselect your video.");
         }
 
+        if (
+          selectedClipDurationSeconds <= 0 ||
+          selectedClipDurationSeconds > MAX_VIDEO_DURATION_SECONDS
+        ) {
+          throw new Error(`Selected clip must be between 1 and ${MAX_VIDEO_DURATION_SECONDS} seconds.`);
+        }
+
+        setIsPreparingVideo(true);
+        const optimizedClip = await createOptimizedVideoClip(
+          selectedVideoFile,
+          videoTrimStartSeconds,
+          videoTrimEndSeconds,
+        );
+        setIsPreparingVideo(false);
+
         const videoUploadFormData = new FormData();
-        videoUploadFormData.append("video", selectedVideoFile);
+        videoUploadFormData.append("video", optimizedClip.file);
         videoUploadFormData.append(
           "durationSeconds",
-          String(selectedVideoDurationSeconds)
+          String(optimizedClip.durationSeconds)
         );
 
         const videoUploadResponse = await fetch("/api/videos/upload", {
@@ -1169,6 +1431,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
 
       handleOpenChange(false);
     } catch (error) {
+      setIsPreparingVideo(false);
       toast({
         title: "Listing save failed",
         description:
@@ -1502,7 +1765,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
                   className={cn(FIELD_BORDER_CLASS, "cursor-pointer")}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Max 1 video, up to {MAX_VIDEO_DURATION_SECONDS} seconds and 20MB.
+                  Max 1 video. Source up to 100MB; selected clip up to {MAX_VIDEO_DURATION_SECONDS} seconds and compressed before upload.
                 </p>
 
                 {isPreparingVideo ? (
@@ -1512,18 +1775,71 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
                 {selectedVideoFile && selectedVideoPreviewUrl ? (
                   <div className="space-y-2 rounded-lg border border-primary/30 bg-background p-3">
                     <video
+                      ref={videoPreviewRef}
                       src={selectedVideoPreviewUrl}
                       controls
                       preload="metadata"
+                      onLoadedMetadata={() => {
+                        seekVideoPreviewTo(videoTrimStartSeconds);
+                      }}
                       className="aspect-video w-full rounded-lg bg-black"
                     />
+                    <div className="space-y-2 rounded-md border border-primary/20 bg-accent/10 p-2.5">
+                      <p className="text-xs font-medium text-foreground">Trim clip before upload</p>
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                          <span>Start: {formatDurationLabel(videoTrimStartSeconds)}</span>
+                          <span>End: {formatDurationLabel(videoTrimEndSeconds)}</span>
+                        </div>
+                        <div className="relative h-7">
+                          <div className="absolute left-0 right-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-primary/20" />
+                          <div
+                            className="absolute top-1/2 h-1 -translate-y-1/2 rounded-full bg-primary"
+                            style={{
+                              left: `${videoTrimStartPercent}%`,
+                              width: `${Math.max(0, videoTrimEndPercent - videoTrimStartPercent)}%`,
+                            }}
+                          />
+                          <input
+                            type="range"
+                            min={0}
+                            max={Math.max(1, videoTrimSliderMax - 1)}
+                            step={1}
+                            value={videoTrimStartSeconds}
+                            onChange={(event) =>
+                              handleVideoTrimStartChange(Number(event.target.value))
+                            }
+                            aria-label="Trim start"
+                            className="pointer-events-none absolute inset-0 w-full appearance-none bg-transparent [&::-webkit-slider-runnable-track]:h-1 [&::-webkit-slider-runnable-track]:bg-transparent [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:mt-[-6px] [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border [&::-webkit-slider-thumb]:border-primary/70 [&::-webkit-slider-thumb]:bg-background [&::-moz-range-track]:h-1 [&::-moz-range-track]:bg-transparent [&::-moz-range-thumb]:pointer-events-auto [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border [&::-moz-range-thumb]:border-primary/70 [&::-moz-range-thumb]:bg-background"
+                          />
+                          <input
+                            type="range"
+                            min={1}
+                            max={videoTrimSliderMax}
+                            step={1}
+                            value={videoTrimEndSeconds}
+                            onChange={(event) =>
+                              handleVideoTrimEndChange(Number(event.target.value))
+                            }
+                            aria-label="Trim end"
+                            className="pointer-events-none absolute inset-0 w-full appearance-none bg-transparent [&::-webkit-slider-runnable-track]:h-1 [&::-webkit-slider-runnable-track]:bg-transparent [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:mt-[-6px] [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border [&::-webkit-slider-thumb]:border-primary [&::-webkit-slider-thumb]:bg-primary/85 [&::-moz-range-track]:h-1 [&::-moz-range-track]:bg-transparent [&::-moz-range-thumb]:pointer-events-auto [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border [&::-moz-range-thumb]:border-primary [&::-moz-range-thumb]:bg-primary/85"
+                          />
+                        </div>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground">
+                        Selected clip: {formatDurationLabel(selectedClipDurationSeconds)}
+                        {selectedClipDurationSeconds > MAX_VIDEO_DURATION_SECONDS
+                          ? ` (must be <= ${MAX_VIDEO_DURATION_SECONDS}s)`
+                          : ""}
+                      </p>
+                    </div>
                     <div className="flex items-center justify-between gap-2">
                       <p className="truncate text-xs text-muted-foreground" title={selectedVideoFile.name}>
                         {selectedVideoFile.name}
                       </p>
                       <div className="flex items-center gap-2">
                         <span className="text-xs text-muted-foreground">
-                          {selectedVideoDurationSeconds ?? 0}s
+                          {selectedVideoDurationSeconds ?? 0}s source
                         </span>
                         <Button
                           type="button"

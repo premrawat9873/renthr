@@ -15,6 +15,7 @@ interface Props {
 
 const SKELETON_COUNT = 8;
 const CTA_INTERVAL = 6; // Insert CTA card after every 6th product
+const MIN_PRODUCTS_FOR_SPONSORED = 8;
 
 function CTACard() {
   return (
@@ -115,6 +116,7 @@ export default function ProductGrid({
 
   const displayedProducts = products;
   const skeletonCount = isLoadingMore ? SKELETON_COUNT : 0;
+  const shouldShowSponsored = displayedProducts.length >= MIN_PRODUCTS_FOR_SPONSORED;
 
   // Build grid items: interleave CTA cards and in-feed ad units.
   const gridItems: Array<
@@ -164,17 +166,19 @@ export default function ProductGrid({
           ))}
       </div>
 
-      <div className="rounded-2xl border border-border/50 bg-card p-3 sm:p-4">
-        <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          Sponsored
-        </p>
-        <AdSenseInlineAd
-          adSlot="3466919594"
-          adFormat="fluid"
-          adLayoutKey="-6l+ca+3p+n+s"
-          fullWidthResponsive={false}
-        />
-      </div>
+      {shouldShowSponsored && (
+        <div className="rounded-2xl border border-border/50 bg-card p-3 sm:p-4">
+          <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            Sponsored
+          </p>
+          <AdSenseInlineAd
+            adSlot="3466919594"
+            adFormat="fluid"
+            adLayoutKey="-6l+ca+3p+n+s"
+            fullWidthResponsive={false}
+          />
+        </div>
+      )}
 
       {/* Load More Button */}
       {hasMore && (

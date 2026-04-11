@@ -40,7 +40,7 @@ type CreateListingBody = {
 
 const MAX_IMAGE_COUNT = 3;
 const MAX_VIDEO_DURATION_SECONDS = 60;
-const MAX_VIDEO_SIZE_BYTES = 20 * 1024 * 1024;
+const MAX_VIDEO_SIZE_BYTES = 23 * 1024 * 1024;
 const LOCATION_MIN_LENGTH = 2;
 const LOCATION_PINCODE_PATTERN = /^\d{6}$/;
 const LOCATION_PLACEHOLDER_VALUES = new Set(["unknown", "na", "n/a"]);
