@@ -24,10 +24,7 @@ export default function AdSenseInlineAd({
   fullWidthResponsive = true,
 }: AdSenseInlineAdProps) {
   const adRef = useRef<HTMLModElement | null>(null);
-<<<<<<< HEAD
-=======
   const [isMounted, setIsMounted] = useState(false);
->>>>>>> fbc0c29 (adds videos to upload on site)
 
   useEffect(() => {
     setIsMounted(true);
