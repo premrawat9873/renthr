@@ -21,6 +21,19 @@ const ALLOWED_VIDEO_MIME_TYPES = new Set([
   "video/quicktime",
 ]);
 
+const VIDEO_MIME_ALIASES: Record<string, string> = {
+  "video/x-m4v": "video/mp4",
+  "application/mp4": "video/mp4",
+  "video/mp4v-es": "video/mp4",
+};
+
+const VIDEO_EXTENSION_TO_MIME: Record<string, string> = {
+  mp4: "video/mp4",
+  m4v: "video/mp4",
+  webm: "video/webm",
+  mov: "video/quicktime",
+};
+
 const MIME_EXTENSION_MAP: Record<string, string> = {
   "image/jpeg": "jpg",
   "image/png": "png",
@@ -228,6 +241,34 @@ function sanitizeFileName(name: string) {
   return sanitized || "image";
 }
 
+function inferVideoMimeTypeFromFileName(fileName: string) {
+  const extension = fileName.split(".").pop()?.trim().toLowerCase() ?? "";
+  return VIDEO_EXTENSION_TO_MIME[extension] ?? null;
+}
+
+function normalizeVideoMimeType(contentType: string) {
+  const normalized = contentType.trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+
+  return VIDEO_MIME_ALIASES[normalized] ?? normalized;
+}
+
+function resolveVideoMimeType(file: File) {
+  const byType = normalizeVideoMimeType(file.type);
+  if (byType && ALLOWED_VIDEO_MIME_TYPES.has(byType)) {
+    return byType;
+  }
+
+  const byExtension = inferVideoMimeTypeFromFileName(file.name);
+  if (byExtension && ALLOWED_VIDEO_MIME_TYPES.has(byExtension)) {
+    return byExtension;
+  }
+
+  return null;
+}
+
 function toUploadKey(fileName: string, contentType: string, prefix: string) {
   const extension = MIME_EXTENSION_MAP[contentType] ?? "bin";
   const daySegment = new Date().toISOString().slice(0, 10);
@@ -345,7 +386,9 @@ export async function uploadVideoToR2(
   file: File,
   options?: { prefix?: string }
 ): Promise<UploadedR2Video> {
-  if (!ALLOWED_VIDEO_MIME_TYPES.has(file.type)) {
+  const contentType = resolveVideoMimeType(file);
+
+  if (!contentType) {
     throw new R2UploadError("Only MP4, WEBM, and MOV videos are supported.", 400);
   }
 
@@ -360,7 +403,6 @@ export async function uploadVideoToR2(
   const config = getR2Config();
   const client = getR2Client();
   const body = Buffer.from(await file.arrayBuffer());
-  const contentType = file.type;
   const key = toUploadKey(file.name, contentType, options?.prefix ?? "listings/videos");
 
   try {

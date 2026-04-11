@@ -518,7 +518,34 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
     router.push('/');
   };
 
-  const handleMessageSeller = async () => {
+  const reserveMessage = useMemo(() => {
+    const intro = `Hi ${ownerDisplayName}, I want to reserve \"${product.title}\".`;
+
+    if (!hasRentalPricing || !selectedOption) {
+      return `${intro} Is it still available?`;
+    }
+
+    const unitLabel = getDurationUnitLabel(selectedOption.id, billableUnits || 1);
+    const rentalWindow =
+      selectedOption.id === 'hourly'
+        ? `Requested slot: ${startDate} from ${startTime} to ${endTime}.`
+        : `Requested period: ${startDate} to ${endDate}.`;
+
+    return `${intro} ${rentalWindow} Plan: ${selectedOption.label} (${billableUnits} ${unitLabel}). Estimated total: ${formatPrice(total)}. Is this available?`;
+  }, [
+    billableUnits,
+    endDate,
+    endTime,
+    hasRentalPricing,
+    ownerDisplayName,
+    product.title,
+    selectedOption,
+    startDate,
+    startTime,
+    total,
+  ]);
+
+  const handleMessageSeller = async (initialMessage?: string) => {
     if (!product.ownerId) {
       toast({
         title: 'Seller unavailable',
@@ -539,6 +566,7 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
         body: JSON.stringify({
           recipientId: product.ownerId,
           postId: product.id,
+          ...(initialMessage?.trim() ? { initialMessage: initialMessage.trim() } : {}),
         }),
       });
 
@@ -569,6 +597,14 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
     } finally {
       setIsOpeningChat(false);
     }
+  };
+
+  const handleReserve = () => {
+    if (!canReserve) {
+      return;
+    }
+
+    void handleMessageSeller(reserveMessage);
   };
 
   const handleHeaderManualLocation = useCallback((city: string) => {
@@ -1494,10 +1530,15 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
                 )}
 
                 <Button
-                  disabled={!canReserve}
+                  onClick={handleReserve}
+                  disabled={!canReserve || isOpeningChat || !product.ownerId}
                   className="h-12 w-full rounded-xl bg-gradient-to-r from-primary to-primary/90 text-base font-semibold text-primary-foreground shadow-lg shadow-primary/25 transition-all duration-200 hover:from-primary/95 hover:to-primary/85 hover:shadow-xl hover:shadow-primary/30 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-70"
                 >
-                  {hasRentalPricing ? 'Reserve' : 'Contact Seller'}
+                  {isOpeningChat
+                    ? 'Opening chat...'
+                    : hasRentalPricing
+                      ? 'Reserve'
+                      : 'Contact Seller'}
                 </Button>
 
                 {hasRentalPricing && (
@@ -1640,8 +1681,13 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
                 <span className="text-sm font-normal text-muted-foreground">{selectedOption.suffix}</span>
               </p>
             </div>
-            <button className="flex-1 rounded-xl bg-gradient-to-r from-primary to-primary/90 px-6 py-3.5 font-semibold text-primary-foreground shadow-lg shadow-primary/25 transition-all duration-200 hover:shadow-xl hover:shadow-primary/30 active:scale-[0.98]">
-              Reserve Now
+            <button
+              type="button"
+              onClick={handleReserve}
+              disabled={!canReserve || isOpeningChat || !product.ownerId}
+              className="flex-1 rounded-xl bg-gradient-to-r from-primary to-primary/90 px-6 py-3.5 font-semibold text-primary-foreground shadow-lg shadow-primary/25 transition-all duration-200 hover:shadow-xl hover:shadow-primary/30 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {isOpeningChat ? 'Opening chat...' : 'Reserve Now'}
             </button>
           </div>
         </div>

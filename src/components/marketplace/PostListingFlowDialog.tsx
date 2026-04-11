@@ -62,6 +62,8 @@ const MAX_SINGLE_UPLOAD_PAYLOAD_BYTES = 4 * 1024 * 1024;
 const MAX_SOURCE_VIDEO_UPLOAD_BYTES = 100 * 1024 * 1024;
 const MAX_OPTIMIZED_VIDEO_UPLOAD_BYTES = 23 * 1024 * 1024;
 const MAX_VIDEO_DURATION_SECONDS = 60;
+const MIN_VIDEO_CLIP_SECONDS = 0.5;
+const VIDEO_TRIM_STEP_SECONDS = 0.1;
 const TARGET_VIDEO_BITRATE = 900_000;
 const TARGET_AUDIO_BITRATE = 96_000;
 
@@ -86,6 +88,17 @@ const ALLOWED_VIDEO_TYPES = new Set([
   "video/webm",
   "video/quicktime",
 ]);
+const VIDEO_TYPE_ALIASES: Record<string, string> = {
+  "video/x-m4v": "video/mp4",
+  "application/mp4": "video/mp4",
+  "video/mp4v-es": "video/mp4",
+};
+const VIDEO_EXTENSION_TO_TYPE: Record<string, string> = {
+  mp4: "video/mp4",
+  m4v: "video/mp4",
+  webm: "video/webm",
+  mov: "video/quicktime",
+};
 const AGE_UNITS: Array<{ value: AgeUnit; label: string }> = [
   { value: "days", label: "Days" },
   { value: "months", label: "Months" },
@@ -300,8 +313,37 @@ function formatDurationLabel(seconds: number) {
   return `${minutes}:${String(remainingSeconds).padStart(2, "0")}`;
 }
 
+function formatDurationPreciseLabel(seconds: number) {
+  const safeSeconds = Math.max(0, seconds);
+  const minutes = Math.floor(safeSeconds / 60);
+  const remainingSeconds = safeSeconds - minutes * 60;
+  return `${minutes}:${remainingSeconds.toFixed(1).padStart(4, "0")}`;
+}
+
+function roundTrimSeconds(value: number) {
+  return Math.round(value / VIDEO_TRIM_STEP_SECONDS) * VIDEO_TRIM_STEP_SECONDS;
+}
+
 function clampNumber(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
+}
+
+function resolveSupportedVideoType(file: File) {
+  const normalizedType = file.type.trim().toLowerCase();
+  const canonicalType = VIDEO_TYPE_ALIASES[normalizedType] ?? normalizedType;
+
+  if (canonicalType && ALLOWED_VIDEO_TYPES.has(canonicalType)) {
+    return canonicalType;
+  }
+
+  const extension = file.name.split(".").pop()?.trim().toLowerCase() ?? "";
+  const fromExtension = VIDEO_EXTENSION_TO_TYPE[extension];
+
+  if (fromExtension && ALLOWED_VIDEO_TYPES.has(fromExtension)) {
+    return fromExtension;
+  }
+
+  return null;
 }
 
 async function createOptimizedVideoClip(
@@ -543,6 +585,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
   const [videoTrimEndSeconds, setVideoTrimEndSeconds] = useState(0);
   const [isPreparingPhotos, setIsPreparingPhotos] = useState(false);
   const [isPreparingVideo, setIsPreparingVideo] = useState(false);
+  const [videoPreviewCurrentSeconds, setVideoPreviewCurrentSeconds] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const pinResolveRequestIdRef = useRef(0);
   const videoPreviewRef = useRef<HTMLVideoElement | null>(null);
@@ -594,7 +637,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
 
     return Math.max(0, videoTrimEndSeconds - videoTrimStartSeconds);
   }, [selectedVideoDurationSeconds, selectedVideoFile, videoTrimEndSeconds, videoTrimStartSeconds]);
-  const videoTrimSliderMax = Math.max(1, selectedVideoDurationSeconds ?? 1);
+  const videoTrimSliderMax = Math.max(VIDEO_TRIM_STEP_SECONDS, selectedVideoDurationSeconds ?? 1);
   const videoTrimStartPercent = (videoTrimStartSeconds / videoTrimSliderMax) * 100;
   const videoTrimEndPercent = (videoTrimEndSeconds / videoTrimSliderMax) * 100;
 
@@ -737,6 +780,27 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
   const goToPurpose = () => {
     if (!hasValidLocation) return;
     setStep("purpose");
+  };
+
+  const canNavigateToStep = (targetStep: PostStep) => {
+    if (targetStep === "category") return true;
+    if (targetStep === "details") return selectedCategoryIds.length > 0;
+    if (targetStep === "photos") return hasValidDetails;
+    if (targetStep === "location") {
+      return hasPhotoSelection && !isPreparingPhotos && !isPreparingVideo;
+    }
+    if (targetStep === "purpose") return hasValidLocation;
+    return false;
+  };
+
+  const handleStepNavigation = (targetStep: PostStep) => {
+    if (isSubmitting) {
+      return;
+    }
+
+    if (canNavigateToStep(targetStep)) {
+      setStep(targetStep);
+    }
   };
 
   const fetchIndiaStates = useCallback(async (): Promise<IndiaStateOption[]> => {
@@ -918,7 +982,9 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
       return;
     }
 
-    if (!ALLOWED_VIDEO_TYPES.has(selectedFile.type)) {
+    const supportedType = resolveSupportedVideoType(selectedFile);
+
+    if (!supportedType) {
       toast({
         title: "Unsupported video format",
         description: "Use MP4, WEBM, or MOV format.",
@@ -926,6 +992,14 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
       });
       return;
     }
+
+    const normalizedFile =
+      selectedFile.type === supportedType
+        ? selectedFile
+        : new File([selectedFile], selectedFile.name, {
+            type: supportedType,
+            lastModified: selectedFile.lastModified,
+          });
 
     if (selectedFile.size > MAX_SOURCE_VIDEO_UPLOAD_BYTES) {
       toast({
@@ -939,14 +1013,19 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
     setIsPreparingVideo(true);
 
     try {
-      const duration = await loadVideoDurationSeconds(selectedFile);
+      const duration = await loadVideoDurationSeconds(normalizedFile);
 
-      setSelectedVideoFile(selectedFile);
-      setSelectedVideoDurationSeconds(Math.ceil(duration));
-      setVideoTrimStartSeconds(0);
-      setVideoTrimEndSeconds(
-        Math.max(1, Math.min(MAX_VIDEO_DURATION_SECONDS, Math.floor(duration)))
+      setSelectedVideoFile(normalizedFile);
+      const roundedDuration = roundTrimSeconds(duration);
+      const initialClipEnd = Math.max(
+        MIN_VIDEO_CLIP_SECONDS,
+        Math.min(MAX_VIDEO_DURATION_SECONDS, roundedDuration),
       );
+
+      setSelectedVideoDurationSeconds(roundedDuration);
+      setVideoTrimStartSeconds(0);
+      setVideoTrimEndSeconds(initialClipEnd);
+      setVideoPreviewCurrentSeconds(0);
 
       if (duration > MAX_VIDEO_DURATION_SECONDS) {
         toast({
@@ -977,6 +1056,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
     setSelectedVideoDurationSeconds(null);
     setVideoTrimStartSeconds(0);
     setVideoTrimEndSeconds(0);
+    setVideoPreviewCurrentSeconds(0);
   };
 
   const seekVideoPreviewTo = useCallback((seconds: number) => {
@@ -996,12 +1076,12 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
   }, [selectedVideoDurationSeconds]);
 
   const handleVideoTrimStartChange = (value: number) => {
-    const maxValue = Math.max(0, videoTrimEndSeconds - 1);
-    const nextStart = clampNumber(value, 0, maxValue);
+    const maxValue = Math.max(0, videoTrimEndSeconds - MIN_VIDEO_CLIP_SECONDS);
+    const nextStart = roundTrimSeconds(clampNumber(value, 0, maxValue));
     let nextEnd = videoTrimEndSeconds;
 
     if (nextEnd - nextStart > MAX_VIDEO_DURATION_SECONDS) {
-      nextEnd = nextStart + MAX_VIDEO_DURATION_SECONDS;
+      nextEnd = roundTrimSeconds(nextStart + MAX_VIDEO_DURATION_SECONDS);
       setVideoTrimEndSeconds(nextEnd);
     }
 
@@ -1011,11 +1091,11 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
 
   const handleVideoTrimEndChange = (value: number) => {
     const maxDurationBound = selectedVideoDurationSeconds ?? 0;
-    const minValue = videoTrimStartSeconds + 1;
-    let nextEnd = clampNumber(value, minValue, maxDurationBound);
+    const minValue = videoTrimStartSeconds + MIN_VIDEO_CLIP_SECONDS;
+    let nextEnd = roundTrimSeconds(clampNumber(value, minValue, maxDurationBound));
 
     if (nextEnd - videoTrimStartSeconds > MAX_VIDEO_DURATION_SECONDS) {
-      nextEnd = videoTrimStartSeconds + MAX_VIDEO_DURATION_SECONDS;
+      nextEnd = roundTrimSeconds(videoTrimStartSeconds + MAX_VIDEO_DURATION_SECONDS);
     }
 
     setVideoTrimEndSeconds(nextEnd);
@@ -1042,6 +1122,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
     };
 
     const handleTimeUpdate = () => {
+      setVideoPreviewCurrentSeconds(preview.currentTime);
       if (preview.currentTime >= clipEnd) {
         preview.currentTime = clipStart;
       }
@@ -1055,6 +1136,20 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
       preview.removeEventListener("timeupdate", handleTimeUpdate);
     };
   }, [selectedVideoFile, videoTrimEndSeconds, videoTrimStartSeconds]);
+
+  const previewTrimmedClip = () => {
+    const preview = videoPreviewRef.current;
+    if (!preview) {
+      return;
+    }
+
+    const clipStart = videoTrimStartSeconds;
+    preview.currentTime = clipStart;
+    setVideoPreviewCurrentSeconds(clipStart);
+    void preview.play().catch(() => {
+      // Ignore autoplay restrictions; user can press play from controls.
+    });
+  };
 
   const togglePurpose = (purpose: ListingPurpose) => {
     setSelectedPurposes((current) => {
@@ -1465,6 +1560,8 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
               stepNumber={1}
               title="Window 1"
               subtitle="Search + choose up to 2 categories"
+              onClick={() => handleStepNavigation("category")}
+              disabled={isSubmitting}
             />
 
             <div className="hidden md:flex items-center justify-center text-muted-foreground">
@@ -1477,6 +1574,8 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
               stepNumber={2}
               title="Window 2"
               subtitle="Product name, description, and age"
+              onClick={() => handleStepNavigation("details")}
+              disabled={!canNavigateToStep("details") || isSubmitting}
             />
 
             <div className="hidden md:flex items-center justify-center text-muted-foreground">
@@ -1489,6 +1588,8 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
               stepNumber={3}
               title="Window 3"
               subtitle="Upload up to 3 photos + 1 video"
+              onClick={() => handleStepNavigation("photos")}
+              disabled={!canNavigateToStep("photos") || isSubmitting}
             />
 
             <div className="hidden md:flex items-center justify-center text-muted-foreground">
@@ -1501,6 +1602,8 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
               stepNumber={4}
               title="Window 4"
               subtitle="Add product pickup location"
+              onClick={() => handleStepNavigation("location")}
+              disabled={!canNavigateToStep("location") || isSubmitting}
             />
 
             <div className="hidden md:flex items-center justify-center text-muted-foreground">
@@ -1512,7 +1615,9 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
               complete={false}
               stepNumber={5}
               title="Window 5"
-              subtitle="Purpose, durations, and pricing"
+              subtitle="Review, pricing, and publish"
+              onClick={() => handleStepNavigation("purpose")}
+              disabled={!canNavigateToStep("purpose") || isSubmitting}
             />
           </div>
         </div>
@@ -1788,8 +1893,38 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
                       <p className="text-xs font-medium text-foreground">Trim clip before upload</p>
                       <div className="space-y-1">
                         <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-                          <span>Start: {formatDurationLabel(videoTrimStartSeconds)}</span>
-                          <span>End: {formatDurationLabel(videoTrimEndSeconds)}</span>
+                          <span>Start: {formatDurationPreciseLabel(videoTrimStartSeconds)}</span>
+                          <span>End: {formatDurationPreciseLabel(videoTrimEndSeconds)}</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="space-y-1">
+                            <Label className="text-[11px] text-muted-foreground">Start (seconds)</Label>
+                            <Input
+                              type="number"
+                              min={0}
+                              max={Math.max(0, videoTrimEndSeconds - MIN_VIDEO_CLIP_SECONDS)}
+                              step={VIDEO_TRIM_STEP_SECONDS}
+                              value={videoTrimStartSeconds}
+                              onChange={(event) =>
+                                handleVideoTrimStartChange(Number(event.target.value || 0))
+                              }
+                              className={cn("h-8 text-xs", FIELD_BORDER_CLASS)}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-[11px] text-muted-foreground">End (seconds)</Label>
+                            <Input
+                              type="number"
+                              min={videoTrimStartSeconds + MIN_VIDEO_CLIP_SECONDS}
+                              max={videoTrimSliderMax}
+                              step={VIDEO_TRIM_STEP_SECONDS}
+                              value={videoTrimEndSeconds}
+                              onChange={(event) =>
+                                handleVideoTrimEndChange(Number(event.target.value || 0))
+                              }
+                              className={cn("h-8 text-xs", FIELD_BORDER_CLASS)}
+                            />
+                          </div>
                         </div>
                         <div className="relative h-7">
                           <div className="absolute left-0 right-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-primary/20" />
@@ -1803,20 +1938,20 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
                           <input
                             type="range"
                             min={0}
-                            max={Math.max(1, videoTrimSliderMax - 1)}
-                            step={1}
+                            max={Math.max(VIDEO_TRIM_STEP_SECONDS, videoTrimSliderMax - MIN_VIDEO_CLIP_SECONDS)}
+                            step={VIDEO_TRIM_STEP_SECONDS}
                             value={videoTrimStartSeconds}
                             onChange={(event) =>
                               handleVideoTrimStartChange(Number(event.target.value))
                             }
                             aria-label="Trim start"
-                            className="pointer-events-none absolute inset-0 w-full appearance-none bg-transparent [&::-webkit-slider-runnable-track]:h-1 [&::-webkit-slider-runnable-track]:bg-transparent [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:mt-[-6px] [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border [&::-webkit-slider-thumb]:border-primary/70 [&::-webkit-slider-thumb]:bg-background [&::-moz-range-track]:h-1 [&::-moz-range-track]:bg-transparent [&::-moz-range-thumb]:pointer-events-auto [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border [&::-moz-range-thumb]:border-primary/70 [&::-moz-range-thumb]:bg-background"
+                            className="pointer-events-none absolute inset-0 w-full appearance-none bg-transparent [&::-webkit-slider-runnable-track]:h-1 [&::-webkit-slider-runnable-track]:bg-transparent [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:mt-[-6px] [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border [&::-webkit-slider-thumb]:border-primary [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:shadow-sm [&::-moz-range-track]:h-1 [&::-moz-range-track]:bg-transparent [&::-moz-range-thumb]:pointer-events-auto [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border [&::-moz-range-thumb]:border-primary [&::-moz-range-thumb]:bg-primary"
                           />
                           <input
                             type="range"
-                            min={1}
+                            min={MIN_VIDEO_CLIP_SECONDS}
                             max={videoTrimSliderMax}
-                            step={1}
+                            step={VIDEO_TRIM_STEP_SECONDS}
                             value={videoTrimEndSeconds}
                             onChange={(event) =>
                               handleVideoTrimEndChange(Number(event.target.value))
@@ -1826,8 +1961,22 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
                           />
                         </div>
                       </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-7 border-primary/45 px-2 text-xs"
+                          onClick={previewTrimmedClip}
+                        >
+                          Preview edited clip
+                        </Button>
+                        <span className="text-[11px] text-muted-foreground">
+                          Current: {formatDurationPreciseLabel(videoPreviewCurrentSeconds)}
+                        </span>
+                      </div>
                       <p className="text-[11px] text-muted-foreground">
-                        Selected clip: {formatDurationLabel(selectedClipDurationSeconds)}
+                        Selected clip: {formatDurationPreciseLabel(selectedClipDurationSeconds)}
                         {selectedClipDurationSeconds > MAX_VIDEO_DURATION_SECONDS
                           ? ` (must be <= ${MAX_VIDEO_DURATION_SECONDS}s)`
                           : ""}
@@ -2078,7 +2227,55 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
         ) : (
           <form key="post-step-purpose" onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
             <div className="flex-1 space-y-4 overflow-y-auto p-4 sm:p-6">
-              <h3 className="font-heading text-lg">Step 5: Purpose and pricing</h3>
+              <h3 className="font-heading text-lg">Step 5: Review, purpose, and publish</h3>
+
+              <div className="space-y-2 rounded-xl border border-primary/30 bg-accent/20 p-3">
+                <p className="text-xs font-medium text-foreground">
+                  Edit anything before publishing
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 border-primary/45 text-xs"
+                    onClick={() => setStep("category")}
+                    disabled={isSubmitting}
+                  >
+                    Edit categories
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 border-primary/45 text-xs"
+                    onClick={() => setStep("details")}
+                    disabled={isSubmitting}
+                  >
+                    Edit details
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 border-primary/45 text-xs"
+                    onClick={() => setStep("photos")}
+                    disabled={isSubmitting}
+                  >
+                    Edit photos/video
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 border-primary/45 text-xs"
+                    onClick={() => setStep("location")}
+                    disabled={isSubmitting}
+                  >
+                    Edit location
+                  </Button>
+                </div>
+              </div>
 
               <div className="space-y-2">
                 <Label>Purpose of listing</Label>
@@ -2227,8 +2424,8 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
                 {isPreparingPhotos || isPreparingVideo
                   ? "Preparing media..."
                   : isSubmitting
-                    ? "Uploading media..."
-                    : "Save listing draft"}
+                    ? "Publishing post..."
+                    : "Publish post"}
               </Button>
             </div>
           </form>
@@ -2244,13 +2441,20 @@ interface FlowStepCardProps {
   stepNumber: number;
   title: string;
   subtitle: string;
+  onClick?: () => void;
+  disabled?: boolean;
 }
 
-function FlowStepCard({ active, complete, stepNumber, title, subtitle }: FlowStepCardProps) {
+function FlowStepCard({ active, complete, stepNumber, title, subtitle, onClick, disabled = false }: FlowStepCardProps) {
   return (
-    <div
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
       className={cn(
-        "min-w-[210px] shrink-0 rounded-xl border px-3 py-2 transition-colors md:min-w-0",
+        "min-w-[210px] shrink-0 rounded-xl border px-3 py-2 text-left transition-colors md:min-w-0",
+        onClick && !disabled ? "cursor-pointer hover:border-primary/45" : "cursor-default",
+        disabled && "opacity-55",
         active
           ? "border-primary/40 bg-primary/10"
           : "border-border/70 bg-background/90",
@@ -2275,6 +2479,6 @@ function FlowStepCard({ active, complete, stepNumber, title, subtitle }: FlowSte
           <p className="text-sm font-medium leading-snug text-foreground">{subtitle}</p>
         </div>
       </div>
-    </div>
+    </button>
   );
 }

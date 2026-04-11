@@ -49,6 +49,12 @@ const ALLOWED_VIDEO_CONTENT_TYPES = new Set([
   "video/webm",
   "video/quicktime",
 ]);
+
+const VIDEO_CONTENT_TYPE_ALIASES: Record<string, string> = {
+  "video/x-m4v": "video/mp4",
+  "application/mp4": "video/mp4",
+  "video/mp4v-es": "video/mp4",
+};
 const VALID_QUERY_FILTERS: QueryListingFilter[] = ["all", "rent", "sell"];
 const VALID_QUERY_SORTS: QuerySortOption[] = [
   "newest",
@@ -228,6 +234,15 @@ function normalizeText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function normalizeVideoContentType(value: unknown) {
+  const normalized = normalizeText(value).toLowerCase();
+  if (!normalized) {
+    return "";
+  }
+
+  return VIDEO_CONTENT_TYPE_ALIASES[normalized] ?? normalized;
+}
+
 function parseCoordinate(value: unknown, min: number, max: number) {
   if (value == null || value === "") {
     return null;
@@ -324,7 +339,7 @@ function parseListingVideo(value: unknown): ParsedListingVideo | null {
   const source = value as Record<string, unknown>;
   const url = normalizeText(source.url);
   const storageKey = normalizeText(source.key ?? source.storageKey);
-  const contentType = normalizeText(source.contentType).toLowerCase();
+  const contentType = normalizeVideoContentType(source.contentType);
   const durationSeconds = parseNonNegativeFloat(source.durationSeconds);
   const sizeBytes = parseNonNegativeInt(source.sizeBytes);
 

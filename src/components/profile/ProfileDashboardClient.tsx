@@ -271,6 +271,8 @@ function parseStoredNotificationPreferences(
 
 type ListingPurpose = 'sell' | 'rent';
 
+type ListingEditStep = 'details' | 'purpose' | 'pricing' | 'location' | 'review';
+
 type ListingEditForm = {
   productId: string;
   title: string;
@@ -310,6 +312,17 @@ const EDIT_RENT_DURATION_OPTIONS: Array<{ value: RentDuration; label: string }> 
 ];
 
 const LOCATION_PINCODE_PATTERN = /^\d{6}$/;
+
+const LISTING_EDIT_STEPS: Array<{
+  key: ListingEditStep;
+  label: string;
+}> = [
+  { key: 'details', label: 'Basic info' },
+  { key: 'purpose', label: 'Purpose' },
+  { key: 'pricing', label: 'Pricing' },
+  { key: 'location', label: 'Location' },
+  { key: 'review', label: 'Review' },
+];
 
 function getEditPurposesFromProductType(type: Product['type']): ListingPurpose[] {
   if (type === 'both') {
@@ -452,6 +465,7 @@ export default function ProfileDashboardClient({
   const [savingAvailabilityId, setSavingAvailabilityId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [editingForm, setEditingForm] = useState<ListingEditForm | null>(null);
+  const [listingEditStep, setListingEditStep] = useState<ListingEditStep>('details');
   const [savingEditId, setSavingEditId] = useState<string | null>(null);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [settingsDialog, setSettingsDialog] = useState<SettingsDialogKey | null>(null);
@@ -1272,6 +1286,8 @@ export default function ProfileDashboardClient({
   const openEditDialog = (product: Product) => {
     const locationParts = parseListingLocationLabel(product.location);
 
+    setListingEditStep('details');
+
     setEditingForm({
       productId: product.id,
       title: product.title,
@@ -1572,6 +1588,105 @@ export default function ProfileDashboardClient({
     } finally {
       setSavingEditId(null);
     }
+  };
+
+  const listingEditStepIndex = LISTING_EDIT_STEPS.findIndex(
+    (step) => step.key === listingEditStep
+  );
+  const canGoToNextListingEditStep = (() => {
+    if (!editingForm) {
+      return false;
+    }
+
+    if (listingEditStep === 'details') {
+      return (
+        editingForm.title.trim().replace(/\s+/g, ' ').length >= 3 &&
+        editingForm.description.trim().length >= 10
+      );
+    }
+
+    if (listingEditStep === 'purpose') {
+      return editingForm.purposes.length > 0;
+    }
+
+    if (listingEditStep === 'pricing') {
+      const selectedPurposes = Array.from(new Set(editingForm.purposes));
+      const isSellSelected = selectedPurposes.includes('sell');
+      const isRentSelected = selectedPurposes.includes('rent');
+
+      if (isSellSelected) {
+        const sellPrice = editingForm.sellPrice.trim();
+        const parsedSellPrice = Number.parseFloat(sellPrice);
+        if (
+          sellPrice.length === 0 ||
+          !Number.isFinite(parsedSellPrice) ||
+          parsedSellPrice < 0
+        ) {
+          return false;
+        }
+      }
+
+      if (isRentSelected) {
+        const rentValues = EDIT_RENT_DURATION_OPTIONS.map((option) =>
+          editingForm.rentPrices[option.value].trim()
+        );
+        const hasAnyRentValue = rentValues.some((value) => value.length > 0);
+        if (!hasAnyRentValue) {
+          return false;
+        }
+
+        for (const rawValue of rentValues) {
+          if (!rawValue) {
+            continue;
+          }
+
+          const parsedValue = Number.parseFloat(rawValue);
+          if (!Number.isFinite(parsedValue) || parsedValue < 0) {
+            return false;
+          }
+        }
+      }
+
+      return true;
+    }
+
+    if (listingEditStep === 'location') {
+      const locationLine1 = editingForm.locationLine1.trim().replace(/\s+/g, ' ');
+      const locationCity = editingForm.locationCity.trim().replace(/\s+/g, ' ');
+      const locationState = editingForm.locationState.trim().replace(/\s+/g, ' ');
+      const locationPincode = editingForm.locationPincode.trim();
+
+      return (
+        locationLine1.length >= 2 &&
+        locationCity.length >= 2 &&
+        locationState.length >= 2 &&
+        (locationPincode.length === 0 || LOCATION_PINCODE_PATTERN.test(locationPincode))
+      );
+    }
+
+    return true;
+  })();
+
+  const goToNextListingEditStep = () => {
+    if (!canGoToNextListingEditStep) {
+      return;
+    }
+
+    const nextStep = LISTING_EDIT_STEPS[listingEditStepIndex + 1];
+    if (nextStep) {
+      setListingEditStep(nextStep.key);
+    }
+  };
+
+  const goToPreviousListingEditStep = () => {
+    const previousStep = LISTING_EDIT_STEPS[listingEditStepIndex - 1];
+    if (previousStep) {
+      setListingEditStep(previousStep.key);
+    }
+  };
+
+  const canNavigateToListingEditStep = (targetStep: ListingEditStep) => {
+    return Boolean(editingForm && targetStep);
   };
 
   const renderListingsGrid = () => {
@@ -2135,253 +2250,376 @@ export default function ProfileDashboardClient({
           <DialogHeader>
             <DialogTitle>Edit listing info</DialogTitle>
             <DialogDescription>
-              Update purpose, pricing, and address details just like posting a new listing.
+              Use the 5-step flow to edit any listing information, even after publishing.
             </DialogDescription>
           </DialogHeader>
 
           {editingForm && (
             <div className="space-y-5">
-              <div className="space-y-1.5">
-                <Label htmlFor="listing-title">Title</Label>
-                <Input
-                  id="listing-title"
-                  value={editingForm.title}
-                  onChange={(event) =>
-                    setEditingForm((current) =>
-                      current
-                        ? {
-                            ...current,
-                            title: event.target.value,
-                          }
-                        : current
-                    )
-                  }
-                />
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+                {LISTING_EDIT_STEPS.map((flowStep, index) => {
+                  const isActive = listingEditStep === flowStep.key;
+                  const canOpen = canNavigateToListingEditStep(flowStep.key);
+
+                  return (
+                    <button
+                      key={flowStep.key}
+                      type="button"
+                      onClick={() => {
+                        if (canOpen) {
+                          setListingEditStep(flowStep.key);
+                        }
+                      }}
+                      disabled={!canOpen || Boolean(savingEditId)}
+                      className={cn(
+                        'rounded-lg border px-2.5 py-2 text-left transition-colors',
+                        isActive
+                          ? 'border-primary bg-primary/10 text-foreground'
+                          : 'border-border/60 bg-card text-muted-foreground',
+                        (!canOpen || Boolean(savingEditId)) && 'cursor-not-allowed opacity-60'
+                      )}
+                    >
+                      <p className="text-[11px] font-semibold uppercase tracking-wide">Step {index + 1}</p>
+                      <p className="text-xs font-medium">{flowStep.label}</p>
+                    </button>
+                  );
+                })}
               </div>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="listing-description">Description</Label>
-                <Textarea
-                  id="listing-description"
-                  value={editingForm.description}
-                  onChange={(event) =>
-                    setEditingForm((current) =>
-                      current
-                        ? {
-                            ...current,
-                            description: event.target.value,
-                          }
-                        : current
-                    )
-                  }
-                  className="min-h-[110px]"
-                />
-              </div>
+              {listingEditStep === 'details' && (
+                <div className="space-y-4">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="listing-title">Title</Label>
+                    <Input
+                      id="listing-title"
+                      value={editingForm.title}
+                      onChange={(event) =>
+                        setEditingForm((current) =>
+                          current
+                            ? {
+                                ...current,
+                                title: event.target.value,
+                              }
+                            : current
+                        )
+                      }
+                    />
+                  </div>
 
-              <div className="space-y-2">
-                <Label>Listing purpose</Label>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {EDIT_PURPOSE_OPTIONS.map((option) => {
-                    const isSelected = editingForm.purposes.includes(option.value);
-
-                    return (
-                      <button
-                        key={option.value}
-                        type="button"
-                        onClick={() => toggleEditPurpose(option.value)}
-                        disabled={Boolean(savingEditId)}
-                        className={cn(
-                          'rounded-xl border px-3 py-2 text-left transition-colors',
-                          isSelected
-                            ? 'border-primary bg-primary/10 text-foreground'
-                            : 'border-border/60 bg-card hover:border-primary/40 hover:bg-accent/30',
-                          Boolean(savingEditId) && 'cursor-not-allowed opacity-70'
-                        )}
-                      >
-                        <p className="text-sm font-medium">{option.label}</p>
-                        <p className="text-xs text-muted-foreground">{option.description}</p>
-                      </button>
-                    );
-                  })}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Select one or both options.
-                </p>
-              </div>
-
-              {editingForm.purposes.includes('sell') && (
-                <div className="space-y-1.5">
-                  <Label htmlFor="listing-sell-price">Sell price (INR)</Label>
-                  <Input
-                    id="listing-sell-price"
-                    inputMode="decimal"
-                    value={editingForm.sellPrice}
-                    onChange={(event) =>
-                      setEditingForm((current) =>
-                        current
-                          ? {
-                              ...current,
-                              sellPrice: event.target.value,
-                            }
-                          : current
-                      )
-                    }
-                  />
+                  <div className="space-y-1.5">
+                    <Label htmlFor="listing-description">Description</Label>
+                    <Textarea
+                      id="listing-description"
+                      value={editingForm.description}
+                      onChange={(event) =>
+                        setEditingForm((current) =>
+                          current
+                            ? {
+                                ...current,
+                                description: event.target.value,
+                              }
+                            : current
+                        )
+                      }
+                      className="min-h-[110px]"
+                    />
+                  </div>
                 </div>
               )}
 
-              {editingForm.purposes.includes('rent') && (
+              {listingEditStep === 'purpose' && (
                 <div className="space-y-2">
-                  <Label>Rent prices (INR)</Label>
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    {EDIT_RENT_DURATION_OPTIONS.map((option) => (
-                      <div key={option.value} className="space-y-1.5">
-                        <Label htmlFor={`listing-rent-${option.value}`}>{option.label} rent</Label>
+                  <Label>Listing purpose</Label>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {EDIT_PURPOSE_OPTIONS.map((option) => {
+                      const isSelected = editingForm.purposes.includes(option.value);
+
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => toggleEditPurpose(option.value)}
+                          disabled={Boolean(savingEditId)}
+                          className={cn(
+                            'rounded-xl border px-3 py-2 text-left transition-colors',
+                            isSelected
+                              ? 'border-primary bg-primary/10 text-foreground'
+                              : 'border-border/60 bg-card hover:border-primary/40 hover:bg-accent/30',
+                            Boolean(savingEditId) && 'cursor-not-allowed opacity-70'
+                          )}
+                        >
+                          <p className="text-sm font-medium">{option.label}</p>
+                          <p className="text-xs text-muted-foreground">{option.description}</p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-xs text-muted-foreground">Select one or both options.</p>
+                </div>
+              )}
+
+              {listingEditStep === 'pricing' && (
+                <div className="space-y-4">
+                  {editingForm.purposes.includes('sell') && (
+                    <div className="space-y-1.5">
+                      <Label htmlFor="listing-sell-price">Sell price (INR)</Label>
+                      <Input
+                        id="listing-sell-price"
+                        inputMode="decimal"
+                        value={editingForm.sellPrice}
+                        onChange={(event) =>
+                          setEditingForm((current) =>
+                            current
+                              ? {
+                                  ...current,
+                                  sellPrice: event.target.value,
+                                }
+                              : current
+                          )
+                        }
+                      />
+                    </div>
+                  )}
+
+                  {editingForm.purposes.includes('rent') && (
+                    <div className="space-y-2">
+                      <Label>Rent prices (INR)</Label>
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        {EDIT_RENT_DURATION_OPTIONS.map((option) => (
+                          <div key={option.value} className="space-y-1.5">
+                            <Label htmlFor={`listing-rent-${option.value}`}>{option.label} rent</Label>
+                            <Input
+                              id={`listing-rent-${option.value}`}
+                              inputMode="decimal"
+                              value={editingForm.rentPrices[option.value]}
+                              onChange={(event) =>
+                                setEditingForm((current) =>
+                                  current
+                                    ? {
+                                        ...current,
+                                        rentPrices: {
+                                          ...current.rentPrices,
+                                          [option.value]: event.target.value,
+                                        },
+                                      }
+                                    : current
+                                )
+                              }
+                            />
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-xs text-muted-foreground">Add at least one rent duration price.</p>
+                    </div>
+                  )}
+
+                  {!editingForm.purposes.includes('sell') &&
+                    !editingForm.purposes.includes('rent') && (
+                      <p className="rounded-lg border border-border/60 bg-accent/30 px-3 py-2 text-sm text-muted-foreground">
+                        Select listing purpose first to edit pricing.
+                      </p>
+                    )}
+                </div>
+              )}
+
+              {listingEditStep === 'location' && (
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>Address details</Label>
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div className="space-y-1.5 sm:col-span-2">
+                        <Label htmlFor="listing-address-line">Address line</Label>
                         <Input
-                          id={`listing-rent-${option.value}`}
-                          inputMode="decimal"
-                          value={editingForm.rentPrices[option.value]}
+                          id="listing-address-line"
+                          value={editingForm.locationLine1}
                           onChange={(event) =>
                             setEditingForm((current) =>
                               current
                                 ? {
                                     ...current,
-                                    rentPrices: {
-                                      ...current.rentPrices,
-                                      [option.value]: event.target.value,
-                                    },
+                                    locationLine1: event.target.value,
                                   }
                                 : current
                             )
                           }
                         />
                       </div>
-                    ))}
+
+                      <div className="space-y-1.5">
+                        <Label htmlFor="listing-address-city">City</Label>
+                        <Input
+                          id="listing-address-city"
+                          value={editingForm.locationCity}
+                          onChange={(event) =>
+                            setEditingForm((current) =>
+                              current
+                                ? {
+                                    ...current,
+                                    locationCity: event.target.value,
+                                  }
+                                : current
+                            )
+                          }
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label htmlFor="listing-address-state">State</Label>
+                        <Input
+                          id="listing-address-state"
+                          value={editingForm.locationState}
+                          onChange={(event) =>
+                            setEditingForm((current) =>
+                              current
+                                ? {
+                                    ...current,
+                                    locationState: event.target.value,
+                                  }
+                                : current
+                            )
+                          }
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label htmlFor="listing-address-pincode">Pincode</Label>
+                        <Input
+                          id="listing-address-pincode"
+                          inputMode="numeric"
+                          value={editingForm.locationPincode}
+                          onChange={(event) =>
+                            setEditingForm((current) =>
+                              current
+                                ? {
+                                    ...current,
+                                    locationPincode: event.target.value.replace(/\D/g, '').slice(0, 6),
+                                  }
+                                : current
+                            )
+                          }
+                        />
+                      </div>
+                    </div>
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    Add at least one rent duration price.
-                  </p>
+
+                  <div className="flex items-center justify-between rounded-lg border border-border/60 bg-accent/30 px-3 py-2.5">
+                    <div>
+                      <p className="text-sm font-medium text-foreground">Feature this post</p>
+                      <p className="text-xs text-muted-foreground">
+                        Featured posts are highlighted in marketplace cards.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={editingForm.featured}
+                      onCheckedChange={(checked) =>
+                        setEditingForm((current) =>
+                          current
+                            ? {
+                                ...current,
+                                featured: checked,
+                              }
+                            : current
+                        )
+                      }
+                      disabled={Boolean(savingEditId)}
+                      className="data-[state=checked]:bg-primary"
+                    />
+                  </div>
                 </div>
               )}
 
-              <div className="space-y-2">
-                <Label>Address details</Label>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div className="space-y-1.5 sm:col-span-2">
-                    <Label htmlFor="listing-address-line">Address line</Label>
-                    <Input
-                      id="listing-address-line"
-                      value={editingForm.locationLine1}
-                      onChange={(event) =>
-                        setEditingForm((current) =>
-                          current
-                            ? {
-                                ...current,
-                                locationLine1: event.target.value,
-                              }
-                            : current
-                        )
-                      }
-                    />
+              {listingEditStep === 'review' && (
+                <div className="space-y-3">
+                  <p className="text-sm font-medium text-foreground">Review your edits before saving</p>
+
+                  <div className="rounded-lg border border-border/60 bg-accent/20 p-3 text-sm">
+                    <p className="font-medium text-foreground">{editingForm.title || 'Untitled listing'}</p>
+                    <p className="mt-1 text-muted-foreground">
+                      {editingForm.description || 'No description'}
+                    </p>
+                    <p className="mt-2 text-muted-foreground">
+                      Purpose: {editingForm.purposes.length > 0 ? editingForm.purposes.join(' + ') : 'None'}
+                    </p>
+                    <p className="text-muted-foreground">
+                      Location: {[editingForm.locationCity, editingForm.locationState]
+                        .filter((value) => value.trim().length > 0)
+                        .join(', ') || 'Not set'}
+                    </p>
                   </div>
 
-                  <div className="space-y-1.5">
-                    <Label htmlFor="listing-address-city">City</Label>
-                    <Input
-                      id="listing-address-city"
-                      value={editingForm.locationCity}
-                      onChange={(event) =>
-                        setEditingForm((current) =>
-                          current
-                            ? {
-                                ...current,
-                                locationCity: event.target.value,
-                              }
-                            : current
-                        )
-                      }
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label htmlFor="listing-address-state">State</Label>
-                    <Input
-                      id="listing-address-state"
-                      value={editingForm.locationState}
-                      onChange={(event) =>
-                        setEditingForm((current) =>
-                          current
-                            ? {
-                                ...current,
-                                locationState: event.target.value,
-                              }
-                            : current
-                        )
-                      }
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label htmlFor="listing-address-pincode">Pincode</Label>
-                    <Input
-                      id="listing-address-pincode"
-                      inputMode="numeric"
-                      value={editingForm.locationPincode}
-                      onChange={(event) =>
-                        setEditingForm((current) =>
-                          current
-                            ? {
-                                ...current,
-                                locationPincode: event.target.value.replace(/\D/g, '').slice(0, 6),
-                              }
-                            : current
-                        )
-                      }
-                    />
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setListingEditStep('details')}
+                      disabled={Boolean(savingEditId)}
+                    >
+                      Edit basic info
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setListingEditStep('purpose')}
+                      disabled={Boolean(savingEditId)}
+                    >
+                      Edit purpose
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setListingEditStep('pricing')}
+                      disabled={Boolean(savingEditId)}
+                    >
+                      Edit pricing
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setListingEditStep('location')}
+                      disabled={Boolean(savingEditId)}
+                    >
+                      Edit location
+                    </Button>
                   </div>
                 </div>
-              </div>
-
-              <div className="flex items-center justify-between rounded-lg border border-border/60 bg-accent/30 px-3 py-2.5">
-                <div>
-                  <p className="text-sm font-medium text-foreground">Feature this post</p>
-                  <p className="text-xs text-muted-foreground">
-                    Featured posts are highlighted in marketplace cards.
-                  </p>
-                </div>
-                <Switch
-                  checked={editingForm.featured}
-                  onCheckedChange={(checked) =>
-                    setEditingForm((current) =>
-                      current
-                        ? {
-                            ...current,
-                            featured: checked,
-                          }
-                        : current
-                    )
-                  }
-                  disabled={Boolean(savingEditId)}
-                  className="data-[state=checked]:bg-primary"
-                />
-              </div>
+              )}
             </div>
           )}
 
           <DialogFooter>
             <Button
               variant="outline"
-              onClick={() => setEditingForm(null)}
+              onClick={() => {
+                if (listingEditStep === 'details') {
+                  setEditingForm(null);
+                  return;
+                }
+
+                goToPreviousListingEditStep();
+              }}
               disabled={Boolean(savingEditId)}
             >
-              Cancel
+              {listingEditStep === 'details' ? 'Cancel' : 'Back'}
             </Button>
-            <Button
-              onClick={() => void handleSaveListingEdit()}
-              disabled={Boolean(savingEditId)}
-            >
-              {savingEditId ? 'Saving...' : 'Save changes'}
-            </Button>
+            {listingEditStep === 'review' ? (
+              <Button
+                onClick={() => void handleSaveListingEdit()}
+                disabled={Boolean(savingEditId)}
+              >
+                {savingEditId ? 'Saving...' : 'Save changes'}
+              </Button>
+            ) : (
+              <Button
+                onClick={goToNextListingEditStep}
+                disabled={Boolean(savingEditId) || !canGoToNextListingEditStep}
+              >
+                Next
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
