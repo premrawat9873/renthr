@@ -7,7 +7,7 @@ import AdSenseInlineAd from "@/components/ui/AdSenseInlineAd";
 import Script from "next/script";
 
 const siteUrl = getSiteUrl();
-const FAVICON_VERSION = "20260408";
+const FAVICON_VERSION = "20260412";
 const FAVICON_48_URL = `/favicon-48.png?v=${FAVICON_VERSION}`;
 const FAVICON_192_URL = `/favicon-192.png?v=${FAVICON_VERSION}`;
 const APPLE_TOUCH_ICON_URL = `/apple-touch-icon.png?v=${FAVICON_VERSION}`;
@@ -21,6 +21,7 @@ export const metadata: Metadata = {
   },
   description: SITE_DESCRIPTION,
   applicationName: SITE_NAME,
+  manifest: "/manifest.webmanifest",
   icons: {
     icon: [
       { url: FAVICON_48_URL, type: "image/png", sizes: "48x48" },

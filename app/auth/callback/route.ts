@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAvatarUrlFromMetadata } from "@/lib/profile-avatar";
+import { extractGoogleSubject } from "@/lib/google-subject";
 import {
   createCustomSessionToken,
   CUSTOM_SESSION_COOKIE_NAME,
@@ -106,6 +107,7 @@ export async function GET(request: Request) {
 
   if (user?.email) {
     const normalizedEmail = user.email.trim().toLowerCase();
+    const googleSubject = extractGoogleSubject(user);
     const metadataName =
       typeof user.user_metadata?.name === "string"
         ? user.user_metadata.name.trim()
@@ -120,6 +122,7 @@ export async function GET(request: Request) {
           id: true,
           name: true,
           avatarUrl: true,
+          googleSignInDisabledAt: true,
         },
       });
 
@@ -137,6 +140,10 @@ export async function GET(request: Request) {
 
         sessionUserId = createdUser.id;
       } else {
+        if (existingUser.googleSignInDisabledAt) {
+          return toLoginRedirectWithSessionReset("google_signin_disabled");
+        }
+
         sessionUserId = existingUser.id;
 
         const updateData: {
@@ -158,6 +165,21 @@ export async function GET(request: Request) {
             data: updateData,
           });
         }
+      }
+
+      if (googleSubject) {
+        await prisma.googleIdentity.upsert({
+          where: { subject: googleSubject },
+          update: {
+            userId: Number(sessionUserId),
+            provider: "google",
+          },
+          create: {
+            userId: Number(sessionUserId),
+            provider: "google",
+            subject: googleSubject,
+          },
+        });
       }
     } catch {
       // OAuth session is already established; skip profile sync failure for this request.

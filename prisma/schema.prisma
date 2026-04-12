@@ -78,6 +78,10 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
 
+  // CAP (Cross-Account Protection) controls.
+  sessionRevokedAt       DateTime?
+  googleSignInDisabledAt DateTime?
+
   posts             Post[]
   addresses         Address[]
   reviewsWritten    Review[]                  @relation("ReviewerReviews")
@@ -86,6 +90,37 @@ model User {
   conversationParts ConversationParticipant[]
   bookings          Booking[]                 @relation("RenterBookings")
   wishlistItems     WishlistItem[]
+  googleIdentity    GoogleIdentity?
+  riscEvents        RiscEvent[]
+}
+
+model GoogleIdentity {
+  id        Int  @id @default(autoincrement())
+  userId    Int  @unique
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider  String @default("google")
+  subject   String @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([provider, subject])
+}
+
+model RiscEvent {
+  id          Int      @id @default(autoincrement())
+  jti         String   @unique
+  issuer      String
+  audience    String
+  subject     String?
+  eventTypes  String[]
+  receivedAt  DateTime @default(now())
+  processedAt DateTime?
+
+  userId Int?
+  user   User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([subject])
+  @@index([receivedAt])
 }
 
 model Address {

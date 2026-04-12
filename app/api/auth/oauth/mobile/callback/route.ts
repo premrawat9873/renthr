@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getAvatarUrlFromMetadata } from '@/lib/profile-avatar';
+import { extractGoogleSubject } from '@/lib/google-subject';
 import {
   createCustomSessionToken,
   CUSTOM_SESSION_COOKIE_NAME,
@@ -161,6 +162,7 @@ export async function GET(request: Request) {
     typeof supabaseUser.user_metadata?.name === 'string'
       ? supabaseUser.user_metadata.name.trim()
       : '';
+  const googleSubject = extractGoogleSubject(supabaseUser);
   const metadataAvatarUrl = getAvatarUrlFromMetadata(supabaseUser.user_metadata);
 
   let sessionUserId: string | number = supabaseUser.id;
@@ -174,6 +176,7 @@ export async function GET(request: Request) {
         id: true,
         name: true,
         avatarUrl: true,
+        googleSignInDisabledAt: true,
       },
     });
 
@@ -195,6 +198,10 @@ export async function GET(request: Request) {
       sessionUserName = createdUser.name;
       sessionUserAvatarUrl = createdUser.avatarUrl;
     } else {
+      if (existingUser.googleSignInDisabledAt) {
+        return redirectWithSessionReset('google_signin_disabled');
+      }
+
       sessionUserId = existingUser.id;
       sessionUserName = existingUser.name ?? (metadataName || null);
       sessionUserAvatarUrl = existingUser.avatarUrl ?? metadataAvatarUrl;
@@ -226,6 +233,21 @@ export async function GET(request: Request) {
         sessionUserName = updatedUser.name;
         sessionUserAvatarUrl = updatedUser.avatarUrl;
       }
+    }
+
+    if (googleSubject) {
+      await prisma.googleIdentity.upsert({
+        where: { subject: googleSubject },
+        update: {
+          userId: Number(sessionUserId),
+          provider: 'google',
+        },
+        create: {
+          userId: Number(sessionUserId),
+          provider: 'google',
+          subject: googleSubject,
+        },
+      });
     }
   } catch {
     // Keep OAuth login working even if profile sync fails unexpectedly.

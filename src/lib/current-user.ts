@@ -20,6 +20,15 @@ export type CurrentUserInfo = {
   avatarUrl: string | null;
 };
 
+function isMissingColumnError(error: unknown) {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: string }).code === "P2022"
+  );
+}
+
 function parsePositiveInt(value: string) {
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -37,22 +46,67 @@ export async function getCurrentUserInfo(): Promise<CurrentUserInfo | null> {
 
   if (customSession) {
     const sessionUserId = parsePositiveInt(customSession.sub);
+    const userSelect = {
+      id: true,
+      email: true,
+      name: true,
+      avatarUrl: true,
+      sessionRevokedAt: true,
+    } as const;
+    const fallbackUserSelect = {
+      id: true,
+      email: true,
+      name: true,
+      avatarUrl: true,
+    } as const;
+    let user: unknown;
 
-    const user = sessionUserId
-      ? await prisma.user.findUnique({
-          where: { id: sessionUserId },
-          select: { id: true, email: true, name: true, avatarUrl: true },
-        })
-      : await prisma.user.findUnique({
-          where: { email: customSession.email.toLowerCase() },
-          select: { id: true, email: true, name: true, avatarUrl: true },
-        });
+    try {
+      user = sessionUserId
+        ? await prisma.user.findUnique({
+            where: { id: sessionUserId },
+            select: userSelect as never,
+          })
+        : await prisma.user.findUnique({
+            where: { email: customSession.email.toLowerCase() },
+            select: userSelect as never,
+          });
+    } catch (error) {
+      if (!isMissingColumnError(error)) {
+        throw error;
+      }
+
+      user = sessionUserId
+        ? await prisma.user.findUnique({
+            where: { id: sessionUserId },
+            select: fallbackUserSelect as never,
+          })
+        : await prisma.user.findUnique({
+            where: { email: customSession.email.toLowerCase() },
+            select: fallbackUserSelect as never,
+          });
+    }
+
+    const userWithRevocation = user as (typeof user & {
+      sessionRevokedAt?: Date | null;
+      id?: number;
+      email?: string;
+      name?: string | null;
+      avatarUrl?: string | null;
+    }) | null;
+    const tokenIssuedAtMs = customSession.iat * 1000;
+    if (
+      userWithRevocation?.sessionRevokedAt &&
+      tokenIssuedAtMs <= userWithRevocation.sessionRevokedAt.getTime()
+    ) {
+      return null;
+    }
 
     return {
-      id: user ? String(user.id) : null,
-      email: user?.email ?? customSession.email.toLowerCase(),
-      name: user?.name ?? customSession.name ?? null,
-      avatarUrl: user?.avatarUrl ?? null,
+      id: userWithRevocation?.id ? String(userWithRevocation.id) : null,
+      email: userWithRevocation?.email ?? customSession.email.toLowerCase(),
+      name: userWithRevocation?.name ?? customSession.name ?? null,
+      avatarUrl: userWithRevocation?.avatarUrl ?? null,
     };
   }
 
