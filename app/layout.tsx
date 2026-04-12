@@ -77,8 +77,17 @@ export default function RootLayout({
           src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9411649869227225"
           crossOrigin="anonymous"
         />
+        <script
+          async
+          custom-element="amp-auto-ads"
+          src="https://cdn.ampproject.org/v0/amp-auto-ads-0.1.js"
+        ></script>
       </head>
       <body className="min-h-full flex flex-col">
+        <amp-auto-ads
+          type="adsense"
+          data-ad-client="ca-pub-9411649869227225"
+        ></amp-auto-ads>
         <Providers>{children}</Providers>
         <div className="w-full px-4 pb-6">
           <div className="mx-auto w-full max-w-6xl">
