@@ -1,5 +1,11 @@
 import { useRouter } from "next/navigation";
-import { Product, formatTimeAgo, formatPrice, RentDuration } from "@/data/marketplaceData";
+import {
+  ListingFilter,
+  Product,
+  formatTimeAgo,
+  formatPrice,
+  RentDuration,
+} from "@/data/marketplaceData";
 import { Badge } from "@/components/ui/badge";
 import { MapPin, Clock, Heart, Star, Tag, CalendarClock } from "lucide-react";
 import ImageCarousel from "./ImageCarousel";
@@ -14,6 +20,7 @@ import { getProductHref } from "@/lib/product-url";
 
 interface Props {
   product: Product;
+  listingFilter: ListingFilter;
   rentDurations: RentDuration[];
   priority?: boolean;
 }
@@ -30,7 +37,11 @@ function formatDistanceLabel(distance: number) {
   return `${distance.toFixed(1)} km`;
 }
 
-export default function ProductCard({ product, priority = false }: Props) {
+export default function ProductCard({
+  product,
+  listingFilter,
+  priority = false,
+}: Props) {
   const router = useRouter();
   const dispatch = useAppDispatch();
   const liked = useAppSelector((state) => selectIsWishlisted(state, product.id));
@@ -40,6 +51,8 @@ export default function ProductCard({ product, priority = false }: Props) {
   const distanceLabel = formatDistanceLabel(product.distance);
   const isRentAvailable = product.type === "rent" || product.type === "both";
   const isSellAvailable = product.type === "sell" || product.type === "both";
+  const showRentPrices = listingFilter !== "sell";
+  const showSellPrices = listingFilter !== "rent";
   const isAvailable = product.isAvailable ?? true;
   const reviewCount = product.reviewCount ?? 0;
   const ratingValue = product.rating;
@@ -124,14 +137,14 @@ export default function ProductCard({ product, priority = false }: Props) {
       <div className="flex flex-1 flex-col space-y-2 p-3.5">
         {/* Price */}
         <div className="space-y-0.5">
-          {isSellAvailable && (
+          {showSellPrices && isSellAvailable && (
             <p className="text-base font-extrabold text-foreground">
               {product.price != null
                 ? `Sell ${formatPrice(product.price)}`
                 : "Selling price on request"}
             </p>
           )}
-          {isRentAvailable && (
+          {showRentPrices && isRentAvailable && (
             product.rentPrices ? (
               <div className="grid grid-cols-1 gap-0.5">
                 {renderRentPrice(product)}

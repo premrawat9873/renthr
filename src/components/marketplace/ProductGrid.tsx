@@ -1,4 +1,4 @@
-import { Product, RentDuration } from "@/data/marketplaceData";
+import { ListingFilter, Product, RentDuration } from "@/data/marketplaceData";
 import ProductCard from "./ProductCard";
 import { PackageOpen, Loader } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -6,6 +6,7 @@ import AdSenseInlineAd from "@/components/ui/AdSenseInlineAd";
 
 interface Props {
   products: Product[];
+  listingFilter: ListingFilter;
   rentDurations: RentDuration[];
   hasMore: boolean;
   isLoadingMore: boolean;
@@ -55,6 +56,7 @@ function ProductCardSkeleton() {
 
 export default function ProductGrid({
   products,
+  listingFilter,
   rentDurations,
   hasMore,
   isLoadingMore,
@@ -151,6 +153,7 @@ export default function ProductGrid({
             ) : (
               <ProductCard
                 product={item.product}
+                listingFilter={listingFilter}
                 rentDurations={rentDurations}
                 priority={i === 0}
               />

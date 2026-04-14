@@ -761,6 +761,7 @@ export function MarketplacePageClient({
 
         <ProductGrid
           products={availableProducts}
+          listingFilter={safeFilter}
           rentDurations={safeRentDurations}
           hasMore={hasMorePages && !isRefreshingProducts}
           isLoadingMore={isLoadingMore}

@@ -5,6 +5,7 @@ import { notFound } from 'next/navigation';
 import { ArrowLeft, Calendar, CheckCircle2, Package, Star } from 'lucide-react';
 
 import UserListingsGrid from '@/components/marketplace/UserListingsGrid';
+import ReportActionButton from '@/components/marketplace/ReportActionButton';
 import { Button } from '@/components/ui/button';
 import { formatTimeAgo } from '@/data/marketplaceData';
 import {
@@ -153,6 +154,14 @@ export default async function PublicProfilePage({
                     <Calendar className="h-4 w-4" />
                     <span className="text-sm">Member since {joinedLabel}</span>
                   </div>
+
+                  <ReportActionButton
+                    targetType="user"
+                    targetId={profile.id}
+                    title="Report user"
+                    buttonLabel="Report User"
+                    variant="outline"
+                  />
                 </div>
               </div>
             </div>

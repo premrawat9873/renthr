@@ -1913,6 +1913,7 @@ export default function ProfileDashboardClient({
             <ProductCard
               key={product.id}
               product={product}
+              listingFilter="all"
               rentDurations={DEFAULT_WISHLIST_RENT_DURATIONS}
             />
           ))}

@@ -58,6 +58,7 @@ import {
   toggleWishlistOnServer,
 } from '@/store/slices/wishlistSlice';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import ReportActionButton from '@/components/marketplace/ReportActionButton';
 
 const PostListingFlowDialog = dynamic(
   () => import('@/components/marketplace/PostListingFlowDialog'),
@@ -1103,6 +1104,25 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
                 )}
                 {isOpeningChat ? 'Opening chat...' : 'Message'}
               </Button>
+
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <ReportActionButton
+                  targetType="post"
+                  targetId={product.id}
+                  title="Report listing"
+                  buttonLabel="Report Listing"
+                  variant="outline"
+                />
+                {product.ownerId ? (
+                  <ReportActionButton
+                    targetType="user"
+                    targetId={product.ownerId}
+                    title="Report seller"
+                    buttonLabel="Report Seller"
+                    variant="outline"
+                  />
+                ) : null}
+              </div>
             </section>
 
             <section className="rounded-2xl border border-border/65 bg-card/95 p-5 shadow-[0_10px_22px_-18px_hsl(var(--foreground)/0.45)]">

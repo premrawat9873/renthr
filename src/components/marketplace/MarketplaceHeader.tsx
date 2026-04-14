@@ -52,6 +52,8 @@ type LocationSearchResponse = {
 };
 
 const RECENT_LOCATIONS_STORAGE_KEY = "renthour_recent_locations";
+const RECENT_SEARCHES_STORAGE_KEY = "renthour_recent_searches";
+const MAX_RECENT_SEARCHES = 8;
 const POPULAR_LOCATION_QUERIES = [
   "New Delhi",
   "Mumbai",
@@ -62,6 +64,18 @@ const POPULAR_LOCATION_QUERIES = [
 ];
 
 const subscribeHydration = () => () => {};
+
+function normalizeRecentSearches(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [] as string[];
+  }
+
+  const cleaned = value
+    .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+    .filter((entry) => entry.length > 0);
+
+  return cleaned.slice(0, MAX_RECENT_SEARCHES);
+}
 
 export default function MarketplaceHeader({
   location,
@@ -82,6 +96,8 @@ export default function MarketplaceHeader({
   const [locationSuggestions, setLocationSuggestions] = useState<LocationSuggestion[]>([]);
   const [popularSuggestions, setPopularSuggestions] = useState<LocationSuggestion[]>([]);
   const [recentSuggestions, setRecentSuggestions] = useState<LocationSuggestion[]>([]);
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
+  const [searchFocused, setSearchFocused] = useState(false);
   const [isPopularLoading, setIsPopularLoading] = useState(false);
   const [isLocationSearchLoading, setIsLocationSearchLoading] = useState(false);
   const [locationSearchError, setLocationSearchError] = useState<string | null>(null);
@@ -224,6 +240,21 @@ export default function MarketplaceHeader({
   }, [locOpen]);
 
   useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(RECENT_SEARCHES_STORAGE_KEY);
+      if (!saved) {
+        setRecentSearches([]);
+        return;
+      }
+
+      const parsed = JSON.parse(saved);
+      setRecentSearches(normalizeRecentSearches(parsed));
+    } catch {
+      setRecentSearches([]);
+    }
+  }, []);
+
+  useEffect(() => {
     if (!locOpen) {
       return;
     }
@@ -301,6 +332,58 @@ export default function MarketplaceHeader({
     } catch {
       // Ignore storage errors.
     }
+  };
+
+  const saveRecentSearch = (query: string) => {
+    const normalizedQuery = query.trim();
+    if (!normalizedQuery) {
+      return;
+    }
+
+    setRecentSearches((current) => {
+      const deduped = [
+        normalizedQuery,
+        ...current.filter((item) => item.toLowerCase() !== normalizedQuery.toLowerCase()),
+      ].slice(0, MAX_RECENT_SEARCHES);
+
+      try {
+        window.localStorage.setItem(RECENT_SEARCHES_STORAGE_KEY, JSON.stringify(deduped));
+      } catch {
+        // Ignore storage errors.
+      }
+
+      return deduped;
+    });
+  };
+
+  const removeRecentSearch = (query: string) => {
+    setRecentSearches((current) => {
+      const filtered = current.filter((item) => item.toLowerCase() !== query.toLowerCase());
+
+      try {
+        window.localStorage.setItem(RECENT_SEARCHES_STORAGE_KEY, JSON.stringify(filtered));
+      } catch {
+        // Ignore storage errors.
+      }
+
+      return filtered;
+    });
+  };
+
+  const commitSearchQuery = (rawQuery: string) => {
+    const normalizedQuery = rawQuery.trim();
+    if (!normalizedQuery) {
+      return;
+    }
+
+    onSearchChange(normalizedQuery);
+    saveRecentSearch(normalizedQuery);
+  };
+
+  const applyRecentSearch = (query: string) => {
+    onSearchChange(query);
+    saveRecentSearch(query);
+    setSearchFocused(false);
   };
 
   const applyCity = (city: string, selection?: ManualLocationSelection, meta?: LocationSuggestion) => {
@@ -572,9 +655,22 @@ export default function MarketplaceHeader({
             placeholder="Search products..."
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
+            onFocus={() => setSearchFocused(true)}
+            onBlur={() => {
+              window.setTimeout(() => {
+                setSearchFocused(false);
+              }, 120);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                commitSearchQuery(searchQuery);
+              }
+            }}
             className="h-10 w-full rounded-full border border-primary/25 bg-background/50 pl-10 pr-16 text-sm placeholder:text-muted-foreground backdrop-blur-sm transition-all duration-200 focus:border-primary/40 focus:outline-none focus:ring-2 focus:ring-primary/20"
           />
           <button
+            onClick={() => commitSearchQuery(searchQuery)}
             className="absolute right-1.5 top-1/2 -translate-y-1/2 flex h-7 w-7 items-center justify-center rounded-full bg-primary text-primary-foreground transition-all duration-200 hover:brightness-105"
             aria-label="Search"
           >
@@ -589,6 +685,34 @@ export default function MarketplaceHeader({
               <X className="h-4 w-4 text-muted-foreground hover:text-foreground transition-colors" />
             </button>
           )}
+
+          {searchFocused && recentSearches.length > 0 ? (
+            <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-[80] overflow-hidden rounded-2xl border border-primary/15 bg-card shadow-xl">
+              <p className="px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                Recent searches
+              </p>
+              {recentSearches.map((entry) => (
+                <div key={entry.toLowerCase()} className="flex items-center gap-2 px-3 py-1.5">
+                  <button
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => applyRecentSearch(entry)}
+                    className="flex flex-1 items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-accent/60"
+                  >
+                    <Search className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="truncate text-sm text-foreground">{entry}</span>
+                  </button>
+                  <button
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => removeRecentSearch(entry)}
+                    aria-label={`Remove ${entry} from recent searches`}
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
         </div>
 
         {/* Right Actions */}
@@ -675,8 +799,48 @@ export default function MarketplaceHeader({
             placeholder="Search..."
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
+            onFocus={() => setSearchFocused(true)}
+            onBlur={() => {
+              window.setTimeout(() => {
+                setSearchFocused(false);
+              }, 120);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                commitSearchQuery(searchQuery);
+              }
+            }}
             className="h-9 w-full rounded-full border border-primary/25 bg-background/50 pl-10 pr-3 text-sm placeholder:text-muted-foreground backdrop-blur-sm transition-all duration-200 focus:border-primary/40 focus:outline-none focus:ring-2 focus:ring-primary/20"
           />
+
+          {searchFocused && recentSearches.length > 0 ? (
+            <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-[80] overflow-hidden rounded-2xl border border-primary/15 bg-card shadow-xl">
+              <p className="px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                Recent searches
+              </p>
+              {recentSearches.map((entry) => (
+                <div key={`mobile-${entry.toLowerCase()}`} className="flex items-center gap-2 px-3 py-1.5">
+                  <button
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => applyRecentSearch(entry)}
+                    className="flex flex-1 items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-accent/60"
+                  >
+                    <Search className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="truncate text-sm text-foreground">{entry}</span>
+                  </button>
+                  <button
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => removeRecentSearch(entry)}
+                    aria-label={`Remove ${entry} from recent searches`}
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
         </div>
       </div>
 

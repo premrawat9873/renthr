@@ -14,7 +14,8 @@ interface Props {
 }
 
 const CATEGORY_ICONS: Record<string, LucideIcon> = {
-  "flats-pg": Home,
+  flat: Home,
+  pg: Home,
   electronics: Smartphone,
   vehicles: Car,
   furniture: Sofa,
