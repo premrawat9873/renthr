@@ -63,7 +63,7 @@ function normalizeListingFilter(value: unknown): ListingFilter {
 function normalizeSortOption(value: unknown): SortOption {
   return VALID_SORT_OPTIONS.includes(value as SortOption)
     ? (value as SortOption)
-    : "newest";
+    : "distance";
 }
 
 function normalizePriceRange(value: unknown): [number, number] {
@@ -93,7 +93,7 @@ const initialState: MarketplaceState = {
   selectedCategory: null,
   filter: "all",
   rentDurations: [],
-  sort: "newest",
+  sort: "distance",
   priceRange: [0, MAX_PRICE],
 };
 

@@ -1,6 +1,7 @@
 import "server-only";
 
 import { prisma } from "@/lib/prisma";
+import { getResendClient, getResendFromEmail } from "@/lib/resend";
 
 export type ReportTargetType = "post" | "user";
 
@@ -11,6 +12,8 @@ type SubmitReportInput = {
   reason: string;
   details?: string;
 };
+
+const REPORTS_NOTIFY_EMAIL = process.env.REPORTS_NOTIFY_EMAIL || "privacy@renthour.in";
 
 let reportTableEnsured = false;
 
@@ -67,6 +70,36 @@ async function ensureReportTable() {
   `);
 
   reportTableEnsured = true;
+}
+
+async function sendReportNotificationEmail(input: {
+  reporterId: number;
+  targetType: ReportTargetType;
+  targetId: number;
+  reason: string;
+  details: string | null;
+}) {
+  const resend = getResendClient();
+  const from = getResendFromEmail();
+
+  const subject = `New report: ${input.targetType} #${input.targetId}`;
+  const message = [
+    "A new report was submitted.",
+    "",
+    `Reporter ID: ${input.reporterId}`,
+    `Target type: ${input.targetType}`,
+    `Target ID: ${input.targetId}`,
+    `Reason: ${input.reason}`,
+    `Details: ${input.details || "(none)"}`,
+    `Timestamp (UTC): ${new Date().toISOString()}`,
+  ].join("\n");
+
+  await resend.emails.send({
+    from,
+    to: REPORTS_NOTIFY_EMAIL,
+    subject,
+    text: message,
+  });
 }
 
 export async function submitReport(input: SubmitReportInput) {
@@ -137,4 +170,16 @@ export async function submitReport(input: SubmitReportInput) {
       "status" = 'OPEN',
       "updatedAt" = NOW();
   `;
+
+  try {
+    await sendReportNotificationEmail({
+      reporterId: input.reporterId,
+      targetType: input.targetType,
+      targetId: input.targetId,
+      reason,
+      details,
+    });
+  } catch (error) {
+    console.error("[reports] Failed to send report notification email", error);
+  }
 }

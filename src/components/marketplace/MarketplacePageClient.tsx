@@ -261,7 +261,7 @@ export function MarketplacePageClient({
   const safeSelectedCategory = isHydrated ? selectedCategory : null;
   const safeFilter = isHydrated ? filter : 'all';
   const safeRentDurations = isHydrated ? rentDurations : EMPTY_DURATIONS;
-  const safeSort = isHydrated ? sort : 'newest';
+  const safeSort = isHydrated ? sort : 'distance';
   const safePriceRange: [number, number] = isHydrated ? priceRange : DEFAULT_PRICE_RANGE;
   const safeHasActiveFilters = isHydrated ? hasActiveFilters : false;
   const resolvedCoordsFromLocation = useMemo(() => {
@@ -576,6 +576,11 @@ export function MarketplacePageClient({
       return;
     }
 
+    if (!hasCompletedInitialRefreshRef.current) {
+      hasCompletedInitialRefreshRef.current = true;
+      return;
+    }
+
     const requestId = listingRequestSequenceRef.current + 1;
     listingRequestSequenceRef.current = requestId;
     let cancelled = false;
@@ -611,7 +616,6 @@ export function MarketplacePageClient({
         if (!cancelled && requestId === listingRequestSequenceRef.current) {
           setIsRefreshingProducts(false);
           setIsApplyingListingQuery(false);
-          hasCompletedInitialRefreshRef.current = true;
         }
       }
     })();
