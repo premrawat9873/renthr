@@ -169,21 +169,7 @@ export default function ProductGrid({
           ))}
       </div>
 
-      {shouldShowSponsored && (
-        <div className="rounded-2xl border border-border/50 bg-card p-3 sm:p-4">
-          <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            Sponsored
-          </p>
-          <AdSenseInlineAd
-            adSlot="3466919594"
-            adFormat="fluid"
-            adLayoutKey="-6l+ca+3p+n+s"
-            fullWidthResponsive={false}
-          />
-        </div>
-      )}
-
-      {/* Load More Button */}
+      {/* Load More Button (moved above sponsored block to avoid large gaps) */}
       {hasMore && (
         <div className="flex justify-center pt-4">
           <button
@@ -200,6 +186,23 @@ export default function ProductGrid({
               "Load More"
             )}
           </button>
+        </div>
+      )}
+
+      {shouldShowSponsored && (
+        <div className="rounded-2xl border border-border/50 bg-card p-3 sm:p-4">
+          <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            Sponsored
+          </p>
+          <div className="max-h-[360px] overflow-hidden rounded-md">
+            <AdSenseInlineAd
+              adSlot="3466919594"
+              adFormat="fluid"
+              adLayoutKey="-6l+ca+3p+n+s"
+              fullWidthResponsive={false}
+              className="w-full h-full"
+            />
+          </div>
         </div>
       )}
     </div>
