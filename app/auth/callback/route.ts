@@ -1,7 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { getAvatarUrlFromMetadata } from "@/lib/profile-avatar";
 import { extractGoogleSubject } from "@/lib/google-subject";
 import {
@@ -116,6 +115,8 @@ export async function GET(request: Request) {
     let sessionUserId: string | number = user.id;
 
     try {
+      const { prisma } = await import("@/lib/prisma");
+
       const existingUser = await prisma.user.findUnique({
         where: { email: normalizedEmail },
         select: {
