@@ -10,27 +10,12 @@ function isSafeInternalPath(path: string | null) {
   return Boolean(path && path.startsWith('/') && !path.startsWith('//'));
 }
 
-function getConfiguredWebSiteOrigin() {
-  const configuredSiteUrl =
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    process.env.NEXTAUTH_URL ||
-    process.env.SITE_URL ||
-    '';
-
-  if (!configuredSiteUrl) {
-    return null;
+function getSanitizedRequestOrigin(requestUrl: URL) {
+  if (requestUrl.hostname === '0.0.0.0') {
+    return `http://localhost:${requestUrl.port || '3000'}`;
   }
 
-  try {
-    const parsed = new URL(configuredSiteUrl);
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-      return null;
-    }
-
-    return parsed.origin;
-  } catch {
-    return null;
-  }
+  return requestUrl.origin;
 }
 
 function getAllowedMobileRedirectSchemes() {
@@ -84,18 +69,9 @@ export async function GET(request: Request) {
   const redirectTarget = requestUrl.searchParams.get('redirect')?.trim() || '';
   const nextParam = requestUrl.searchParams.get('next');
   const nextPath = isSafeInternalPath(nextParam) ? nextParam : '/';
+  const requestOrigin = getSanitizedRequestOrigin(requestUrl);
 
   const isMobileFlow = redirectTarget.length > 0;
-
-  if (!isMobileFlow) {
-    const configuredOrigin = getConfiguredWebSiteOrigin();
-
-    if (configuredOrigin && configuredOrigin !== requestUrl.origin) {
-      const canonicalStartUrl = new URL('/api/auth/oauth/google/start', configuredOrigin);
-      canonicalStartUrl.searchParams.set('next', nextPath);
-      return NextResponse.redirect(canonicalStartUrl);
-    }
-  }
 
   if (isMobileFlow && !isAllowedMobileRedirect(redirectTarget)) {
     return NextResponse.json(
@@ -118,8 +94,8 @@ export async function GET(request: Request) {
   }
 
   const callbackUrl = isMobileFlow
-    ? new URL('/api/auth/oauth/mobile/callback', requestUrl.origin)
-    : new URL('/auth/callback', getConfiguredWebSiteOrigin() || requestUrl.origin);
+    ? new URL('/api/auth/oauth/mobile/callback', requestOrigin)
+    : new URL('/auth/callback', requestOrigin);
 
   if (isMobileFlow) {
     callbackUrl.searchParams.set('redirect', redirectTarget);
@@ -127,7 +103,7 @@ export async function GET(request: Request) {
     callbackUrl.searchParams.set('next', nextPath);
   }
 
-  const response = NextResponse.redirect(new URL('/login', requestUrl.origin));
+  const response = NextResponse.redirect(new URL('/login', requestOrigin));
   const cookieStore = await cookies();
   const incomingCookies = cookieStore.getAll();
 
