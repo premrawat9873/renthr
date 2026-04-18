@@ -1011,6 +1011,7 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
                   sizes="(max-width: 1024px) 100vw, 58vw"
                   className="object-contain p-2 sm:p-3 transition-transform duration-500 group-hover:scale-[1.01]"
                   priority
+                  loading="eager"
                 />
 
                 <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />

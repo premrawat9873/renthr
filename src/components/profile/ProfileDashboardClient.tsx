@@ -2089,6 +2089,7 @@ export default function ProfileDashboardClient({
                     src={profileAvatarUrl}
                     alt={profileDisplayName}
                     fill
+                    sizes="112px"
                     className="object-cover"
                     onError={() => {
                       if (profileAvatarUrl !== defaultProfileAvatarUrl) {

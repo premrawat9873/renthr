@@ -1826,8 +1826,9 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
                         <Image
                           src={preview.previewUrl}
                           alt={`Uploaded preview ${index + 1}`}
-                          fill
-                          unoptimized
+                            fill
+                            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                            unoptimized
                           className="object-cover"
                         />
                       </div>

@@ -113,7 +113,7 @@ export default function MarketplaceHeader({
   const metadataName =
     typeof user?.user_metadata?.name === "string" ? user.user_metadata.name : null;
   const accountLabel =
-    (metadataName || user?.email?.split("@")[0] || currentUser?.identifier?.split("@")[0]) ||
+    (metadataName || (currentUser as any)?.name || user?.email?.split("@")[0] || currentUser?.identifier?.split("@")[0]) ||
     "Account";
 
   const clearCustomSessionCookie = async () => {
