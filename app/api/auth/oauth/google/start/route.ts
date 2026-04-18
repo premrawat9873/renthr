@@ -10,9 +10,145 @@ function isSafeInternalPath(path: string | null) {
   return Boolean(path && path.startsWith('/') && !path.startsWith('//'));
 }
 
-function getSanitizedRequestOrigin(requestUrl: URL) {
+function getFirstHeaderValue(value: string | null) {
+  if (!value) {
+    return '';
+  }
+
+  return value.split(',')[0]?.trim() || '';
+}
+
+function isLoopbackHostname(hostname: string) {
+  return (
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname === '0.0.0.0' ||
+    hostname === '::1'
+  );
+}
+
+function isLoopbackOrigin(origin: string) {
+  try {
+    return isLoopbackHostname(new URL(origin).hostname);
+  } catch {
+    return false;
+  }
+}
+
+function parseHttpOrigin(originOrUrl: string) {
+  if (!originOrUrl) {
+    return '';
+  }
+
+  try {
+    const parsed = new URL(originOrUrl);
+
+    if (parsed.hostname === '0.0.0.0') {
+      parsed.hostname = 'localhost';
+    }
+
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return '';
+    }
+
+    return parsed.origin;
+  } catch {
+    return '';
+  }
+}
+
+function getBrowserHeaderOrigin(request: Request) {
+  const originHeader = getFirstHeaderValue(request.headers.get('origin'));
+  const originFromHeader = parseHttpOrigin(originHeader);
+
+  if (originFromHeader) {
+    return originFromHeader;
+  }
+
+  const refererHeader = getFirstHeaderValue(request.headers.get('referer'));
+  return parseHttpOrigin(refererHeader);
+}
+
+function getConfiguredPublicOrigin() {
+  const configuredSiteUrl =
+    process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXTAUTH_URL || process.env.SITE_URL || '';
+
+  if (!configuredSiteUrl) {
+    return '';
+  }
+
+  const parsedOrigin = parseHttpOrigin(configuredSiteUrl);
+  if (!parsedOrigin) {
+    return '';
+  }
+
+  if (process.env.NODE_ENV === 'production' && isLoopbackOrigin(parsedOrigin)) {
+    return '';
+  }
+
+  return parsedOrigin;
+}
+
+function getSanitizedRequestOrigin(request: Request, requestUrl: URL) {
+  const configuredPublicOrigin = getConfiguredPublicOrigin();
+  const browserHeaderOrigin = getBrowserHeaderOrigin(request);
+  const forwardedHost = getFirstHeaderValue(request.headers.get('x-forwarded-host'));
+  const host = forwardedHost || getFirstHeaderValue(request.headers.get('host'));
+  const forwardedProto = getFirstHeaderValue(request.headers.get('x-forwarded-proto'));
+  const protocol = forwardedProto === 'http' || forwardedProto === 'https'
+    ? forwardedProto
+    : requestUrl.protocol.replace(':', '');
+
+  if (host) {
+    try {
+      const forwardedUrl = new URL(`${protocol}://${host}`);
+
+      if (forwardedUrl.hostname === '0.0.0.0') {
+        forwardedUrl.hostname = 'localhost';
+      }
+
+      if (process.env.NODE_ENV === 'production' && isLoopbackHostname(forwardedUrl.hostname)) {
+        if (configuredPublicOrigin) {
+          return configuredPublicOrigin;
+        }
+
+        if (browserHeaderOrigin && !isLoopbackOrigin(browserHeaderOrigin)) {
+          return browserHeaderOrigin;
+        }
+
+        if (!isLoopbackHostname(requestUrl.hostname)) {
+          return requestUrl.origin;
+        }
+      }
+
+      if (isLoopbackHostname(forwardedUrl.hostname)) {
+        forwardedUrl.protocol = 'http:';
+      }
+
+      const forwardedOrigin = forwardedUrl.origin;
+
+      return forwardedOrigin;
+    } catch {
+      // Fallback to request URL origin below.
+    }
+  }
+
   if (requestUrl.hostname === '0.0.0.0') {
     return `http://localhost:${requestUrl.port || '3000'}`;
+  }
+
+  if (process.env.NODE_ENV === 'production' && isLoopbackHostname(requestUrl.hostname)) {
+    if (configuredPublicOrigin) {
+      return configuredPublicOrigin;
+    }
+
+    if (browserHeaderOrigin && !isLoopbackOrigin(browserHeaderOrigin)) {
+      return browserHeaderOrigin;
+    }
+  }
+
+  if (isLoopbackHostname(requestUrl.hostname)) {
+    return `http://${requestUrl.hostname}:${requestUrl.port || '3000'}`;
   }
 
   return requestUrl.origin;
@@ -53,8 +189,8 @@ function buildMobileRedirect(redirectUrl: string, errorCode: string) {
   return parsed.toString();
 }
 
-function buildWebLoginRedirect(requestUrl: URL, errorCode: string, nextPath: string) {
-  const loginUrl = new URL('/login', requestUrl.origin);
+function buildWebLoginRedirect(requestOrigin: string, errorCode: string, nextPath: string) {
+  const loginUrl = new URL('/login', requestOrigin);
   loginUrl.searchParams.set('error', errorCode);
 
   if (nextPath !== '/') {
@@ -69,7 +205,7 @@ export async function GET(request: Request) {
   const redirectTarget = requestUrl.searchParams.get('redirect')?.trim() || '';
   const nextParam = requestUrl.searchParams.get('next');
   const nextPath = isSafeInternalPath(nextParam) ? nextParam : '/';
-  const requestOrigin = getSanitizedRequestOrigin(requestUrl);
+  const requestOrigin = getSanitizedRequestOrigin(request, requestUrl);
 
   const isMobileFlow = redirectTarget.length > 0;
 
@@ -89,7 +225,7 @@ export async function GET(request: Request) {
     }
 
     return NextResponse.redirect(
-      buildWebLoginRedirect(requestUrl, 'missing_supabase_env', nextPath)
+      buildWebLoginRedirect(requestOrigin, 'missing_supabase_env', nextPath)
     );
   }
 
@@ -141,7 +277,7 @@ export async function GET(request: Request) {
     }
 
     return NextResponse.redirect(
-      buildWebLoginRedirect(requestUrl, 'oauth_start_failed', nextPath)
+      buildWebLoginRedirect(requestOrigin, 'oauth_start_failed', nextPath)
     );
   }
 

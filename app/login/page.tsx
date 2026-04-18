@@ -126,6 +126,8 @@ export default function LoginPage() {
       oauth_exchange_failed:
         'Google sign-in session could not be created. If you use Brave, disable Shields for this site and try again.',
       oauth_user_missing: 'Google account details could not be loaded. Please try again.',
+      oauth_callback_unexpected:
+        'Google sign-in failed due to a temporary server issue. Please try again in a moment.',
     };
 
     setAuthError(
