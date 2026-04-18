@@ -194,7 +194,7 @@ export default function ProductGrid({
           <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
             Sponsored
           </p>
-          <div className="max-h-[360px] overflow-hidden rounded-md">
+          <div className="max-h-[160px] sm:max-h-[260px] overflow-hidden rounded-md">
             <AdSenseInlineAd
               adSlot="3466919594"
               adFormat="fluid"

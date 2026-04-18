@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -267,6 +267,7 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
   const [isImageViewerOpen, setIsImageViewerOpen] = useState(false);
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
   const [isOpeningChat, setIsOpeningChat] = useState(false);
+  const openingRef = useRef(false);
   const [headerLocation, setHeaderLocation] = useState<string | null>(null);
   const [headerSearchQuery, setHeaderSearchQuery] = useState('');
   const [isPostFlowOpen, setIsPostFlowOpen] = useState(false);
@@ -605,7 +606,19 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
       return;
     }
 
-    void handleMessageSeller(reserveMessage);
+    startChatGuarded(reserveMessage);
+  };
+
+  const startChatGuarded = (initialMessage?: string) => {
+    if (!product.ownerId || openingRef.current || isOpeningChat) {
+      return;
+    }
+
+    openingRef.current = true;
+    const p = handleMessageSeller(initialMessage);
+    Promise.resolve(p).finally(() => {
+      openingRef.current = false;
+    });
   };
 
   const handleHeaderManualLocation = useCallback((city: string) => {
@@ -1093,7 +1106,7 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
               </div>
 
               <Button
-                onClick={() => void handleMessageSeller()}
+                onClick={() => startChatGuarded()}
                 disabled={isOpeningChat || !product.ownerId}
                 className="mt-4 h-11 w-full gap-2 rounded-xl bg-accent text-accent-foreground hover:bg-accent/80 disabled:cursor-not-allowed disabled:opacity-70"
               >

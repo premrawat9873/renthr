@@ -89,11 +89,7 @@ export default function RootLayout({
           data-ad-client="ca-pub-9411649869227225"
         ></amp-auto-ads>
         <Providers>{children}</Providers>
-        <div className="w-full px-4 pb-6">
-          <div className="mx-auto w-full max-w-6xl">
-            <AdSenseInlineAd adSlot="2120281974" />
-          </div>
-        </div>
+        {/* Removed bottom global AdSense slot to avoid extra whitespace below page footer when ads fail to load. */}
         <Analytics />
       </body>
     </html>

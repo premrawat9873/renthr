@@ -204,6 +204,7 @@ export default function ChatPageClient({
   const [isLoadingOlder, setIsLoadingOlder] = useState(false);
   const [isRefreshingConversations, setIsRefreshingConversations] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const isSendingRef = useRef(false);
 
   const activeConversation = useMemo(
     () =>
@@ -460,7 +461,7 @@ export default function ChatPageClient({
   };
 
   const handleSendMessage = async () => {
-    if (!activeConversationId || isSending) {
+    if (!activeConversationId || isSendingRef.current || isSending) {
       return;
     }
 
@@ -469,6 +470,7 @@ export default function ChatPageClient({
       return;
     }
 
+    isSendingRef.current = true;
     setIsSending(true);
 
     try {
@@ -520,6 +522,7 @@ export default function ChatPageClient({
       });
     } finally {
       setIsSending(false);
+      isSendingRef.current = false;
     }
   };
 

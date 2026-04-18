@@ -22,10 +22,9 @@ type Props = {
 
 const REASONS = [
   "Spam",
-  "Fraud or scam",
-  "Harassment or abuse",
   "Inappropriate content",
-  "Fake listing/profile",
+  "Fraud or scam",
+  "Harassment",
   "Other",
 ] as const;
 
@@ -47,6 +46,17 @@ export default function ReportActionButton({
 
   const handleSubmit = async () => {
     if (submitting) {
+      return;
+    }
+
+    // Validation: reason required; details required when Other selected
+    if (!reason) {
+      toast({ title: "Choose a reason", description: "Please select a reason.", variant: "destructive" });
+      return;
+    }
+
+    if (reason === 'Other' && details.trim().length === 0) {
+      toast({ title: "Provide details", description: "Please describe the issue for 'Other'.", variant: "destructive" });
       return;
     }
 
@@ -121,23 +131,27 @@ export default function ReportActionButton({
           <DialogTitle>{heading}</DialogTitle>
 
           <div className="space-y-4">
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground">Reason</label>
-              <select
-                value={reason}
-                onChange={(event) => setReason(event.target.value)}
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              >
-                {REASONS.map((value) => (
-                  <option key={value} value={value}>
-                    {value}
-                  </option>
-                ))}
-              </select>
-            </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-foreground">Reason</label>
+                <div className="space-y-2">
+                  {REASONS.map((value) => (
+                    <label key={value} className="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        name="report-reason"
+                        value={value}
+                        checked={reason === value}
+                        onChange={(e) => setReason(e.target.value)}
+                        className="h-4 w-4"
+                      />
+                      <span className="text-sm">{value}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
 
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground">Details (optional)</label>
+              <label className="text-sm font-medium text-foreground">Details {reason === 'Other' ? '(required)' : '(optional)'}</label>
               <Textarea
                 value={details}
                 onChange={(event) => setDetails(event.target.value)}
