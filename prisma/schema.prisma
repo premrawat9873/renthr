@@ -40,6 +40,11 @@ enum MessageType {
   SYSTEM
 }
 
+enum UserRole {
+  USER
+  ADMIN
+}
+
 enum RentUnit {
   HOURLY
   DAILY
@@ -68,6 +73,8 @@ model User {
   otpExpiresAt   DateTime?
   otpRequestedAt DateTime?
 
+  role           UserRole  @default(USER)
+
   isVerified         Boolean            @default(false)
   verificationStatus VerificationStatus @default(UNVERIFIED)
 
@@ -84,6 +91,7 @@ model User {
 
   posts             Post[]
   addresses         Address[]
+  reports           Report[]
   reviewsWritten    Review[]                  @relation("ReviewerReviews")
   reviewsReceived   Review[]                  @relation("RevieweeReviews")
   sentMessages      Message[]                 @relation("MessageSender")
@@ -360,4 +368,25 @@ model WishlistItem {
 
   @@unique([userId, postId])
   @@index([postId])
+}
+
+model Report {
+  id         Int      @id @default(autoincrement())
+  reporterId Int
+  reporter   User     @relation(fields: [reporterId], references: [id], onDelete: Cascade)
+
+  targetType String   @db.VarChar(16)
+  targetId   Int
+
+  reason     String   @db.VarChar(120)
+  details    String?  @db.Text
+
+  status     String   @db.VarChar(20) @default("OPEN")
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([reporterId, targetType, targetId], map: "Report_unique_reporter_target_idx")
+  @@index([targetType, targetId], map: "Report_target_idx")
+  @@index([createdAt], map: "Report_createdAt_idx")
 }

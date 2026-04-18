@@ -44,6 +44,7 @@ import { CATEGORIES } from '@/data/mockData';
 import type { ListingProductPayload } from '@/data/listings';
 import { formatPrice, type RentDuration } from '@/data/marketplaceData';
 import { Button } from '@/components/ui/button';
+import { selectCurrentUser } from '@/store/slices/authSlice';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Textarea } from '@/components/ui/textarea';
@@ -601,6 +602,45 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
     }
   };
 
+  const currentUser = useAppSelector(selectCurrentUser);
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    void (async () => {
+      try {
+        const res = await fetch('/api/admin/is-admin');
+        if (!res.ok) return;
+        const json = await res.json();
+        if (mounted) setIsAdmin(Boolean(json?.isAdmin));
+      } catch {
+        // ignore
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const handleAdminDeleteListing = async () => {
+    if (!confirm('Delete this listing? This cannot be undone.')) return;
+
+    try {
+      const res = await fetch(`/api/listings/${product.id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      const payload = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(payload?.error || 'Unable to delete listing.');
+
+      toast({ title: 'Listing deleted', description: 'The listing has been removed.' });
+      router.push('/');
+    } catch (error) {
+      toast({ title: 'Could not delete', description: error instanceof Error ? error.message : String(error), variant: 'destructive' });
+    }
+  };
+
   const handleReserve = () => {
     if (!canReserve) {
       return;
@@ -1126,6 +1166,11 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
                   buttonLabel="Report Listing"
                   variant="outline"
                 />
+                  {isAdmin ? (
+                    <Button variant="destructive" size="sm" onClick={() => void handleAdminDeleteListing()}>
+                      Delete listing
+                    </Button>
+                  ) : null}
                 {product.ownerId ? (
                   <ReportActionButton
                     targetType="user"

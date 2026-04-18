@@ -6,6 +6,7 @@ import { ArrowLeft, Calendar, CheckCircle2, Package, Star } from 'lucide-react';
 
 import UserListingsGrid from '@/components/marketplace/UserListingsGrid';
 import ReportActionButton from '@/components/marketplace/ReportActionButton';
+import AdminUserActions from '@/components/marketplace/AdminUserActions';
 import { Button } from '@/components/ui/button';
 import { formatTimeAgo } from '@/data/marketplaceData';
 import {
@@ -13,6 +14,8 @@ import {
   getPublicListingUserProfileById,
   getPublicUserReviewHighlightsByUserId,
 } from '@/lib/listings';
+import { getCurrentUserInfo } from '@/lib/current-user';
+import { isCurrentUserAdmin } from '@/lib/admin';
 import { getProductHref } from '@/lib/product-url';
 
 type ProfilePageParams = {
@@ -59,6 +62,9 @@ export default async function PublicProfilePage({
   if (!profile) {
     notFound();
   }
+
+  const currentUser = await getCurrentUserInfo();
+  const showAdminControls = currentUser ? await isCurrentUserAdmin() : false;
 
   const [products, recentReviews] = await Promise.all([
     getMarketplaceListingProductsByUserId(profile.id),
@@ -162,6 +168,14 @@ export default async function PublicProfilePage({
                     buttonLabel="Report User"
                     variant="outline"
                   />
+                  {showAdminControls ? (
+                    // Admin-only actions (client component)
+                    <div className="ml-2">
+                      {/* AdminUserActions is a client component */}
+                      {/* @ts-ignore-next-line */}
+                      <AdminUserActions userId={profile.id} />
+                    </div>
+                  ) : null}
                 </div>
               </div>
             </div>

@@ -2,6 +2,8 @@ import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 
 import { resolveAuthenticatedUserId } from "@/lib/address-utils";
+import { getCurrentUserInfo } from "@/lib/current-user";
+import { isCurrentUserAdmin } from "@/lib/admin";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -258,7 +260,11 @@ export async function DELETE(
       return NextResponse.json({ error: "Listing not found." }, { status: 404 });
     }
 
-    if (listing.authorId !== userId) {
+    // Allow owners or site admins to delete listings
+    const currentUser = await getCurrentUserInfo();
+    const isAdmin = currentUser ? await isCurrentUserAdmin() : false;
+
+    if (!isAdmin && listing.authorId !== userId) {
       return NextResponse.json(
         { error: "You are not allowed to delete this listing." },
         { status: 403 }

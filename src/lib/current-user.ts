@@ -18,6 +18,7 @@ export type CurrentUserInfo = {
   email: string;
   name: string | null;
   avatarUrl: string | null;
+  role?: 'USER' | 'ADMIN' | null;
 };
 
 function isMissingColumnError(error: unknown) {
@@ -51,6 +52,7 @@ export async function getCurrentUserInfo(): Promise<CurrentUserInfo | null> {
       email: true,
       name: true,
       avatarUrl: true,
+      role: true,
       sessionRevokedAt: true,
     } as const;
     const fallbackUserSelect = {
@@ -58,6 +60,7 @@ export async function getCurrentUserInfo(): Promise<CurrentUserInfo | null> {
       email: true,
       name: true,
       avatarUrl: true,
+      role: true,
     } as const;
     let user: unknown;
 
@@ -93,6 +96,7 @@ export async function getCurrentUserInfo(): Promise<CurrentUserInfo | null> {
       email?: string;
       name?: string | null;
       avatarUrl?: string | null;
+      role?: 'USER' | 'ADMIN' | null;
     }) | null;
     const tokenIssuedAtMs = customSession.iat * 1000;
     if (
@@ -107,6 +111,7 @@ export async function getCurrentUserInfo(): Promise<CurrentUserInfo | null> {
       email: userWithRevocation?.email ?? customSession.email.toLowerCase(),
       name: userWithRevocation?.name ?? customSession.name ?? null,
       avatarUrl: userWithRevocation?.avatarUrl ?? null,
+      role: (userWithRevocation?.role as 'USER' | 'ADMIN') ?? 'USER',
     };
   }
 
@@ -156,8 +161,8 @@ export async function getCurrentUserInfo(): Promise<CurrentUserInfo | null> {
   const supabaseAvatarUrl = getAvatarUrlFromMetadata(supabaseUser.user_metadata);
   const dbUser = await prisma.user.findUnique({
     where: { email: normalizedEmail },
-    select: { id: true, email: true, name: true, avatarUrl: true },
-  });
+    select: { id: true, email: true, name: true, avatarUrl: true, role: true } as any,
+  } as any);
 
   const metadataName =
     typeof supabaseUser.user_metadata?.name === "string"
@@ -178,5 +183,6 @@ export async function getCurrentUserInfo(): Promise<CurrentUserInfo | null> {
     email: dbUser?.email ?? normalizedEmail,
     name: dbUser?.name ?? metadataName ?? null,
     avatarUrl: dbUser?.avatarUrl ?? supabaseAvatarUrl ?? null,
+    role: ((dbUser as any)?.role as 'USER' | 'ADMIN') ?? 'USER',
   };
 }
