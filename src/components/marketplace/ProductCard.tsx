@@ -7,6 +7,7 @@ import {
   RentDuration,
 } from "@/data/marketplaceData";
 import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { MapPin, Clock, Heart, Star, Tag, CalendarClock } from "lucide-react";
 import ImageCarousel from "./ImageCarousel";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
@@ -17,6 +18,7 @@ import {
 } from "@/store/slices/wishlistSlice";
 import { toast } from "@/hooks/use-toast";
 import { getProductHref } from "@/lib/product-url";
+import { resolveProfileAvatarUrl } from "@/lib/profile-avatar";
 
 interface Props {
   product: Product;
@@ -35,6 +37,20 @@ function formatDistanceLabel(distance: number) {
   }
 
   return `${distance.toFixed(1)} km`;
+}
+
+function getOwnerInitials(name: string) {
+  const segments = name
+    .split(" ")
+    .map((segment) => segment.trim())
+    .filter(Boolean)
+    .slice(0, 2);
+
+  if (segments.length === 0) {
+    return "U";
+  }
+
+  return segments.map((segment) => segment[0]?.toUpperCase() ?? "").join("");
 }
 
 export default function ProductCard({
@@ -58,6 +74,9 @@ export default function ProductCard({
   const ratingValue = product.rating;
   const hasReviews = typeof ratingValue === "number" && reviewCount > 0;
   const productHref = getProductHref(product);
+  const ownerName = product.ownerName?.trim() || "Seller";
+  const ownerProfileHref = product.ownerId ? `/profile/${product.ownerId}` : null;
+  const ownerAvatarUrl = resolveProfileAvatarUrl(product.ownerImage);
 
   return (
     <div
@@ -173,6 +192,31 @@ export default function ProductCard({
             </span>
           </div>
         )}
+
+        <div className="flex items-center gap-2 pt-0.5">
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              if (!ownerProfileHref) {
+                return;
+              }
+
+              router.push(ownerProfileHref);
+            }}
+            disabled={!ownerProfileHref}
+            className="inline-flex items-center gap-2 rounded-full transition-opacity hover:opacity-90 disabled:cursor-default disabled:opacity-100"
+            aria-label={ownerProfileHref ? `View ${ownerName} profile` : undefined}
+          >
+            <Avatar className="h-7 w-7 border border-border/70">
+              <AvatarImage src={ownerAvatarUrl || undefined} alt={ownerName} />
+              <AvatarFallback className="text-[11px] font-semibold text-primary">
+                {getOwnerInitials(ownerName)}
+              </AvatarFallback>
+            </Avatar>
+          </button>
+          <p className="min-w-0 truncate text-xs font-medium text-muted-foreground">{ownerName}</p>
+        </div>
 
         {/* Meta */}
         <div className="mt-auto flex items-center justify-between gap-2 pt-1 text-xs text-muted-foreground">

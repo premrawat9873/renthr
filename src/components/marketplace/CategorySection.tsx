@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Category } from "@/data/marketplaceData";
 import { CATEGORIES, VISIBLE_COUNT } from "@/data/mockData";
 import {
@@ -9,8 +9,9 @@ import {
 import { LucideIcon } from "lucide-react";
 
 interface Props {
-  selected: string | null;
-  onSelect: (id: string | null) => void;
+  selected: string[];
+  onToggle: (id: string) => void;
+  onClear: () => void;
 }
 
 const CATEGORY_ICONS: Record<string, LucideIcon> = {
@@ -36,17 +37,19 @@ const CATEGORY_ICONS: Record<string, LucideIcon> = {
   office: Monitor,
 };
 
-export default function CategorySection({ selected, onSelect }: Props) {
+export default function CategorySection({ selected, onToggle, onClear }: Props) {
   const [showMore, setShowMore] = useState(false);
   const visible = CATEGORIES.slice(0, VISIBLE_COUNT);
   const hidden = CATEGORIES.slice(VISIBLE_COUNT);
-  const isAllSelected = selected == null;
+  const selectedLookup = useMemo(() => new Set(selected), [selected]);
+  const isAllSelected = selected.length === 0;
+  const hiddenSelectedCount = hidden.filter((cat) => selectedLookup.has(cat.id)).length;
 
   return (
     <section className="py-5">
       <div className="flex flex-wrap gap-2">
         <button
-          onClick={() => onSelect(null)}
+          onClick={onClear}
           className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium transition-colors duration-150 border ${
             isAllSelected
               ? "bg-accent text-foreground border-primary/55"
@@ -59,15 +62,26 @@ export default function CategorySection({ selected, onSelect }: Props) {
           <CategoryPill
             key={cat.id}
             cat={cat}
-            active={selected === cat.id}
-            onClick={() => onSelect(selected === cat.id ? null : cat.id)}
+            active={selectedLookup.has(cat.id)}
+            onClick={() => onToggle(cat.id)}
           />
         ))}
         <button
           onClick={() => setShowMore(true)}
-          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-medium border border-border text-foreground/80 hover:bg-accent/45 hover:text-foreground hover:border-primary/35 transition-colors duration-150"
+          className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-medium border transition-colors duration-150 ${
+            showMore || hiddenSelectedCount > 0
+              ? "bg-accent text-foreground border-primary/55"
+              : "border-border text-foreground/80 hover:bg-accent/45 hover:text-foreground hover:border-primary/35"
+          }`}
         >
-          Others +{hidden.length}
+          Others
+          {hiddenSelectedCount > 0 ? (
+            <span className="rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold text-primary-foreground">
+              {hiddenSelectedCount}
+            </span>
+          ) : (
+            <span className="text-xs text-muted-foreground">+{hidden.length}</span>
+          )}
         </button>
       </div>
 
@@ -86,10 +100,27 @@ export default function CategorySection({ selected, onSelect }: Props) {
                 <CategoryPill
                   key={cat.id}
                   cat={cat}
-                  active={selected === cat.id}
-                  onClick={() => { onSelect(selected === cat.id ? null : cat.id); setShowMore(false); }}
+                  active={selectedLookup.has(cat.id)}
+                  onClick={() => onToggle(cat.id)}
                 />
               ))}
+            </div>
+
+            <div className="mt-5 flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={onClear}
+                className="text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+              >
+                Clear all
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowMore(false)}
+                className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+              >
+                Done
+              </button>
             </div>
           </div>
         </div>

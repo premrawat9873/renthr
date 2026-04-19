@@ -1,4 +1,5 @@
 import type { MetadataRoute } from 'next';
+import { footerPageOrder, getFooterPagePath } from '@/lib/footer-pages';
 import { getMarketplaceListingProductsPayload } from '@/lib/listings';
 import { getProductHref } from '@/lib/product-url';
 import { getSiteUrl } from '@/lib/site';
@@ -38,7 +39,20 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: 'monthly',
       priority: 0.4,
     },
+    {
+      url: `${siteUrl}/sitemap`,
+      lastModified: new Date(),
+      changeFrequency: 'monthly',
+      priority: 0.3,
+    },
   ];
+
+  const footerRoutes: MetadataRoute.Sitemap = footerPageOrder.map((slug) => ({
+    url: `${siteUrl}${getFooterPagePath(slug)}`,
+    lastModified: new Date(),
+    changeFrequency: 'monthly',
+    priority: 0.35,
+  }));
 
   const productRoutes: MetadataRoute.Sitemap = products.map((product) => ({
     url: `${siteUrl}${getProductHref(product)}`,
@@ -47,5 +61,5 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.8,
   }));
 
-  return [...staticRoutes, ...productRoutes];
+  return [...staticRoutes, ...footerRoutes, ...productRoutes];
 }

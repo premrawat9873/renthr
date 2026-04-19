@@ -102,3 +102,14 @@ export async function POST(request: Request) {
     );
   }
 }
+
+export async function GET() {
+  return NextResponse.json(
+    { error: 'Method Not Allowed' },
+    { status: 405 }
+  );
+}
+
+export async function OPTIONS() {
+  return NextResponse.json(null, { status: 204 });
+}

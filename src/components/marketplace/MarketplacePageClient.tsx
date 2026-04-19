@@ -27,7 +27,7 @@ import {
   selectPriceRange,
   selectRentDurations,
   selectSearchQuery,
-  selectSelectedCategory,
+  selectSelectedCategories,
   selectSort,
   selectUserCoords,
   selectUserLocation,
@@ -36,7 +36,7 @@ import {
   setPriceRange,
   setRentDurations,
   setSearchQuery,
-  setSelectedCategory,
+  setSelectedCategories,
   setSort,
   setUserCoords,
   setUserLocation,
@@ -244,7 +244,7 @@ export function MarketplacePageClient({
   const userLocation = useAppSelector(selectUserLocation);
   const userCoords = useAppSelector(selectUserCoords);
   const searchQuery = useAppSelector(selectSearchQuery);
-  const selectedCategory = useAppSelector(selectSelectedCategory);
+  const selectedCategories = useAppSelector(selectSelectedCategories);
   const filter = useAppSelector(selectListingFilter);
   const rentDurations = useAppSelector(selectRentDurations);
   const sort = useAppSelector(selectSort);
@@ -258,7 +258,7 @@ export function MarketplacePageClient({
   const safeUserLocation = isHydrated ? userLocation : null;
   const safeUserCoords = isHydrated ? userCoords : null;
   const safeSearchQuery = isHydrated ? searchQuery : '';
-  const safeSelectedCategory = isHydrated ? selectedCategory : null;
+  const safeSelectedCategories = isHydrated ? selectedCategories : [];
   const safeFilter = isHydrated ? filter : 'all';
   const safeRentDurations = isHydrated ? rentDurations : EMPTY_DURATIONS;
   const safeSort = isHydrated ? sort : 'distance';
@@ -287,7 +287,7 @@ export function MarketplacePageClient({
   const listingQuery = useMemo(
     () => ({
       searchQuery: safeSearchQuery.trim(),
-      selectedCategory: safeSelectedCategory,
+      selectedCategories: [...safeSelectedCategories].sort(),
       filter: safeFilter,
       rentDurations: [...safeRentDurations].sort(),
       sort: effectiveSort,
@@ -303,7 +303,7 @@ export function MarketplacePageClient({
       safePriceRange,
       safeRentDurations,
       safeSearchQuery,
-      safeSelectedCategory,
+      safeSelectedCategories,
     ]
   );
 
@@ -320,8 +320,8 @@ export function MarketplacePageClient({
         params.set('q', listingQuery.searchQuery);
       }
 
-      if (listingQuery.selectedCategory) {
-        params.set('category', listingQuery.selectedCategory);
+      if (listingQuery.selectedCategories.length > 0) {
+        params.set('categories', listingQuery.selectedCategories.join(','));
       }
 
       if (listingQuery.filter !== 'all') {
@@ -744,7 +744,17 @@ export function MarketplacePageClient({
           </div>
         )}
 
-        <CategorySection selected={safeSelectedCategory} onSelect={(category) => dispatch(setSelectedCategory(category))} />
+        <CategorySection
+          selected={safeSelectedCategories}
+          onClear={() => dispatch(setSelectedCategories([]))}
+          onToggle={(categoryId) => {
+            const nextSelectedCategories = safeSelectedCategories.includes(categoryId)
+              ? safeSelectedCategories.filter((value) => value !== categoryId)
+              : [...safeSelectedCategories, categoryId];
+
+            dispatch(setSelectedCategories(nextSelectedCategories));
+          }}
+        />
 
         <FilterBar
           filter={safeFilter}

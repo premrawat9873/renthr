@@ -224,6 +224,11 @@ type ReviewSummary = {
 
 type ChatLaunchAction = 'message' | 'reserve';
 
+type ChatLaunchOptions = {
+  initialMessage?: string;
+  draftMessage?: string;
+};
+
 const EMPTY_REVIEW_SUMMARY: ReviewSummary = {
   reviewCount: 0,
   averageRating: null,
@@ -268,6 +273,7 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [isImageViewerOpen, setIsImageViewerOpen] = useState(false);
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
+  const [isReserveDialogOpen, setIsReserveDialogOpen] = useState(false);
   const [activeChatAction, setActiveChatAction] = useState<ChatLaunchAction | null>(null);
   const openingRef = useRef(false);
   const [headerLocation, setHeaderLocation] = useState<string | null>(null);
@@ -562,7 +568,7 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
     total,
   ]);
 
-  const handleMessageSeller = async (initialMessage?: string) => {
+  const handleMessageSeller = async (options?: ChatLaunchOptions) => {
     if (!product.ownerId) {
       toast({
         title: 'Seller unavailable',
@@ -581,7 +587,9 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
         body: JSON.stringify({
           recipientId: product.ownerId,
           postId: product.id,
-          ...(initialMessage?.trim() ? { initialMessage: initialMessage.trim() } : {}),
+          ...(options?.initialMessage?.trim()
+            ? { initialMessage: options.initialMessage.trim() }
+            : {}),
         }),
       });
 
@@ -599,7 +607,16 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
         throw new Error(payload.error || 'Unable to start chat right now.');
       }
 
-      router.push(`/messages?conversation=${encodeURIComponent(payload.conversation.id)}`);
+      const query = new URLSearchParams({
+        conversation: payload.conversation.id,
+      });
+
+      const trimmedDraft = options?.draftMessage?.trim();
+      if (trimmedDraft) {
+        query.set('draft', trimmedDraft);
+      }
+
+      router.push(`/messages?${query.toString()}`);
     } catch (error) {
       toast({
         title: 'Could not open chat',
@@ -687,21 +704,35 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
   };
 
   const handleReserve = () => {
-    if (!canReserve) {
+    if (!product.ownerId) {
       return;
     }
 
-    startChatGuarded('reserve', reserveMessage);
+    if (!hasRentalPricing) {
+      startChatGuarded('reserve', { draftMessage: reserveMessage });
+      return;
+    }
+
+    setIsReserveDialogOpen(true);
   };
 
-  const startChatGuarded = (action: ChatLaunchAction, initialMessage?: string) => {
+  const handleReserveChatOpen = () => {
+    if (!canReserve || !product.ownerId) {
+      return;
+    }
+
+    setIsReserveDialogOpen(false);
+    startChatGuarded('reserve', { draftMessage: reserveMessage });
+  };
+
+  const startChatGuarded = (action: ChatLaunchAction, options?: ChatLaunchOptions) => {
     if (!product.ownerId || openingRef.current || isOpeningChat) {
       return;
     }
 
     openingRef.current = true;
     setActiveChatAction(action);
-    const p = handleMessageSeller(initialMessage);
+    const p = handleMessageSeller(options);
     Promise.resolve(p).finally(() => {
       openingRef.current = false;
       setActiveChatAction(null);
@@ -1658,7 +1689,7 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
 
                 <Button
                   onClick={handleReserve}
-                  disabled={!canReserve || isOpeningChat || !product.ownerId}
+                  disabled={isOpeningChat || !product.ownerId}
                   className="h-12 w-full rounded-xl bg-gradient-to-r from-primary to-primary/90 text-base font-semibold text-primary-foreground shadow-lg shadow-primary/25 transition-all duration-200 hover:from-primary/95 hover:to-primary/85 hover:shadow-xl hover:shadow-primary/30 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-70"
                 >
                   {isOpeningReserveChat
@@ -1798,6 +1829,152 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
         </DialogContent>
       </Dialog>
 
+      {hasRentalPricing ? (
+        <Dialog open={isReserveDialogOpen} onOpenChange={setIsReserveDialogOpen}>
+          <DialogContent className="w-[calc(100vw-2rem)] max-w-xl rounded-2xl border border-border/70 bg-background p-0 shadow-2xl">
+            <DialogTitle className="border-b border-border/70 px-5 py-4 text-left text-lg font-semibold text-foreground">
+              Reserve {product.title}
+            </DialogTitle>
+
+            <div className="space-y-4 px-5 pb-5 pt-4">
+              <p className="text-sm text-muted-foreground">
+                Choose your preferred rental slot. We&apos;ll open chat and place this as a draft message.
+              </p>
+
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {availablePricing.map((option) => {
+                  const active = selectedPricing === option.id;
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => setSelectedPricing(option.id)}
+                      className={cn(
+                        'rounded-xl border px-3 py-2 text-left transition-all',
+                        active
+                          ? 'border-primary bg-primary/10 text-primary'
+                          : 'border-border/70 bg-background hover:border-primary/40'
+                      )}
+                    >
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em]">{option.label}</p>
+                      <p className="mt-1 text-sm font-semibold">
+                        {formatPrice(option.price)}
+                        <span className="ml-1 text-xs font-medium text-muted-foreground">{option.suffix}</span>
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {selectedOption ? (
+                isHourlySelected ? (
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <label className="block sm:col-span-1">
+                      <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Date</span>
+                      <input
+                        type="date"
+                        value={startDate}
+                        onChange={(event) => {
+                          setStartDate(event.target.value);
+                          setEndDate(event.target.value);
+                        }}
+                        className="mt-1.5 w-full rounded-xl border border-border/60 bg-accent/45 px-3 py-2.5 text-sm font-medium transition-all focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      />
+                    </label>
+
+                    <label className="block sm:col-span-1">
+                      <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">From Time</span>
+                      <input
+                        type="time"
+                        value={startTime}
+                        onChange={(event) => setStartTime(event.target.value)}
+                        className="mt-1.5 w-full rounded-xl border border-border/60 bg-accent/45 px-3 py-2.5 text-sm font-medium transition-all focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      />
+                    </label>
+
+                    <label className="block sm:col-span-1">
+                      <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">To Time</span>
+                      <input
+                        type="time"
+                        value={endTime}
+                        min={startTime}
+                        onChange={(event) => setEndTime(event.target.value)}
+                        className="mt-1.5 w-full rounded-xl border border-border/60 bg-accent/45 px-3 py-2.5 text-sm font-medium transition-all focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      />
+                    </label>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className="block">
+                      <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Rent From</span>
+                      <input
+                        type="date"
+                        value={startDate}
+                        onChange={(event) => setStartDate(event.target.value)}
+                        className="mt-1.5 w-full rounded-xl border border-border/60 bg-accent/45 px-3 py-2.5 text-sm font-medium transition-all focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      />
+                    </label>
+
+                    <label className="block">
+                      <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Rent To</span>
+                      <input
+                        type="date"
+                        value={endDate}
+                        onChange={(event) => setEndDate(event.target.value)}
+                        className="mt-1.5 w-full rounded-xl border border-border/60 bg-accent/45 px-3 py-2.5 text-sm font-medium transition-all focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      />
+                    </label>
+                  </div>
+                )
+              ) : null}
+
+              {!isHourlyTimeRangeValid ? (
+                <p className="text-xs font-medium text-destructive">
+                  Choose a valid time window. The end time must be later than the start time.
+                </p>
+              ) : null}
+
+              <div className="rounded-xl border border-border/60 bg-accent/35 p-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                  Draft message preview
+                </p>
+                <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-foreground">
+                  {reserveMessage}
+                </p>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  This message will appear in the chat box. You can edit it before pressing send.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsReserveDialogOpen(false)}
+                  disabled={isOpeningChat}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleReserveChatOpen}
+                  disabled={!canReserve || isOpeningChat || !product.ownerId}
+                >
+                  {isOpeningReserveChat ? (
+                    <span className="inline-flex items-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Opening chat...
+                    </span>
+                  ) : (
+                    'Open Chat'
+                  )}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      ) : null}
+
       {hasRentalPricing && selectedOption && (
         <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-border/50 bg-card/95 p-4 backdrop-blur-md lg:hidden">
           <div className="flex items-center justify-between gap-4">
@@ -1811,7 +1988,7 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
             <button
               type="button"
               onClick={handleReserve}
-              disabled={!canReserve || isOpeningChat || !product.ownerId}
+              disabled={isOpeningChat || !product.ownerId}
               className="flex-1 rounded-xl bg-gradient-to-r from-primary to-primary/90 px-6 py-3.5 font-semibold text-primary-foreground shadow-lg shadow-primary/25 transition-all duration-200 hover:shadow-xl hover:shadow-primary/30 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-70"
             >
               {isOpeningReserveChat ? 'Opening chat...' : 'Reserve Now'}

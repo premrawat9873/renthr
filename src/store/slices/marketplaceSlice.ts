@@ -19,7 +19,7 @@ export interface MarketplaceState {
   userLocation: UserLocation | null;
   userCoords: UserCoords | null;
   searchQuery: string;
-  selectedCategory: string | null;
+  selectedCategories: string[];
   filter: ListingFilter;
   rentDurations: RentDuration[];
   sort: SortOption;
@@ -85,12 +85,30 @@ function normalizePriceRange(value: unknown): [number, number] {
   return [min, max];
 }
 
+function normalizeSelectedCategories(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    const normalized = value
+      .filter((item): item is string => typeof item === "string")
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
+
+    return Array.from(new Set(normalized));
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim();
+    return normalized ? [normalized] : [];
+  }
+
+  return [];
+}
+
 const initialState: MarketplaceState = {
   location: null,
   userLocation: null,
   userCoords: null,
   searchQuery: "",
-  selectedCategory: null,
+  selectedCategories: [],
   filter: "all",
   rentDurations: [],
   sort: "distance",
@@ -113,8 +131,8 @@ const marketplaceSlice = createSlice({
     setSearchQuery(state, action: PayloadAction<string>) {
       state.searchQuery = action.payload;
     },
-    setSelectedCategory(state, action: PayloadAction<string | null>) {
-      state.selectedCategory = action.payload;
+    setSelectedCategories(state, action: PayloadAction<string[]>) {
+      state.selectedCategories = normalizeSelectedCategories(action.payload);
     },
     setFilter(state, action: PayloadAction<ListingFilter>) {
       state.filter = action.payload;
@@ -138,7 +156,7 @@ const marketplaceSlice = createSlice({
     },
     clearFilters(state) {
       state.searchQuery = "";
-      state.selectedCategory = null;
+      state.selectedCategories = [];
       state.filter = "all";
       state.rentDurations = [];
       state.priceRange = [0, MAX_PRICE];
@@ -154,7 +172,7 @@ export const {
   setUserLocation,
   setUserCoords,
   setSearchQuery,
-  setSelectedCategory,
+  setSelectedCategories,
   setFilter,
   toggleRentDuration,
   setRentDurations,
@@ -171,8 +189,23 @@ export const selectLocation = (state: RootState) => state.marketplace.location;
 export const selectUserLocation = (state: RootState) => state.marketplace.userLocation;
 export const selectUserCoords = (state: RootState) => state.marketplace.userCoords;
 export const selectSearchQuery = (state: RootState) => state.marketplace.searchQuery ?? "";
-export const selectSelectedCategory = (state: RootState) =>
-  state.marketplace.selectedCategory ?? null;
+const selectRawSelectedCategories = (state: RootState): unknown => {
+  const marketplaceState = state.marketplace as unknown as Record<string, unknown>;
+
+  if (
+    Array.isArray(marketplaceState.selectedCategories) ||
+    typeof marketplaceState.selectedCategories === "string"
+  ) {
+    return marketplaceState.selectedCategories;
+  }
+
+  return marketplaceState.selectedCategory;
+};
+
+export const selectSelectedCategories = createSelector(
+  [selectRawSelectedCategories],
+  (selectedCategories) => normalizeSelectedCategories(selectedCategories)
+);
 
 const selectRawFilter = (state: RootState) => state.marketplace.filter;
 const selectRawRentDurations = (state: RootState) => state.marketplace.rentDurations;
@@ -193,15 +226,15 @@ export const selectPriceRange = createSelector([selectRawPriceRange], (priceRang
 export const selectHasActiveFilters = createSelector(
   [
     selectListingFilter,
-    selectSelectedCategory,
+    selectSelectedCategories,
     selectRentDurations,
     selectSearchQuery,
     selectPriceRange,
   ],
-  (filter, selectedCategory, rentDurations, searchQuery, priceRange) => {
+  (filter, selectedCategories, rentDurations, searchQuery, priceRange) => {
     return (
       filter !== "all" ||
-      selectedCategory !== null ||
+      selectedCategories.length > 0 ||
       rentDurations.length > 0 ||
       searchQuery !== "" ||
       priceRange[0] > 0 ||

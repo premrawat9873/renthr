@@ -8,6 +8,7 @@ import { getCurrentUserInfo } from '@/lib/current-user';
 
 type MessagesPageSearchParams = {
   conversation?: string;
+  draft?: string;
 };
 
 export const metadata: Metadata = {
@@ -68,6 +69,8 @@ export default async function MessagesPage({
   const params = await searchParams;
   const initialConversationId =
     typeof params.conversation === 'string' ? params.conversation : null;
+  const initialDraftMessage =
+    typeof params.draft === 'string' ? params.draft.slice(0, 2000) : null;
 
   return (
     <ChatPageClient
@@ -78,6 +81,7 @@ export default async function MessagesPage({
       }
       initialConversations={conversations}
       initialConversationId={initialConversationId}
+      initialDraftMessage={initialDraftMessage}
     />
   );
 }

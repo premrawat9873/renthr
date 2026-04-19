@@ -6,12 +6,10 @@ import {
   ArrowLeft,
   Loader2,
   MessageCircle,
-  Phone,
   Plus,
   RefreshCw,
   SendHorizontal,
   Smile,
-  Video,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -31,6 +29,7 @@ type ChatPageClientProps = {
   currentUserName: string;
   initialConversations: ChatConversationPayload[];
   initialConversationId: string | null;
+  initialDraftMessage?: string | null;
 };
 
 type LoadMessagesOptions = {
@@ -188,6 +187,7 @@ export default function ChatPageClient({
   currentUserName,
   initialConversations,
   initialConversationId,
+  initialDraftMessage,
 }: ChatPageClientProps) {
   const router = useRouter();
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
@@ -200,6 +200,7 @@ export default function ChatPageClient({
     Record<string, ChatMessagesPagePayload>
   >({});
   const [draftMessage, setDraftMessage] = useState('');
+  const [hasAppliedInitialDraft, setHasAppliedInitialDraft] = useState(false);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [isLoadingOlder, setIsLoadingOlder] = useState(false);
   const [isRefreshingConversations, setIsRefreshingConversations] = useState(false);
@@ -233,6 +234,17 @@ export default function ChatPageClient({
 
     router.push('/');
   };
+
+  const openProfile = useCallback(
+    (userId: string | null | undefined) => {
+      if (!userId) {
+        return;
+      }
+
+      router.push(`/profile/${encodeURIComponent(userId)}`);
+    },
+    [router]
+  );
 
   const loadConversations = useCallback(
     async (showSpinner: boolean) => {
@@ -368,6 +380,35 @@ export default function ChatPageClient({
 
     setActiveConversationId(conversations[0]?.id ?? null);
   }, [activeConversationId, conversations, initialConversationId]);
+
+  useEffect(() => {
+    const draft = initialDraftMessage?.trim();
+
+    if (hasAppliedInitialDraft) {
+      return;
+    }
+
+    if (!draft) {
+      setHasAppliedInitialDraft(true);
+      return;
+    }
+
+    if (!activeConversationId) {
+      return;
+    }
+
+    if (initialConversationId && activeConversationId !== initialConversationId) {
+      return;
+    }
+
+    setDraftMessage(draft);
+    setHasAppliedInitialDraft(true);
+  }, [
+    activeConversationId,
+    hasAppliedInitialDraft,
+    initialConversationId,
+    initialDraftMessage,
+  ]);
 
   useEffect(() => {
     if (!activeConversationId) {
@@ -597,7 +638,27 @@ export default function ChatPageClient({
                       )}
                     >
                       <div className="flex items-start gap-3">
-                        <div className="relative mt-0.5 h-11 w-11 shrink-0 overflow-hidden rounded-full border border-[#d9e4de] bg-[#e7efe9]">
+                        <div
+                          className="relative mt-0.5 h-11 w-11 shrink-0 overflow-hidden rounded-full border border-[#d9e4de] bg-[#e7efe9]"
+                          role={conversation.peer.id ? 'link' : undefined}
+                          tabIndex={conversation.peer.id ? 0 : undefined}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            openProfile(conversation.peer.id);
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              openProfile(conversation.peer.id);
+                            }
+                          }}
+                          aria-label={
+                            conversation.peer.id
+                              ? `View ${peerName} profile`
+                              : undefined
+                          }
+                        >
                           {conversation.peer.avatarUrl ? (
                             <img
                               src={conversation.peer.avatarUrl}
@@ -655,9 +716,14 @@ export default function ChatPageClient({
             ) : (
               <>
                 <header className="border-b border-[#e4ebe6] bg-white/95">
-                  <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-5">
+                  <div className="flex items-center gap-3 px-4 py-3 sm:px-5">
                     <div className="flex min-w-0 items-center gap-3">
-                      <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-full border border-[#d9e4de] bg-[#e7efe9]">
+                      <button
+                        type="button"
+                        onClick={() => openProfile(activeConversation.peer.id)}
+                        className="relative h-10 w-10 shrink-0 overflow-hidden rounded-full border border-[#d9e4de] bg-[#e7efe9] transition-transform hover:scale-[1.03]"
+                        aria-label={`View ${activeConversation.peer.name || 'user'} profile`}
+                      >
                         {activeConversation.peer.avatarUrl ? (
                           <img
                             src={activeConversation.peer.avatarUrl}
@@ -675,7 +741,7 @@ export default function ChatPageClient({
                             peerLikelyOnline ? 'bg-emerald-500' : 'bg-zinc-400'
                           )}
                         />
-                      </div>
+                      </button>
 
                       <div className="min-w-0">
                         <p className="truncate text-sm font-semibold text-foreground sm:text-base">
@@ -689,15 +755,6 @@ export default function ChatPageClient({
                               }`}
                         </p>
                       </div>
-                    </div>
-
-                    <div className="flex items-center gap-1">
-                      <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full text-muted-foreground hover:bg-[#eff4f0]">
-                        <Video className="h-4 w-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full text-muted-foreground hover:bg-[#eff4f0]">
-                        <Phone className="h-4 w-4" />
-                      </Button>
                     </div>
                   </div>
 
@@ -777,7 +834,12 @@ export default function ChatPageClient({
                               )}
                             >
                               {!message.mine ? (
-                                <div className="mb-5 h-8 w-8 shrink-0 overflow-hidden rounded-full border border-[#d9e4de] bg-[#e7efe9]">
+                                <button
+                                  type="button"
+                                  onClick={() => openProfile(message.senderId)}
+                                  className="mb-5 h-8 w-8 shrink-0 overflow-hidden rounded-full border border-[#d9e4de] bg-[#e7efe9]"
+                                  aria-label={`View ${message.senderName || 'user'} profile`}
+                                >
                                   {message.senderAvatarUrl ? (
                                     <img
                                       src={message.senderAvatarUrl}
@@ -789,7 +851,7 @@ export default function ChatPageClient({
                                       {getInitials(message.senderName || 'User')}
                                     </span>
                                   )}
-                                </div>
+                                </button>
                               ) : null}
 
                               <div
