@@ -222,6 +222,8 @@ type ReviewSummary = {
   };
 };
 
+type ChatLaunchAction = 'message' | 'reserve';
+
 const EMPTY_REVIEW_SUMMARY: ReviewSummary = {
   reviewCount: 0,
   averageRating: null,
@@ -266,7 +268,7 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [isImageViewerOpen, setIsImageViewerOpen] = useState(false);
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
-  const [isOpeningChat, setIsOpeningChat] = useState(false);
+  const [activeChatAction, setActiveChatAction] = useState<ChatLaunchAction | null>(null);
   const openingRef = useRef(false);
   const [headerLocation, setHeaderLocation] = useState<string | null>(null);
   const [headerSearchQuery, setHeaderSearchQuery] = useState('');
@@ -279,6 +281,9 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
   const [reviewRating, setReviewRating] = useState(0);
   const [reviewComment, setReviewComment] = useState('');
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
+  const isOpeningChat = activeChatAction != null;
+  const isOpeningMessageChat = activeChatAction === 'message';
+  const isOpeningReserveChat = activeChatAction === 'reserve';
 
   const images = product.images.length > 0 ? product.images : [product.image];
   const productHref = getProductHref(product);
@@ -567,8 +572,6 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
       return;
     }
 
-    setIsOpeningChat(true);
-
     try {
       const response = await fetch('/api/chat/conversations', {
         method: 'POST',
@@ -606,14 +609,12 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
             : 'Unable to open seller chat right now.',
         variant: 'destructive',
       });
-    } finally {
-      setIsOpeningChat(false);
     }
   };
 
   const [isAdmin, setIsAdmin] = useState(false);
   const [confirmingAdminDelete, setConfirmingAdminDelete] = useState(false);
-  const adminDeleteConfirmTimeoutRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const adminDeleteConfirmTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -636,7 +637,7 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
   useEffect(() => {
     return () => {
       if (adminDeleteConfirmTimeoutRef.current) {
-        window.clearTimeout(adminDeleteConfirmTimeoutRef.current);
+        clearTimeout(adminDeleteConfirmTimeoutRef.current);
         adminDeleteConfirmTimeoutRef.current = null;
       }
     };
@@ -647,10 +648,10 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
       setConfirmingAdminDelete(true);
 
       if (adminDeleteConfirmTimeoutRef.current) {
-        window.clearTimeout(adminDeleteConfirmTimeoutRef.current);
+        clearTimeout(adminDeleteConfirmTimeoutRef.current);
       }
 
-      adminDeleteConfirmTimeoutRef.current = window.setTimeout(() => {
+      adminDeleteConfirmTimeoutRef.current = setTimeout(() => {
         setConfirmingAdminDelete(false);
         adminDeleteConfirmTimeoutRef.current = null;
       }, 3000);
@@ -666,7 +667,7 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
 
     setConfirmingAdminDelete(false);
     if (adminDeleteConfirmTimeoutRef.current) {
-      window.clearTimeout(adminDeleteConfirmTimeoutRef.current);
+      clearTimeout(adminDeleteConfirmTimeoutRef.current);
       adminDeleteConfirmTimeoutRef.current = null;
     }
 
@@ -690,18 +691,20 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
       return;
     }
 
-    startChatGuarded(reserveMessage);
+    startChatGuarded('reserve', reserveMessage);
   };
 
-  const startChatGuarded = (initialMessage?: string) => {
+  const startChatGuarded = (action: ChatLaunchAction, initialMessage?: string) => {
     if (!product.ownerId || openingRef.current || isOpeningChat) {
       return;
     }
 
     openingRef.current = true;
+    setActiveChatAction(action);
     const p = handleMessageSeller(initialMessage);
     Promise.resolve(p).finally(() => {
       openingRef.current = false;
+      setActiveChatAction(null);
     });
   };
 
@@ -1192,16 +1195,16 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
               </div>
 
               <Button
-                onClick={() => startChatGuarded()}
+                onClick={() => startChatGuarded('message')}
                 disabled={isOpeningChat || !product.ownerId}
                 className="mt-4 h-11 w-full gap-2 rounded-xl bg-accent text-accent-foreground hover:bg-accent/80 disabled:cursor-not-allowed disabled:opacity-70"
               >
-                {isOpeningChat ? (
+                {isOpeningMessageChat ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <MessageCircle className="h-4 w-4" />
                 )}
-                {isOpeningChat ? 'Opening chat...' : 'Message'}
+                {isOpeningMessageChat ? 'Opening chat...' : 'Message'}
               </Button>
 
               <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -1658,7 +1661,7 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
                   disabled={!canReserve || isOpeningChat || !product.ownerId}
                   className="h-12 w-full rounded-xl bg-gradient-to-r from-primary to-primary/90 text-base font-semibold text-primary-foreground shadow-lg shadow-primary/25 transition-all duration-200 hover:from-primary/95 hover:to-primary/85 hover:shadow-xl hover:shadow-primary/30 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-70"
                 >
-                  {isOpeningChat
+                  {isOpeningReserveChat
                     ? 'Opening chat...'
                     : hasRentalPricing
                       ? 'Reserve'
@@ -1811,7 +1814,7 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
               disabled={!canReserve || isOpeningChat || !product.ownerId}
               className="flex-1 rounded-xl bg-gradient-to-r from-primary to-primary/90 px-6 py-3.5 font-semibold text-primary-foreground shadow-lg shadow-primary/25 transition-all duration-200 hover:shadow-xl hover:shadow-primary/30 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-70"
             >
-              {isOpeningChat ? 'Opening chat...' : 'Reserve Now'}
+              {isOpeningReserveChat ? 'Opening chat...' : 'Reserve Now'}
             </button>
           </div>
         </div>

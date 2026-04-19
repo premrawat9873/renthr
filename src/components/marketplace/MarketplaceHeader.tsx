@@ -927,7 +927,7 @@ export default function MarketplaceHeader({
           <button
             onClick={() =>
               router.push(
-                isAuthenticated ? "/profile" : "/login?next=/profile"
+                isAuthenticated ? "/wishlist" : "/login?next=/wishlist"
               )
             }
             aria-label={safeWishlistCount > 0 ? `Wishlist, ${safeWishlistCount} items` : "Wishlist"}

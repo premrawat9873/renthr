@@ -89,6 +89,7 @@ type ProfileDashboardClientProps = {
   joinedLabel: string;
   products: Product[];
   wishlistProducts: Product[];
+  initialTab?: TabKey;
   initialPostFlowOpen?: boolean;
 };
 
@@ -445,6 +446,7 @@ export default function ProfileDashboardClient({
   joinedLabel,
   products,
   wishlistProducts,
+  initialTab = 'listings',
   initialPostFlowOpen = false,
 }: ProfileDashboardClientProps) {
   const router = useRouter();
@@ -454,7 +456,7 @@ export default function ProfileDashboardClient({
   const defaultProfileAvatarUrl = getDefaultProfileAvatarUrl();
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
   const [listingItems, setListingItems] = useState<Product[]>(products);
-  const [activeTab, setActiveTab] = useState<TabKey>('listings');
+  const [activeTab, setActiveTab] = useState<TabKey>(initialTab);
   const [postFlowOpen, setPostFlowOpen] = useState(initialPostFlowOpen);
   const [profileAvatarUrl, setProfileAvatarUrl] = useState<string>(
     resolveProfileAvatarUrl(avatarUrl)
@@ -483,8 +485,8 @@ export default function ProfileDashboardClient({
   const [deletingAddressId, setDeletingAddressId] = useState<string | null>(null);
   const [confirmAddressDeleteId, setConfirmAddressDeleteId] = useState<string | null>(null);
   const [confirmListingDeleteId, setConfirmListingDeleteId] = useState<string | null>(null);
-  const addressDeleteConfirmTimeoutRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
-  const listingDeleteConfirmTimeoutRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const addressDeleteConfirmTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const listingDeleteConfirmTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [paymentMethodForm, setPaymentMethodForm] = useState<PaymentMethodForm>(
@@ -507,6 +509,10 @@ export default function ProfileDashboardClient({
       )
     );
   }, [products]);
+
+  useEffect(() => {
+    setActiveTab(initialTab);
+  }, [initialTab]);
 
   useEffect(() => {
     setProfileAvatarUrl(resolveProfileAvatarUrl(avatarUrl));
@@ -567,12 +573,12 @@ export default function ProfileDashboardClient({
   useEffect(() => {
     return () => {
       if (addressDeleteConfirmTimeoutRef.current) {
-        window.clearTimeout(addressDeleteConfirmTimeoutRef.current);
+        clearTimeout(addressDeleteConfirmTimeoutRef.current);
         addressDeleteConfirmTimeoutRef.current = null;
       }
 
       if (listingDeleteConfirmTimeoutRef.current) {
-        window.clearTimeout(listingDeleteConfirmTimeoutRef.current);
+        clearTimeout(listingDeleteConfirmTimeoutRef.current);
         listingDeleteConfirmTimeoutRef.current = null;
       }
     };
@@ -968,10 +974,10 @@ export default function ProfileDashboardClient({
       setConfirmAddressDeleteId(addressId);
 
       if (addressDeleteConfirmTimeoutRef.current) {
-        window.clearTimeout(addressDeleteConfirmTimeoutRef.current);
+        clearTimeout(addressDeleteConfirmTimeoutRef.current);
       }
 
-      addressDeleteConfirmTimeoutRef.current = window.setTimeout(() => {
+      addressDeleteConfirmTimeoutRef.current = setTimeout(() => {
         setConfirmAddressDeleteId(null);
         addressDeleteConfirmTimeoutRef.current = null;
       }, 3000);
@@ -987,7 +993,7 @@ export default function ProfileDashboardClient({
 
     setConfirmAddressDeleteId(null);
     if (addressDeleteConfirmTimeoutRef.current) {
-      window.clearTimeout(addressDeleteConfirmTimeoutRef.current);
+      clearTimeout(addressDeleteConfirmTimeoutRef.current);
       addressDeleteConfirmTimeoutRef.current = null;
     }
 
@@ -1280,10 +1286,10 @@ export default function ProfileDashboardClient({
       setConfirmListingDeleteId(productId);
 
       if (listingDeleteConfirmTimeoutRef.current) {
-        window.clearTimeout(listingDeleteConfirmTimeoutRef.current);
+        clearTimeout(listingDeleteConfirmTimeoutRef.current);
       }
 
-      listingDeleteConfirmTimeoutRef.current = window.setTimeout(() => {
+      listingDeleteConfirmTimeoutRef.current = setTimeout(() => {
         setConfirmListingDeleteId(null);
         listingDeleteConfirmTimeoutRef.current = null;
       }, 3000);
@@ -1299,7 +1305,7 @@ export default function ProfileDashboardClient({
 
     setConfirmListingDeleteId(null);
     if (listingDeleteConfirmTimeoutRef.current) {
-      window.clearTimeout(listingDeleteConfirmTimeoutRef.current);
+      clearTimeout(listingDeleteConfirmTimeoutRef.current);
       listingDeleteConfirmTimeoutRef.current = null;
     }
 

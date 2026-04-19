@@ -180,7 +180,6 @@ export default async function PublicProfilePage({
                     // Admin-only actions (client component)
                     <div className="ml-2">
                       {/* AdminUserActions is a client component */}
-                      {/* @ts-expect-error Server component rendering a client-only admin control. */}
                       <AdminUserActions userId={profile.id} />
                     </div>
                   ) : null}

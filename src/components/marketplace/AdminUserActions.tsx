@@ -16,17 +16,17 @@ export default function AdminUserActions({ userId }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [confirmingReset, setConfirmingReset] = useState(false);
-  const deleteConfirmTimeoutRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
-  const resetConfirmTimeoutRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const deleteConfirmTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const resetConfirmTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     return () => {
       if (deleteConfirmTimeoutRef.current) {
-        window.clearTimeout(deleteConfirmTimeoutRef.current);
+        clearTimeout(deleteConfirmTimeoutRef.current);
       }
 
       if (resetConfirmTimeoutRef.current) {
-        window.clearTimeout(resetConfirmTimeoutRef.current);
+        clearTimeout(resetConfirmTimeoutRef.current);
       }
     };
   }, []);
@@ -36,10 +36,10 @@ export default function AdminUserActions({ userId }: Props) {
       setConfirmingDelete(true);
 
       if (deleteConfirmTimeoutRef.current) {
-        window.clearTimeout(deleteConfirmTimeoutRef.current);
+        clearTimeout(deleteConfirmTimeoutRef.current);
       }
 
-      deleteConfirmTimeoutRef.current = window.setTimeout(() => {
+      deleteConfirmTimeoutRef.current = setTimeout(() => {
         setConfirmingDelete(false);
         deleteConfirmTimeoutRef.current = null;
       }, 3000);
@@ -55,7 +55,7 @@ export default function AdminUserActions({ userId }: Props) {
 
     setConfirmingDelete(false);
     if (deleteConfirmTimeoutRef.current) {
-      window.clearTimeout(deleteConfirmTimeoutRef.current);
+      clearTimeout(deleteConfirmTimeoutRef.current);
       deleteConfirmTimeoutRef.current = null;
     }
 
@@ -85,10 +85,10 @@ export default function AdminUserActions({ userId }: Props) {
       setConfirmingReset(true);
 
       if (resetConfirmTimeoutRef.current) {
-        window.clearTimeout(resetConfirmTimeoutRef.current);
+        clearTimeout(resetConfirmTimeoutRef.current);
       }
 
-      resetConfirmTimeoutRef.current = window.setTimeout(() => {
+      resetConfirmTimeoutRef.current = setTimeout(() => {
         setConfirmingReset(false);
         resetConfirmTimeoutRef.current = null;
       }, 3000);
@@ -103,7 +103,7 @@ export default function AdminUserActions({ userId }: Props) {
 
     setConfirmingReset(false);
     if (resetConfirmTimeoutRef.current) {
-      window.clearTimeout(resetConfirmTimeoutRef.current);
+      clearTimeout(resetConfirmTimeoutRef.current);
       resetConfirmTimeoutRef.current = null;
     }
 
