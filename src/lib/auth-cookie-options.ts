@@ -20,9 +20,9 @@ function resolveCookieDomain() {
   }
 
   const configuredSiteUrl =
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    process.env.NEXTAUTH_URL ||
     process.env.SITE_URL ||
+    process.env.NEXTAUTH_URL ||
+    process.env.NEXT_PUBLIC_SITE_URL ||
     '';
 
   if (!configuredSiteUrl) {

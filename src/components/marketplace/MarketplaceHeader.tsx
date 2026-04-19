@@ -33,6 +33,9 @@ interface HeaderProps {
   onAddPost?: () => void;
 }
 
+// Note: Search now only commits on Enter key or search button click
+// This prevents multiple API requests while typing
+
 type ManualLocationSelection = {
   city: string;
   state: string;
@@ -48,6 +51,23 @@ type LocationSuggestion = ManualLocationSelection & {
 
 type LocationSearchResponse = {
   suggestions?: LocationSuggestion[];
+  error?: string;
+};
+
+type SearchSuggestion = {
+  id: string;
+  title: string;
+  category: string;
+  location: string;
+};
+
+type ListingSearchResponse = {
+  products?: Array<{
+    id?: string;
+    title?: string;
+    category?: string;
+    location?: string;
+  }>;
   error?: string;
 };
 
@@ -97,12 +117,16 @@ export default function MarketplaceHeader({
   const [popularSuggestions, setPopularSuggestions] = useState<LocationSuggestion[]>([]);
   const [recentSuggestions, setRecentSuggestions] = useState<LocationSuggestion[]>([]);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
+  const [searchSuggestions, setSearchSuggestions] = useState<SearchSuggestion[]>([]);
   const [searchFocused, setSearchFocused] = useState(false);
+  const [localSearchInput, setLocalSearchInput] = useState("");
+  const [isSearchSuggestionsLoading, setIsSearchSuggestionsLoading] = useState(false);
   const [isPopularLoading, setIsPopularLoading] = useState(false);
   const [isLocationSearchLoading, setIsLocationSearchLoading] = useState(false);
   const [locationSearchError, setLocationSearchError] = useState<string | null>(null);
   const isHydrated = useSyncExternalStore(subscribeHydration, () => true, () => false);
   const debouncedCityInput = useDebouncedValue(cityInput, 300);
+  const debouncedSearchInput = useDebouncedValue(localSearchInput, 220);
   const dropRef = useRef<HTMLDivElement>(null);
   const cityInputRef = useRef<HTMLInputElement>(null);
   const displayLocation = isHydrated ? location : null;
@@ -112,9 +136,8 @@ export default function MarketplaceHeader({
   const isAuthenticated = authReady && (supabaseAuthenticated || reduxAuthenticated);
   const metadataName =
     typeof user?.user_metadata?.name === "string" ? user.user_metadata.name : null;
-  const accountLabel =
-    (metadataName || (currentUser as any)?.name || user?.email?.split("@")[0] || currentUser?.identifier?.split("@")[0]) ||
-    "Account";
+  const localAuthName = currentUser?.identifier?.split("@")[0] ?? null;
+  const accountLabel = metadataName || user?.email?.split("@")[0] || localAuthName || "Account";
 
   const clearCustomSessionCookie = async () => {
     try {
@@ -254,6 +277,92 @@ export default function MarketplaceHeader({
     }
   }, []);
 
+  // Sync local search input with the committed search query
+  useEffect(() => {
+    setLocalSearchInput(searchQuery);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    if (!searchFocused) {
+      setSearchSuggestions([]);
+      setIsSearchSuggestionsLoading(false);
+      return;
+    }
+
+    const query = debouncedSearchInput.trim();
+    if (query.length < 2) {
+      setSearchSuggestions([]);
+      setIsSearchSuggestionsLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+
+    void (async () => {
+      try {
+        setIsSearchSuggestionsLoading(true);
+        const response = await fetch(
+          `/api/listings?q=${encodeURIComponent(query)}&limit=6`,
+          {
+            cache: "no-store",
+            signal: controller.signal,
+          }
+        );
+
+        const payload = (await response
+          .json()
+          .catch(() => null)) as ListingSearchResponse | null;
+
+        if (!response.ok || !payload || !Array.isArray(payload.products)) {
+          throw new Error(payload?.error || "Unable to load suggestions.");
+        }
+
+        const seen = new Set<string>();
+        const nextSuggestions = payload.products
+          .map((item) => {
+            const title = typeof item.title === "string" ? item.title.trim() : "";
+            const id = typeof item.id === "string" ? item.id : "";
+            const category = typeof item.category === "string" ? item.category : "";
+            const location = typeof item.location === "string" ? item.location : "";
+
+            if (!title) {
+              return null;
+            }
+
+            const key = `${title.toLowerCase()}|${id}`;
+            if (seen.has(key)) {
+              return null;
+            }
+
+            seen.add(key);
+            return {
+              id,
+              title,
+              category,
+              location,
+            } satisfies SearchSuggestion;
+          })
+          .filter((item): item is SearchSuggestion => Boolean(item));
+
+        if (!controller.signal.aborted) {
+          setSearchSuggestions(nextSuggestions);
+        }
+      } catch {
+        if (!controller.signal.aborted) {
+          setSearchSuggestions([]);
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsSearchSuggestionsLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      controller.abort();
+    };
+  }, [debouncedSearchInput, searchFocused]);
+
   useEffect(() => {
     if (!locOpen) {
       return;
@@ -377,12 +486,26 @@ export default function MarketplaceHeader({
     }
 
     onSearchChange(normalizedQuery);
+    setLocalSearchInput(normalizedQuery);
     saveRecentSearch(normalizedQuery);
   };
 
   const applyRecentSearch = (query: string) => {
     onSearchChange(query);
+    setLocalSearchInput(query);
     saveRecentSearch(query);
+    setSearchFocused(false);
+  };
+
+  const applySearchSuggestion = (query: string) => {
+    const normalizedQuery = query.trim();
+    if (!normalizedQuery) {
+      return;
+    }
+
+    onSearchChange(normalizedQuery);
+    setLocalSearchInput(normalizedQuery);
+    saveRecentSearch(normalizedQuery);
     setSearchFocused(false);
   };
 
@@ -653,8 +776,8 @@ export default function MarketplaceHeader({
           <input
             type="text"
             placeholder="Search products..."
-            value={searchQuery}
-            onChange={(e) => onSearchChange(e.target.value)}
+            value={localSearchInput}
+            onChange={(e) => setLocalSearchInput(e.target.value)}
             onFocus={() => setSearchFocused(true)}
             onBlur={() => {
               window.setTimeout(() => {
@@ -664,13 +787,13 @@ export default function MarketplaceHeader({
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
-                commitSearchQuery(searchQuery);
+                commitSearchQuery(localSearchInput);
               }
             }}
             className="h-10 w-full rounded-full border border-primary/25 bg-background/50 pl-10 pr-16 text-sm placeholder:text-muted-foreground backdrop-blur-sm transition-all duration-200 focus:border-primary/40 focus:outline-none focus:ring-2 focus:ring-primary/20"
           />
           <button
-            onClick={() => commitSearchQuery(searchQuery)}
+            onClick={() => commitSearchQuery(localSearchInput)}
             className="absolute right-1.5 top-1/2 -translate-y-1/2 flex h-7 w-7 items-center justify-center rounded-full bg-primary text-primary-foreground transition-all duration-200 hover:brightness-105"
             aria-label="Search"
           >
@@ -678,7 +801,10 @@ export default function MarketplaceHeader({
           </button>
           {searchQuery && (
             <button
-              onClick={() => onSearchChange("")}
+              onClick={() => {
+                onSearchChange("");
+                setLocalSearchInput("");
+              }}
               aria-label="Clear search"
               className="absolute right-10 top-1/2 -translate-y-1/2"
             >
@@ -686,31 +812,69 @@ export default function MarketplaceHeader({
             </button>
           )}
 
-          {searchFocused && recentSearches.length > 0 ? (
+          {searchFocused && (isSearchSuggestionsLoading || searchSuggestions.length > 0 || recentSearches.length > 0) ? (
             <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-[80] overflow-hidden rounded-2xl border border-primary/15 bg-card shadow-xl">
-              <p className="px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                Recent searches
-              </p>
-              {recentSearches.map((entry) => (
-                <div key={entry.toLowerCase()} className="flex items-center gap-2 px-3 py-1.5">
-                  <button
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => applyRecentSearch(entry)}
-                    className="flex flex-1 items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-accent/60"
-                  >
-                    <Search className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span className="truncate text-sm text-foreground">{entry}</span>
-                  </button>
-                  <button
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => removeRecentSearch(entry)}
-                    aria-label={`Remove ${entry} from recent searches`}
-                    className="inline-flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              ))}
+              {isSearchSuggestionsLoading ? (
+                <p className="flex items-center gap-2 px-4 py-3 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Finding suggestions...
+                </p>
+              ) : null}
+
+              {!isSearchSuggestionsLoading && searchSuggestions.length > 0 ? (
+                <>
+                  <p className="px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                    Suggestions
+                  </p>
+                  {searchSuggestions.map((suggestion) => (
+                    <button
+                      key={`suggestion-${suggestion.id || suggestion.title}`}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => applySearchSuggestion(suggestion.title)}
+                      className="flex w-full items-start gap-2 px-4 py-2.5 text-left transition-colors hover:bg-accent/60"
+                    >
+                      <Search className="mt-0.5 h-3.5 w-3.5 text-muted-foreground" />
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm text-foreground">{suggestion.title}</span>
+                        {(suggestion.category || suggestion.location) ? (
+                          <span className="block truncate text-xs text-muted-foreground">
+                            {[suggestion.category, suggestion.location].filter(Boolean).join(' • ')}
+                          </span>
+                        ) : null}
+                      </span>
+                    </button>
+                  ))}
+                </>
+              ) : null}
+
+              {recentSearches.length > 0 ? (
+                <>
+                  <div className="my-1 border-t border-primary/10" />
+                  <p className="px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                    Recent searches
+                  </p>
+                  {recentSearches.map((entry) => (
+                    <div key={entry.toLowerCase()} className="flex items-center gap-2 px-3 py-1.5">
+                      <button
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => applyRecentSearch(entry)}
+                        className="flex flex-1 items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-accent/60"
+                      >
+                        <Search className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span className="truncate text-sm text-foreground">{entry}</span>
+                      </button>
+                      <button
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => removeRecentSearch(entry)}
+                        aria-label={`Remove ${entry} from recent searches`}
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </>
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -797,8 +961,8 @@ export default function MarketplaceHeader({
           <input
             type="text"
             placeholder="Search..."
-            value={searchQuery}
-            onChange={(e) => onSearchChange(e.target.value)}
+            value={localSearchInput}
+            onChange={(e) => setLocalSearchInput(e.target.value)}
             onFocus={() => setSearchFocused(true)}
             onBlur={() => {
               window.setTimeout(() => {
@@ -808,37 +972,75 @@ export default function MarketplaceHeader({
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
-                commitSearchQuery(searchQuery);
+                commitSearchQuery(localSearchInput);
               }
             }}
             className="h-9 w-full rounded-full border border-primary/25 bg-background/50 pl-10 pr-3 text-sm placeholder:text-muted-foreground backdrop-blur-sm transition-all duration-200 focus:border-primary/40 focus:outline-none focus:ring-2 focus:ring-primary/20"
           />
 
-          {searchFocused && recentSearches.length > 0 ? (
+          {searchFocused && (isSearchSuggestionsLoading || searchSuggestions.length > 0 || recentSearches.length > 0) ? (
             <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-[80] overflow-hidden rounded-2xl border border-primary/15 bg-card shadow-xl">
-              <p className="px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                Recent searches
-              </p>
-              {recentSearches.map((entry) => (
-                <div key={`mobile-${entry.toLowerCase()}`} className="flex items-center gap-2 px-3 py-1.5">
-                  <button
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => applyRecentSearch(entry)}
-                    className="flex flex-1 items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-accent/60"
-                  >
-                    <Search className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span className="truncate text-sm text-foreground">{entry}</span>
-                  </button>
-                  <button
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => removeRecentSearch(entry)}
-                    aria-label={`Remove ${entry} from recent searches`}
-                    className="inline-flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              ))}
+              {isSearchSuggestionsLoading ? (
+                <p className="flex items-center gap-2 px-4 py-3 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Finding suggestions...
+                </p>
+              ) : null}
+
+              {!isSearchSuggestionsLoading && searchSuggestions.length > 0 ? (
+                <>
+                  <p className="px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                    Suggestions
+                  </p>
+                  {searchSuggestions.map((suggestion) => (
+                    <button
+                      key={`mobile-suggestion-${suggestion.id || suggestion.title}`}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => applySearchSuggestion(suggestion.title)}
+                      className="flex w-full items-start gap-2 px-4 py-2.5 text-left transition-colors hover:bg-accent/60"
+                    >
+                      <Search className="mt-0.5 h-3.5 w-3.5 text-muted-foreground" />
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm text-foreground">{suggestion.title}</span>
+                        {(suggestion.category || suggestion.location) ? (
+                          <span className="block truncate text-xs text-muted-foreground">
+                            {[suggestion.category, suggestion.location].filter(Boolean).join(' • ')}
+                          </span>
+                        ) : null}
+                      </span>
+                    </button>
+                  ))}
+                </>
+              ) : null}
+
+              {recentSearches.length > 0 ? (
+                <>
+                  <div className="my-1 border-t border-primary/10" />
+                  <p className="px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                    Recent searches
+                  </p>
+                  {recentSearches.map((entry) => (
+                    <div key={`mobile-${entry.toLowerCase()}`} className="flex items-center gap-2 px-3 py-1.5">
+                      <button
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => applyRecentSearch(entry)}
+                        className="flex flex-1 items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-accent/60"
+                      >
+                        <Search className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span className="truncate text-sm text-foreground">{entry}</span>
+                      </button>
+                      <button
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => removeRecentSearch(entry)}
+                        aria-label={`Remove ${entry} from recent searches`}
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </>
+              ) : null}
             </div>
           ) : null}
         </div>

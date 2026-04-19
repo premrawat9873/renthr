@@ -12,8 +12,14 @@ export const runtime = 'nodejs';
 
 type StartConversationRequestBody = {
   recipientId?: unknown;
+  recipientUserId?: unknown;
+  ownerId?: unknown;
+  listingOwnerId?: unknown;
   postId?: unknown;
+  post_id?: unknown;
+  listingId?: unknown;
   initialMessage?: unknown;
+  message?: unknown;
 };
 
 export async function GET() {
@@ -38,22 +44,30 @@ export async function POST(request: Request) {
     }
 
     const body = (await request.json()) as StartConversationRequestBody;
-    const recipientId = parsePositiveInt(body.recipientId);
-    const postId = parsePositiveInt(body.postId);
-
-    if (!recipientId) {
-      return NextResponse.json({ error: 'recipientId is required.' }, { status: 400 });
-    }
+    const recipientId =
+      parsePositiveInt(body.recipientId) ??
+      parsePositiveInt(body.recipientUserId) ??
+      parsePositiveInt(body.ownerId) ??
+      parsePositiveInt(body.listingOwnerId);
+    const postId =
+      parsePositiveInt(body.postId) ??
+      parsePositiveInt(body.post_id) ??
+      parsePositiveInt(body.listingId);
 
     if (!postId) {
       return NextResponse.json({ error: 'postId is required for product chat.' }, { status: 400 });
     }
 
+    const initialMessage =
+      typeof body.initialMessage === 'string'
+        ? body.initialMessage
+        : body.message;
+
     const conversation = await startOrGetDirectConversation({
       userId,
       recipientId,
       postId,
-      initialMessage: body.initialMessage,
+      initialMessage,
     });
 
     return NextResponse.json({ conversation }, { status: 201 });

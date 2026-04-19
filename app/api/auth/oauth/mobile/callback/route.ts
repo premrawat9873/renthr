@@ -167,6 +167,8 @@ export async function GET(request: Request) {
   let sessionUserId: string | number = supabaseUser.id;
   let sessionUserName: string | null = metadataName || null;
   let sessionUserAvatarUrl: string | null = metadataAvatarUrl;
+  let sessionUserPhone: string | null = null;
+  let sessionUserVerified = false;
 
   try {
     const { prisma } = await import('@/lib/prisma');
@@ -177,6 +179,8 @@ export async function GET(request: Request) {
         id: true,
         name: true,
         avatarUrl: true,
+        phone: true,
+        isVerified: true,
         googleSignInDisabledAt: true,
       },
     });
@@ -192,12 +196,16 @@ export async function GET(request: Request) {
           id: true,
           name: true,
           avatarUrl: true,
+          phone: true,
+          isVerified: true,
         },
       });
 
       sessionUserId = createdUser.id;
       sessionUserName = createdUser.name;
       sessionUserAvatarUrl = createdUser.avatarUrl;
+      sessionUserPhone = createdUser.phone;
+      sessionUserVerified = createdUser.isVerified;
     } else {
       if (existingUser.googleSignInDisabledAt) {
         return redirectWithSessionReset('google_signin_disabled');
@@ -206,6 +214,8 @@ export async function GET(request: Request) {
       sessionUserId = existingUser.id;
       sessionUserName = existingUser.name ?? (metadataName || null);
       sessionUserAvatarUrl = existingUser.avatarUrl ?? metadataAvatarUrl;
+      sessionUserPhone = existingUser.phone;
+      sessionUserVerified = existingUser.isVerified;
 
       const updateData: {
         name?: string;
@@ -228,11 +238,15 @@ export async function GET(request: Request) {
             id: true,
             name: true,
             avatarUrl: true,
+            phone: true,
+            isVerified: true,
           },
         });
 
         sessionUserName = updatedUser.name;
         sessionUserAvatarUrl = updatedUser.avatarUrl;
+        sessionUserPhone = updatedUser.phone;
+        sessionUserVerified = updatedUser.isVerified;
       }
     }
 
@@ -282,6 +296,8 @@ export async function GET(request: Request) {
       email: normalizedEmail,
       name: sessionUserName || '',
       avatarUrl: sessionUserAvatarUrl || '',
+      phone: sessionUserPhone || '',
+      isVerified: sessionUserVerified ? 'true' : 'false',
     })
   );
 

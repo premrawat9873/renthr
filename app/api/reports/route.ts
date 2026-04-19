@@ -78,3 +78,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: message }, { status });
   }
 }
+
+export async function PUT(request: NextRequest) {
+  return POST(request);
+}

@@ -8,7 +8,7 @@ export const runtime = "nodejs";
 function parseListingId(value: string | string[] | undefined) {
   const normalized = Array.isArray(value) ? value[0] : value;
   if (!normalized) return null;
-  const parsed = Number.parseInt(normalized, 10);
+  const parsed = Number.parseInt(normalized.trim(), 10);
   if (!Number.isFinite(parsed) || parsed <= 0) {
     return null;
   }
@@ -16,16 +16,8 @@ function parseListingId(value: string | string[] | undefined) {
 }
 
 async function ensureListingExists(listingId: number) {
-  const listing = await prisma.post.findFirst({
-    where: {
-      id: listingId,
-      status: {
-        in: ["ACTIVE", "INACTIVE"],
-      },
-      publishedAt: {
-        not: null,
-      },
-    },
+  const listing = await prisma.post.findUnique({
+    where: { id: listingId },
     select: { id: true },
   });
   return Boolean(listing);

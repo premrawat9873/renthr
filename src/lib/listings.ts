@@ -88,6 +88,8 @@ const listingSelect = {
       name: true,
       email: true,
       avatarUrl: true,
+      phone: true,
+      isVerified: true,
     },
   },
 } satisfies Prisma.PostSelect;
@@ -119,6 +121,7 @@ export type PublicListingUserProfile = {
   rating: number;
   reviewCount: number;
   joinedAt: Date;
+  isVerified: boolean;
 };
 
 export type PublicUserReviewHighlight = {
@@ -415,6 +418,7 @@ function mapListingRecordToProduct(record: ListingRecord): Product {
     .map((review) => convertDecimalToNumber(review.rating))
     .filter((rating): rating is number => typeof rating === "number");
   const reviewCount = reviewRatings.length;
+  const ownerIsVerified = Boolean(record.author.isVerified && record.author.phone);
   const rating =
     reviewCount > 0
       ? Number(
@@ -458,7 +462,8 @@ function mapListingRecordToProduct(record: ListingRecord): Product {
     ownerId: String(record.author.id),
     ownerName,
     ownerImage: resolveProfileAvatarUrl(record.author.avatarUrl),
-    ownerTag: "Verified Seller",
+    ownerTag: ownerIsVerified ? "Verified Seller" : "Not Verified",
+    ownerIsVerified,
   };
 }
 
@@ -1043,6 +1048,8 @@ export async function getPublicListingUserProfileById(userId: string | number) {
           name: true,
           email: true,
           avatarUrl: true,
+          phone: true,
+          isVerified: true,
           rating: true,
           reviewCount: true,
           createdAt: true,
@@ -1062,6 +1069,7 @@ export async function getPublicListingUserProfileById(userId: string | number) {
     rating: Number((convertDecimalToNumber(user.rating) ?? 0).toFixed(1)),
     reviewCount: user.reviewCount,
     joinedAt: user.createdAt,
+    isVerified: Boolean(user.isVerified && user.phone),
   };
 }
 

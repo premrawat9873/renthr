@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Trash, ImagePlus } from "lucide-react";
 
@@ -14,9 +14,51 @@ type Props = {
 export default function AdminUserActions({ userId }: Props) {
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [confirmingReset, setConfirmingReset] = useState(false);
+  const deleteConfirmTimeoutRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const resetConfirmTimeoutRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (deleteConfirmTimeoutRef.current) {
+        window.clearTimeout(deleteConfirmTimeoutRef.current);
+      }
+
+      if (resetConfirmTimeoutRef.current) {
+        window.clearTimeout(resetConfirmTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const handleDelete = async () => {
-    if (!confirm("Delete this user and all their posts? This action is irreversible.")) return;
+    if (!confirmingDelete) {
+      setConfirmingDelete(true);
+
+      if (deleteConfirmTimeoutRef.current) {
+        window.clearTimeout(deleteConfirmTimeoutRef.current);
+      }
+
+      deleteConfirmTimeoutRef.current = window.setTimeout(() => {
+        setConfirmingDelete(false);
+        deleteConfirmTimeoutRef.current = null;
+      }, 3000);
+
+      toast({
+        title: "Confirm user deletion",
+        description: "Click Delete user again within 3 seconds to confirm.",
+        variant: "destructive",
+      });
+
+      return;
+    }
+
+    setConfirmingDelete(false);
+    if (deleteConfirmTimeoutRef.current) {
+      window.clearTimeout(deleteConfirmTimeoutRef.current);
+      deleteConfirmTimeoutRef.current = null;
+    }
+
     setSubmitting(true);
     try {
       const res = await fetch(`/api/admin/users/${userId}`, {
@@ -39,7 +81,32 @@ export default function AdminUserActions({ userId }: Props) {
   };
 
   const handleResetAvatar = async () => {
-    if (!confirm("Reset this user's avatar to default?")) return;
+    if (!confirmingReset) {
+      setConfirmingReset(true);
+
+      if (resetConfirmTimeoutRef.current) {
+        window.clearTimeout(resetConfirmTimeoutRef.current);
+      }
+
+      resetConfirmTimeoutRef.current = window.setTimeout(() => {
+        setConfirmingReset(false);
+        resetConfirmTimeoutRef.current = null;
+      }, 3000);
+
+      toast({
+        title: "Confirm avatar reset",
+        description: "Click Reset avatar again within 3 seconds to confirm.",
+      });
+
+      return;
+    }
+
+    setConfirmingReset(false);
+    if (resetConfirmTimeoutRef.current) {
+      window.clearTimeout(resetConfirmTimeoutRef.current);
+      resetConfirmTimeoutRef.current = null;
+    }
+
     setSubmitting(true);
     try {
       const res = await fetch(`/api/admin/users/${userId}/avatar`, {

@@ -149,9 +149,17 @@ export default async function PublicProfilePage({
                   <h1 className="text-[2rem] font-semibold leading-tight tracking-tight text-foreground">
                     {profile.name}
                   </h1>
-                  <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1">
-                    <CheckCircle2 className="h-4 w-4 text-primary" />
-                    <span className="text-sm font-medium text-primary">Verified Seller</span>
+                  <div
+                    className={
+                      profile.isVerified
+                        ? 'mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1'
+                        : 'mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-amber-100/80 px-2.5 py-1'
+                    }
+                  >
+                    <CheckCircle2 className={profile.isVerified ? 'h-4 w-4 text-primary' : 'h-4 w-4 text-amber-700'} />
+                    <span className={profile.isVerified ? 'text-sm font-medium text-primary' : 'text-sm font-medium text-amber-700'}>
+                      {profile.isVerified ? 'Verified Seller' : 'Not Verified'}
+                    </span>
                   </div>
                 </div>
 
@@ -172,7 +180,7 @@ export default async function PublicProfilePage({
                     // Admin-only actions (client component)
                     <div className="ml-2">
                       {/* AdminUserActions is a client component */}
-                      {/* @ts-ignore-next-line */}
+                      {/* @ts-expect-error Server component rendering a client-only admin control. */}
                       <AdminUserActions userId={profile.id} />
                     </div>
                   ) : null}

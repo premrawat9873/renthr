@@ -337,32 +337,16 @@ export async function listChatConversationsForUser(
 
 export async function startOrGetDirectConversation(input: {
   userId: number;
-  recipientId: number;
+  recipientId?: number | null;
   postId?: number | null;
   initialMessage?: unknown;
 }) {
-  const { userId, recipientId } = input;
+  const { userId } = input;
+  const requestedRecipientId = input.recipientId ?? null;
   const postId = input.postId ?? null;
 
   if (!postId) {
     throw new ChatError(400, 'postId is required to start a listing chat.');
-  }
-
-  if (recipientId === userId) {
-    throw new ChatError(400, 'You cannot start a chat with yourself.');
-  }
-
-  const recipient = await prisma.user.findUnique({
-    where: {
-      id: recipientId,
-    },
-    select: {
-      id: true,
-    },
-  });
-
-  if (!recipient) {
-    throw new ChatError(404, 'Recipient user was not found.');
   }
 
   const post = await prisma.post.findUnique({
@@ -379,12 +363,29 @@ export async function startOrGetDirectConversation(input: {
     throw new ChatError(404, 'Listing was not found.');
   }
 
-  if (post.authorId !== recipientId) {
-    throw new ChatError(
-      400,
-      'Messages for a listing can only be sent to the listing publisher.'
-    );
+  const resolvedRecipientId = post.authorId;
+
+  if (resolvedRecipientId === userId) {
+    throw new ChatError(400, 'You cannot start a chat with yourself.');
   }
+
+  const recipient = await prisma.user.findUnique({
+    where: {
+      id: resolvedRecipientId,
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  if (!recipient) {
+    throw new ChatError(404, 'Recipient user was not found.');
+  }
+
+  const participantRecipientId =
+    requestedRecipientId && requestedRecipientId === resolvedRecipientId
+      ? requestedRecipientId
+      : resolvedRecipientId;
 
   const candidates = await prisma.conversation.findMany({
     where: {
@@ -399,7 +400,7 @@ export async function startOrGetDirectConversation(input: {
         {
           participants: {
             some: {
-              userId: recipientId,
+              userId: participantRecipientId,
             },
           },
         },
@@ -423,7 +424,7 @@ export async function startOrGetDirectConversation(input: {
     return (
       participantIds.length === 2 &&
       participantIds.includes(userId) &&
-      participantIds.includes(recipientId)
+      participantIds.includes(participantRecipientId)
     );
   });
 
@@ -434,7 +435,7 @@ export async function startOrGetDirectConversation(input: {
           type: 'LISTING',
           postId,
           participants: {
-            create: [{ userId }, { userId: recipientId }],
+            create: [{ userId }, { userId: participantRecipientId }],
           },
         },
         select: {

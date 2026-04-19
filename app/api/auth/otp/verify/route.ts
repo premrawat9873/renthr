@@ -37,6 +37,8 @@ export async function POST(request: Request) {
         id: true,
         email: true,
         name: true,
+        phone: true,
+        isVerified: true,
         otpCodeHash: true,
         otpExpiresAt: true,
       },
@@ -81,9 +83,11 @@ export async function POST(request: Request) {
 
     const response = NextResponse.json({
       user: {
-        id: user.id,
+        id: String(user.id),
         email: user.email,
         name: user.name,
+        phone: user.phone,
+        isVerified: user.isVerified,
       },
       sessionToken,
     });

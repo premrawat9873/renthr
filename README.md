@@ -51,6 +51,55 @@ R2_ACCESS_KEY_ID="<r2-access-key-id>"
 R2_SECRET_ACCESS_KEY="<r2-secret-access-key>"
 ```
 
+## India Phone OTP SMS Setup (MSG91 or Fast2SMS)
+
+Phone OTP verification now supports India-only SMS delivery through MSG91 or Fast2SMS.
+
+1. Choose one provider and complete DLT-approved OTP template setup.
+2. Add provider-specific environment variables.
+
+MSG91 variables:
+
+```env
+PHONE_SMS_PROVIDER="MSG91"
+MSG91_AUTH_KEY="<msg91-auth-key>"
+MSG91_FLOW_ID="<msg91-flow-id>"
+# Optional if your flow uses different variable names:
+MSG91_OTP_VAR_NAME="OTP"
+MSG91_EXPIRY_VAR_NAME="EXPIRY_MINUTES"
+```
+
+Fast2SMS variables:
+
+```env
+PHONE_SMS_PROVIDER="FAST2SMS"
+FAST2SMS_API_KEY="<fast2sms-api-key>"
+# Optional overrides
+FAST2SMS_ENDPOINT="https://www.fast2sms.com/dev/bulkV2"
+FAST2SMS_ROUTE="otp"
+FAST2SMS_MESSAGE_ID="<dlt-message-id-if-required>"
+FAST2SMS_SENDER_ID="<sender-id-if-required>"
+FAST2SMS_VARIABLES_TEMPLATE="{OTP}"
+```
+
+Behavior notes:
+
+- Verification gate:
+	- Set `PHONE_VERIFICATION_ENABLED="true"` to allow phone OTP verification.
+	- If not set (or set to false), the API returns `Phone number verification is currently unavailable.`
+- Optional custom unavailable message:
+	- `PHONE_VERIFICATION_UNAVAILABLE_MESSAGE="..."`
+- If SMS provider is configured, OTP is sent to +91 phone numbers only.
+- If SMS provider is not configured:
+	- Development or PHONE_OTP_DEBUG=true: API returns otpPreview for local testing.
+	- Production: API returns a configuration error and does not keep a pending OTP.
+
+Estimated monthly cost formula:
+
+monthly_cost = otp_messages_per_month x per_sms_rate x (1 + tax)
+
+For India, typical transactional OTP rates are often around INR 0.12 to INR 0.35 per SMS depending on route, DLT template category, and provider plan.
+
 ## Google Cross-Account Protection (CAP)
 
 This project now includes a CAP receiver endpoint at `/api/auth/risc`.

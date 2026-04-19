@@ -84,6 +84,7 @@ type ProfileDashboardClientProps = {
   displayName: string;
   email: string;
   avatarUrl: string | null;
+  isVerified: boolean;
   cityLabel: string;
   joinedLabel: string;
   products: Product[];
@@ -439,6 +440,7 @@ export default function ProfileDashboardClient({
   displayName,
   email,
   avatarUrl,
+  isVerified,
   cityLabel,
   joinedLabel,
   products,
@@ -479,6 +481,10 @@ export default function ProfileDashboardClient({
   const [isLoadingAddresses, setIsLoadingAddresses] = useState(false);
   const [isSavingAddress, setIsSavingAddress] = useState(false);
   const [deletingAddressId, setDeletingAddressId] = useState<string | null>(null);
+  const [confirmAddressDeleteId, setConfirmAddressDeleteId] = useState<string | null>(null);
+  const [confirmListingDeleteId, setConfirmListingDeleteId] = useState<string | null>(null);
+  const addressDeleteConfirmTimeoutRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const listingDeleteConfirmTimeoutRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
 
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [paymentMethodForm, setPaymentMethodForm] = useState<PaymentMethodForm>(
@@ -557,6 +563,20 @@ export default function ProfileDashboardClient({
 
     router.replace('/profile');
   }, [initialPostFlowOpen, router]);
+
+  useEffect(() => {
+    return () => {
+      if (addressDeleteConfirmTimeoutRef.current) {
+        window.clearTimeout(addressDeleteConfirmTimeoutRef.current);
+        addressDeleteConfirmTimeoutRef.current = null;
+      }
+
+      if (listingDeleteConfirmTimeoutRef.current) {
+        window.clearTimeout(listingDeleteConfirmTimeoutRef.current);
+        listingDeleteConfirmTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   const totalListings = listingItems.length;
   const totalRentals = listingItems.filter(
@@ -944,13 +964,31 @@ export default function ProfileDashboardClient({
   };
 
   const handleAddressDelete = async (addressId: string) => {
-    const confirmed =
-      typeof window !== 'undefined'
-        ? window.confirm('Delete this address?')
-        : false;
+    if (confirmAddressDeleteId !== addressId) {
+      setConfirmAddressDeleteId(addressId);
 
-    if (!confirmed) {
+      if (addressDeleteConfirmTimeoutRef.current) {
+        window.clearTimeout(addressDeleteConfirmTimeoutRef.current);
+      }
+
+      addressDeleteConfirmTimeoutRef.current = window.setTimeout(() => {
+        setConfirmAddressDeleteId(null);
+        addressDeleteConfirmTimeoutRef.current = null;
+      }, 3000);
+
+      toast({
+        title: 'Confirm address deletion',
+        description: 'Click delete again within 3 seconds to remove this address.',
+        variant: 'destructive',
+      });
+
       return;
+    }
+
+    setConfirmAddressDeleteId(null);
+    if (addressDeleteConfirmTimeoutRef.current) {
+      window.clearTimeout(addressDeleteConfirmTimeoutRef.current);
+      addressDeleteConfirmTimeoutRef.current = null;
     }
 
     setDeletingAddressId(addressId);
@@ -1238,9 +1276,31 @@ export default function ProfileDashboardClient({
   };
 
   const handleDeleteListing = async (productId: string) => {
-    const confirmed = typeof window !== 'undefined' ? window.confirm('Delete this listing? This cannot be undone.') : false;
-    if (!confirmed) {
+    if (confirmListingDeleteId !== productId) {
+      setConfirmListingDeleteId(productId);
+
+      if (listingDeleteConfirmTimeoutRef.current) {
+        window.clearTimeout(listingDeleteConfirmTimeoutRef.current);
+      }
+
+      listingDeleteConfirmTimeoutRef.current = window.setTimeout(() => {
+        setConfirmListingDeleteId(null);
+        listingDeleteConfirmTimeoutRef.current = null;
+      }, 3000);
+
+      toast({
+        title: 'Confirm listing deletion',
+        description: 'Click delete again within 3 seconds to permanently remove this listing.',
+        variant: 'destructive',
+      });
+
       return;
+    }
+
+    setConfirmListingDeleteId(null);
+    if (listingDeleteConfirmTimeoutRef.current) {
+      window.clearTimeout(listingDeleteConfirmTimeoutRef.current);
+      listingDeleteConfirmTimeoutRef.current = null;
     }
 
     setDeletingId(productId);
@@ -2148,9 +2208,16 @@ export default function ProfileDashboardClient({
                 <div>
                   <h1 className="text-[2.02rem] font-semibold leading-tight tracking-tight text-foreground">{profileDisplayName}</h1>
 
-                  <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1">
-                    <CheckCircle2 className="h-4 w-4 text-primary" />
-                    <span className="text-sm font-medium text-primary">Verified Seller</span>
+                  <div
+                    className={cn(
+                      'mt-1.5 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1',
+                      isVerified ? 'bg-primary/10' : 'bg-amber-100/80'
+                    )}
+                  >
+                    <CheckCircle2 className={cn('h-4 w-4', isVerified ? 'text-primary' : 'text-amber-700')} />
+                    <span className={cn('text-sm font-medium', isVerified ? 'text-primary' : 'text-amber-700')}>
+                      {isVerified ? 'Verified Seller' : 'Not Verified'}
+                    </span>
                   </div>
                 </div>
 

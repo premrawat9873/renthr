@@ -46,10 +46,23 @@ export async function POST(request: Request) {
           id: true,
           email: true,
           name: true,
+          phone: true,
+          isVerified: true,
         },
       });
 
-      return NextResponse.json({ user: updatedUser }, { status: 200 });
+      return NextResponse.json(
+        {
+          user: {
+            id: String(updatedUser.id),
+            email: updatedUser.email,
+            name: updatedUser.name,
+            phone: updatedUser.phone,
+            isVerified: updatedUser.isVerified,
+          },
+        },
+        { status: 200 }
+      );
     }
 
     const user = await prisma.user.create({
@@ -62,10 +75,23 @@ export async function POST(request: Request) {
         id: true,
         email: true,
         name: true,
+        phone: true,
+        isVerified: true,
       },
     });
 
-    return NextResponse.json({ user }, { status: 201 });
+    return NextResponse.json(
+      {
+        user: {
+          id: String(user.id),
+          email: user.email,
+          name: user.name,
+          phone: user.phone,
+          isVerified: user.isVerified,
+        },
+      },
+      { status: 201 }
+    );
   } catch {
     return NextResponse.json({ error: 'Unable to create account right now.' }, { status: 500 });
   }

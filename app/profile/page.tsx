@@ -72,6 +72,7 @@ export default async function ProfilePage({
       displayName={displayName}
       email={currentUser.email}
       avatarUrl={resolveProfileAvatarUrl(currentUser.avatarUrl)}
+      isVerified={currentUser.isVerified}
       cityLabel={cityLabel}
       joinedLabel={joinedLabel}
       products={products}

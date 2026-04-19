@@ -18,6 +18,7 @@ export type CurrentUserInfo = {
   email: string;
   name: string | null;
   avatarUrl: string | null;
+  isVerified: boolean;
   role?: 'USER' | 'ADMIN' | null;
 };
 
@@ -52,6 +53,8 @@ export async function getCurrentUserInfo(): Promise<CurrentUserInfo | null> {
       email: true,
       name: true,
       avatarUrl: true,
+      phone: true,
+      isVerified: true,
       role: true,
       sessionRevokedAt: true,
     } as const;
@@ -60,6 +63,8 @@ export async function getCurrentUserInfo(): Promise<CurrentUserInfo | null> {
       email: true,
       name: true,
       avatarUrl: true,
+      phone: true,
+      isVerified: true,
       role: true,
     } as const;
     let user: unknown;
@@ -96,6 +101,8 @@ export async function getCurrentUserInfo(): Promise<CurrentUserInfo | null> {
       email?: string;
       name?: string | null;
       avatarUrl?: string | null;
+      phone?: string | null;
+      isVerified?: boolean;
       role?: 'USER' | 'ADMIN' | null;
     }) | null;
     const tokenIssuedAtMs = customSession.iat * 1000;
@@ -111,6 +118,7 @@ export async function getCurrentUserInfo(): Promise<CurrentUserInfo | null> {
       email: userWithRevocation?.email ?? customSession.email.toLowerCase(),
       name: userWithRevocation?.name ?? customSession.name ?? null,
       avatarUrl: userWithRevocation?.avatarUrl ?? null,
+      isVerified: Boolean(userWithRevocation?.isVerified && userWithRevocation?.phone),
       role: (userWithRevocation?.role as 'USER' | 'ADMIN') ?? 'USER',
     };
   }
@@ -159,19 +167,37 @@ export async function getCurrentUserInfo(): Promise<CurrentUserInfo | null> {
 
   const normalizedEmail = supabaseUser.email.toLowerCase();
   const supabaseAvatarUrl = getAvatarUrlFromMetadata(supabaseUser.user_metadata);
+  const dbUserSelect = {
+    id: true,
+    email: true,
+    name: true,
+    avatarUrl: true,
+    phone: true,
+    isVerified: true,
+    role: true,
+  } as const;
   const dbUser = await prisma.user.findUnique({
     where: { email: normalizedEmail },
-    select: { id: true, email: true, name: true, avatarUrl: true, role: true } as any,
-  } as any);
+    select: dbUserSelect as never,
+  });
+  const typedDbUser = dbUser as {
+    id: number;
+    email: string;
+    name: string | null;
+    avatarUrl: string | null;
+    phone: string | null;
+    isVerified: boolean;
+    role: 'USER' | 'ADMIN' | null;
+  } | null;
 
   const metadataName =
     typeof supabaseUser.user_metadata?.name === "string"
       ? supabaseUser.user_metadata.name.trim()
       : null;
 
-  if (dbUser && !dbUser.avatarUrl && supabaseAvatarUrl) {
+  if (typedDbUser && !typedDbUser.avatarUrl && supabaseAvatarUrl) {
     await prisma.user.update({
-      where: { id: dbUser.id },
+      where: { id: typedDbUser.id },
       data: {
         avatarUrl: supabaseAvatarUrl,
       },
@@ -179,10 +205,11 @@ export async function getCurrentUserInfo(): Promise<CurrentUserInfo | null> {
   }
 
   return {
-    id: dbUser ? String(dbUser.id) : null,
-    email: dbUser?.email ?? normalizedEmail,
-    name: dbUser?.name ?? metadataName ?? null,
-    avatarUrl: dbUser?.avatarUrl ?? supabaseAvatarUrl ?? null,
-    role: ((dbUser as any)?.role as 'USER' | 'ADMIN') ?? 'USER',
+    id: typedDbUser ? String(typedDbUser.id) : null,
+    email: typedDbUser?.email ?? normalizedEmail,
+    name: typedDbUser?.name ?? metadataName ?? null,
+    avatarUrl: typedDbUser?.avatarUrl ?? supabaseAvatarUrl ?? null,
+    isVerified: Boolean(typedDbUser?.isVerified && typedDbUser?.phone),
+    role: typedDbUser?.role ?? 'USER',
   };
 }

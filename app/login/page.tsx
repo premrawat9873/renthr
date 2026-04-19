@@ -482,7 +482,7 @@ export default function LoginPage() {
                     >
                       Enter OTP
                     </label>
-                    <div className="w-full rounded-xl border border-[#e0dfd8] bg-white px-3 py-3 flex justify-center">
+                    <div className="w-full rounded-2xl border border-[#dbe4da] bg-[linear-gradient(180deg,#ffffff_0%,#f5f8f5_100%)] px-4 py-4 shadow-[0_14px_30px_-24px_rgba(17,58,38,0.55)]">
                       <InputOTP
                         id="otp"
                         maxLength={6}
@@ -491,17 +491,20 @@ export default function LoginPage() {
                           setOtpCode(value);
                           if (authError) setAuthError(null);
                         }}
-                        containerClassName="justify-center"
+                        containerClassName="justify-center gap-2"
                       >
-                        <InputOTPGroup>
-                          <InputOTPSlot index={0} />
-                          <InputOTPSlot index={1} />
-                          <InputOTPSlot index={2} />
-                          <InputOTPSlot index={3} />
-                          <InputOTPSlot index={4} />
-                          <InputOTPSlot index={5} />
+                        <InputOTPGroup className="justify-center gap-2">
+                          <InputOTPSlot index={0} className="h-12 w-10 sm:h-12 sm:w-11" />
+                          <InputOTPSlot index={1} className="h-12 w-10 sm:h-12 sm:w-11" />
+                          <InputOTPSlot index={2} className="h-12 w-10 sm:h-12 sm:w-11" />
+                          <InputOTPSlot index={3} className="h-12 w-10 sm:h-12 sm:w-11" />
+                          <InputOTPSlot index={4} className="h-12 w-10 sm:h-12 sm:w-11" />
+                          <InputOTPSlot index={5} className="h-12 w-10 sm:h-12 sm:w-11" />
                         </InputOTPGroup>
                       </InputOTP>
+                      <p className="mt-2 text-center text-[0.72rem] text-[#6b7770]">
+                        Enter the 6-digit code from your email. Paste is supported.
+                      </p>
                     </div>
                     <div className="flex justify-end !mt-2">
                       <button

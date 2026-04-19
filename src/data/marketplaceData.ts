@@ -33,6 +33,7 @@ export interface Product {
   ownerName?: string;
   ownerImage?: string;
   ownerTag?: string;
+  ownerIsVerified?: boolean;
 }
 
 export interface Category {

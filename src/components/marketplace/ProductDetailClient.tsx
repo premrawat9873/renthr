@@ -44,7 +44,6 @@ import { CATEGORIES } from '@/data/mockData';
 import type { ListingProductPayload } from '@/data/listings';
 import { formatPrice, type RentDuration } from '@/data/marketplaceData';
 import { Button } from '@/components/ui/button';
-import { selectCurrentUser } from '@/store/slices/authSlice';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Textarea } from '@/components/ui/textarea';
@@ -393,6 +392,7 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
   const categoryLabel = CATEGORIES.find((category) => category.id === product.category)?.label ?? 'Listing';
   const postedLabel = formatPostedAgo(product.postedAt);
   const ownerDisplayName = product.ownerName || 'User';
+  const ownerIsVerified = Boolean(product.ownerIsVerified);
   const ownerAvatarUrl = resolveProfileAvatarUrl(product.ownerImage);
   const ownerProfileHref = product.ownerId ? `/profile/${product.ownerId}` : null;
   const sellerIdentityContent = (
@@ -419,9 +419,18 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
             </span>
           )}
         </div>
-        <div className="mt-1 flex items-center gap-1 text-sm text-green-600">
-          <CheckCircle2 className="h-3.5 w-3.5" />
-          Verified Seller
+        <div
+          className={cn(
+            'mt-1 flex items-center gap-1 text-sm',
+            ownerIsVerified ? 'text-green-600' : 'text-amber-600'
+          )}
+        >
+          {ownerIsVerified ? (
+            <CheckCircle2 className="h-3.5 w-3.5" />
+          ) : (
+            <Shield className="h-3.5 w-3.5" />
+          )}
+          {ownerIsVerified ? 'Verified Seller' : 'Not Verified'}
         </div>
         <div className="mt-1 flex items-center gap-1 text-sm text-muted-foreground">
           <Clock className="h-3.5 w-3.5" />
@@ -602,8 +611,9 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
     }
   };
 
-  const currentUser = useAppSelector(selectCurrentUser);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [confirmingAdminDelete, setConfirmingAdminDelete] = useState(false);
+  const adminDeleteConfirmTimeoutRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -623,8 +633,42 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
     };
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (adminDeleteConfirmTimeoutRef.current) {
+        window.clearTimeout(adminDeleteConfirmTimeoutRef.current);
+        adminDeleteConfirmTimeoutRef.current = null;
+      }
+    };
+  }, []);
+
   const handleAdminDeleteListing = async () => {
-    if (!confirm('Delete this listing? This cannot be undone.')) return;
+    if (!confirmingAdminDelete) {
+      setConfirmingAdminDelete(true);
+
+      if (adminDeleteConfirmTimeoutRef.current) {
+        window.clearTimeout(adminDeleteConfirmTimeoutRef.current);
+      }
+
+      adminDeleteConfirmTimeoutRef.current = window.setTimeout(() => {
+        setConfirmingAdminDelete(false);
+        adminDeleteConfirmTimeoutRef.current = null;
+      }, 3000);
+
+      toast({
+        title: 'Confirm deletion',
+        description: 'Click delete again within 3 seconds to permanently remove this listing.',
+        variant: 'destructive',
+      });
+
+      return;
+    }
+
+    setConfirmingAdminDelete(false);
+    if (adminDeleteConfirmTimeoutRef.current) {
+      window.clearTimeout(adminDeleteConfirmTimeoutRef.current);
+      adminDeleteConfirmTimeoutRef.current = null;
+    }
 
     try {
       const res = await fetch(`/api/listings/${product.id}`, {

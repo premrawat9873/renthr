@@ -71,7 +71,7 @@ function getBrowserHeaderOrigin(request: Request) {
 
 function getConfiguredPublicOrigin() {
   const configuredSiteUrl =
-    process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXTAUTH_URL || process.env.SITE_URL || '';
+    process.env.SITE_URL || process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_SITE_URL || '';
 
   if (!configuredSiteUrl) {
     return '';
@@ -95,6 +95,7 @@ function getSanitizedRequestOrigin(request: Request, requestUrl: URL) {
   const forwardedHost = getFirstHeaderValue(request.headers.get('x-forwarded-host'));
   const host = forwardedHost || getFirstHeaderValue(request.headers.get('host'));
   const forwardedProto = getFirstHeaderValue(request.headers.get('x-forwarded-proto'));
+  const isForwardedRequest = Boolean(forwardedHost || forwardedProto);
   const protocol = forwardedProto === 'http' || forwardedProto === 'https'
     ? forwardedProto
     : requestUrl.protocol.replace(':', '');
@@ -107,7 +108,11 @@ function getSanitizedRequestOrigin(request: Request, requestUrl: URL) {
         forwardedUrl.hostname = 'localhost';
       }
 
-      if (process.env.NODE_ENV === 'production' && isLoopbackHostname(forwardedUrl.hostname)) {
+      if (
+        process.env.NODE_ENV === 'production' &&
+        isForwardedRequest &&
+        isLoopbackHostname(forwardedUrl.hostname)
+      ) {
         if (configuredPublicOrigin) {
           return configuredPublicOrigin;
         }
@@ -137,7 +142,11 @@ function getSanitizedRequestOrigin(request: Request, requestUrl: URL) {
     return `http://localhost:${requestUrl.port || '3000'}`;
   }
 
-  if (process.env.NODE_ENV === 'production' && isLoopbackHostname(requestUrl.hostname)) {
+  if (
+    process.env.NODE_ENV === 'production' &&
+    isForwardedRequest &&
+    isLoopbackHostname(requestUrl.hostname)
+  ) {
     if (configuredPublicOrigin) {
       return configuredPublicOrigin;
     }
