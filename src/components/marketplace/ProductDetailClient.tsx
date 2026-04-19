@@ -899,6 +899,7 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
         onManualLocation={handleHeaderManualLocation}
         searchQuery={headerSearchQuery}
         onSearchChange={setHeaderSearchQuery}
+        searchPageHref="/search"
         onAddPost={() => setIsPostFlowOpen(true)}
       />
 

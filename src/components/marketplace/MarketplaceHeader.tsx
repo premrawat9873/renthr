@@ -30,6 +30,7 @@ interface HeaderProps {
   ) => void;
   searchQuery: string;
   onSearchChange: (q: string) => void;
+  searchPageHref?: string;
   onAddPost?: () => void;
 }
 
@@ -103,6 +104,7 @@ export default function MarketplaceHeader({
   onManualLocation,
   searchQuery,
   onSearchChange,
+  searchPageHref,
   onAddPost,
 }: HeaderProps) {
   const router = useRouter();
@@ -479,9 +481,31 @@ export default function MarketplaceHeader({
     });
   };
 
+  const openSearchPage = (rawQuery: string) => {
+    if (!searchPageHref) {
+      return false;
+    }
+
+    const normalizedQuery = rawQuery.trim();
+    const href = normalizedQuery
+      ? `${searchPageHref}?q=${encodeURIComponent(normalizedQuery)}`
+      : searchPageHref;
+
+    router.push(href);
+    return true;
+  };
+
   const commitSearchQuery = (rawQuery: string) => {
     const normalizedQuery = rawQuery.trim();
-    if (!normalizedQuery) {
+    if (!normalizedQuery && !searchPageHref) {
+      return;
+    }
+
+    if (openSearchPage(normalizedQuery)) {
+      if (normalizedQuery) {
+        saveRecentSearch(normalizedQuery);
+      }
+      setSearchFocused(false);
       return;
     }
 
@@ -491,6 +515,12 @@ export default function MarketplaceHeader({
   };
 
   const applyRecentSearch = (query: string) => {
+    if (openSearchPage(query)) {
+      saveRecentSearch(query);
+      setSearchFocused(false);
+      return;
+    }
+
     onSearchChange(query);
     setLocalSearchInput(query);
     saveRecentSearch(query);
@@ -500,6 +530,12 @@ export default function MarketplaceHeader({
   const applySearchSuggestion = (query: string) => {
     const normalizedQuery = query.trim();
     if (!normalizedQuery) {
+      return;
+    }
+
+    if (openSearchPage(normalizedQuery)) {
+      saveRecentSearch(normalizedQuery);
+      setSearchFocused(false);
       return;
     }
 
@@ -778,7 +814,14 @@ export default function MarketplaceHeader({
             placeholder="Search products..."
             value={localSearchInput}
             onChange={(e) => setLocalSearchInput(e.target.value)}
-            onFocus={() => setSearchFocused(true)}
+            onFocus={() => {
+              if (searchPageHref) {
+                commitSearchQuery(localSearchInput);
+                return;
+              }
+
+              setSearchFocused(true);
+            }}
             onBlur={() => {
               window.setTimeout(() => {
                 setSearchFocused(false);
@@ -799,7 +842,7 @@ export default function MarketplaceHeader({
           >
             <Search className="h-4 w-4" />
           </button>
-          {searchQuery && (
+          {!searchPageHref && searchQuery && (
             <button
               onClick={() => {
                 onSearchChange("");
@@ -812,7 +855,7 @@ export default function MarketplaceHeader({
             </button>
           )}
 
-          {searchFocused && (isSearchSuggestionsLoading || searchSuggestions.length > 0 || recentSearches.length > 0) ? (
+          {!searchPageHref && searchFocused && (isSearchSuggestionsLoading || searchSuggestions.length > 0 || recentSearches.length > 0) ? (
             <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-[80] overflow-hidden rounded-2xl border border-primary/15 bg-card shadow-xl">
               {isSearchSuggestionsLoading ? (
                 <p className="flex items-center gap-2 px-4 py-3 text-sm text-muted-foreground">

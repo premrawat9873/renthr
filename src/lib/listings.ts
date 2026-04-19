@@ -101,11 +101,13 @@ type MarketplaceListingsPageOptions = {
   cursor?: number | string | null;
   searchQuery?: string | null;
   category?: string | null;
+  categories?: string[] | null;
   filter?: ListingFilter;
   rentDurations?: RentDuration[];
   sort?: SortOption;
   minPrice?: number | null;
   maxPrice?: number | null;
+  location?: string | null;
   latitude?: number | null;
   longitude?: number | null;
 };
@@ -281,6 +283,14 @@ function normalizeSearchQuery(value: string | null | undefined) {
   return value.trim();
 }
 
+function normalizeLocationFilterQuery(value: string | null | undefined) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  return value.trim();
+}
+
 function normalizePriceValue(value: number | null | undefined) {
   if (!Number.isFinite(value)) {
     return null;
@@ -364,6 +374,14 @@ function normalizeCategoryFilterKey(value: string | null | undefined) {
   }
 
   return CATEGORY_FILTER_ALIASES[normalized] ?? normalized;
+}
+
+function normalizeCategoryFilterKeys(values: Array<string | null | undefined>) {
+  const normalized = values
+    .map((value) => normalizeCategoryFilterKey(value))
+    .filter((value) => value.length > 0);
+
+  return Array.from(new Set(normalized));
 }
 
 function resolveCategoryId(category: ListingRecord["category"]) {
@@ -694,8 +712,12 @@ function buildMarketplaceListingsWhere(
   options: MarketplaceListingsPageOptions
 ): Prisma.PostWhereInput {
   const filter = normalizeListingFilter(options.filter);
-  const normalizedCategory = normalizeCategoryFilterKey(options.category);
+  const normalizedCategories = normalizeCategoryFilterKeys([
+    ...(Array.isArray(options.categories) ? options.categories : []),
+    options.category,
+  ]);
   const normalizedSearchQuery = normalizeSearchQuery(options.searchQuery);
+  const normalizedLocationQuery = normalizeLocationFilterQuery(options.location);
 
   const where: Prisma.PostWhereInput = {
     status: "ACTIVE",
@@ -716,10 +738,12 @@ function buildMarketplaceListingsWhere(
     };
   }
 
-  if (normalizedCategory) {
+  if (normalizedCategories.length > 0) {
     where.category = {
       is: {
-        slug: normalizedCategory,
+        slug: {
+          in: normalizedCategories,
+        },
       },
     };
   }
@@ -749,6 +773,26 @@ function buildMarketplaceListingsWhere(
           },
         },
       },
+      {
+        address: {
+          is: {
+            city: {
+              contains: normalizedSearchQuery,
+              mode: "insensitive",
+            },
+          },
+        },
+      },
+      {
+        address: {
+          is: {
+            state: {
+              contains: normalizedSearchQuery,
+              mode: "insensitive",
+            },
+          },
+        },
+      },
     ];
 
     if (normalizedSearchSlug) {
@@ -765,6 +809,45 @@ function buildMarketplaceListingsWhere(
     }
 
     where.OR = searchConditions;
+  }
+
+  if (normalizedLocationQuery) {
+    where.AND = [
+      {
+        OR: [
+          {
+            address: {
+              is: {
+                city: {
+                  contains: normalizedLocationQuery,
+                  mode: "insensitive",
+                },
+              },
+            },
+          },
+          {
+            address: {
+              is: {
+                state: {
+                  contains: normalizedLocationQuery,
+                  mode: "insensitive",
+                },
+              },
+            },
+          },
+          {
+            address: {
+              is: {
+                line1: {
+                  contains: normalizedLocationQuery,
+                  mode: "insensitive",
+                },
+              },
+            },
+          },
+        ],
+      },
+    ];
   }
 
   return where;

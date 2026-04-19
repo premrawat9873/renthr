@@ -542,12 +542,41 @@ function parseQueryRentDurations(value: string | null): RentPriceKey[] {
   return Array.from(new Set(durations));
 }
 
+function parseQueryCategories(
+  categoriesCsv: string | null,
+  legacyCategoryParams: string[]
+) {
+  const rawValues = [
+    ...(categoriesCsv ? categoriesCsv.split(",") : []),
+    ...legacyCategoryParams,
+  ];
+
+  const normalized = rawValues
+    .map((value) => normalizeCategorySlug(value))
+    .filter((value) => value.length > 0);
+
+  return Array.from(new Set(normalized));
+}
+
+function parseQueryLocation(value: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const limitParam = searchParams.get("limit");
   const cursorParam = searchParams.get("cursor");
   const searchQueryParam = searchParams.get("q");
-  const categoryParam = searchParams.get("category");
+  const parsedCategories = parseQueryCategories(
+    searchParams.get("categories"),
+    searchParams.getAll("category")
+  );
+  const categoryParam = parsedCategories.length === 1 ? parsedCategories[0] : null;
   const filterParam = parseQueryFilter(searchParams.get("filter"));
   const rentDurationsParam = parseQueryRentDurations(
     searchParams.get("rentDurations")
@@ -555,6 +584,7 @@ export async function GET(request: Request) {
   const sortParam = parseQuerySort(searchParams.get("sort"));
   const minPriceParam = parseOptionalQueryNumber(searchParams.get("minPrice"));
   const maxPriceParam = parseOptionalQueryNumber(searchParams.get("maxPrice"));
+  const locationParam = parseQueryLocation(searchParams.get("location"));
   const latitudeParam = parseOptionalQueryNumber(searchParams.get("latitude"));
   const longitudeParam = parseOptionalQueryNumber(searchParams.get("longitude"));
   const parsedLimit = limitParam ? Number.parseInt(limitParam, 10) : NaN;
@@ -564,11 +594,13 @@ export async function GET(request: Request) {
     cursor: cursorParam,
     searchQuery: searchQueryParam,
     category: categoryParam,
+    categories: parsedCategories,
     filter: filterParam,
     rentDurations: rentDurationsParam,
     sort: sortParam,
     minPrice: minPriceParam,
     maxPrice: maxPriceParam,
+    location: locationParam,
     latitude: latitudeParam,
     longitude: longitudeParam,
   });

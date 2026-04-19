@@ -721,6 +721,7 @@ export function MarketplacePageClient({
         onManualLocation={handleManualLocation}
         searchQuery={safeSearchQuery}
         onSearchChange={(query) => dispatch(setSearchQuery(query))}
+        searchPageHref="/search"
         onAddPost={openPostFlow}
       />
 
