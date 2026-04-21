@@ -150,8 +150,7 @@ async function searchLocationSuggestion(query: string) {
 
   try {
     const response = await fetch(
-      `/api/locations/search?q=${encodeURIComponent(normalizedQuery)}`,
-      { cache: 'no-store' }
+      `/api/locations/search?q=${encodeURIComponent(normalizedQuery)}`
     );
 
     const payload = (await response
@@ -453,10 +452,7 @@ export function MarketplacePageClient({
   const fetchListingsPage = useCallback(
     async (cursor: string | null) => {
       const response = await fetch(
-        `/api/listings?${buildListingsParams(cursor).toString()}`,
-        {
-          cache: 'no-store',
-        }
+        `/api/listings?${buildListingsParams(cursor).toString()}`
       );
 
       const payload = (await response
