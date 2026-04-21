@@ -40,7 +40,7 @@ export default function Footer() {
           <div className="space-y-3">
             <h4 className="font-heading font-medium text-sm text-primary-foreground">Connect</h4>
             <div className="flex items-center gap-3">
-              <a href="https://instagram.com" aria-label="Instagram" className="h-9 w-9 rounded-full border border-primary-foreground/30 bg-primary-foreground/10 flex items-center justify-center text-primary-foreground/80 hover:text-highlight hover:border-highlight/70 hover:bg-primary-foreground/15 transition-all duration-200">
+              <a href="https://www.instagram.com/rent_hour_/" aria-label="Instagram" className="h-9 w-9 rounded-full border border-primary-foreground/30 bg-primary-foreground/10 flex items-center justify-center text-primary-foreground/80 hover:text-highlight hover:border-highlight/70 hover:bg-primary-foreground/15 transition-all duration-200">
                 <Instagram className="h-4 w-4" />
               </a>
               <a href="https://x.com" aria-label="X (Twitter)" className="h-9 w-9 rounded-full border border-primary-foreground/30 bg-primary-foreground/10 flex items-center justify-center text-primary-foreground/80 hover:text-highlight hover:border-highlight/70 hover:bg-primary-foreground/15 transition-all duration-200">

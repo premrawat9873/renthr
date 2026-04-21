@@ -1,4 +1,5 @@
 import { useRouter } from "next/navigation";
+import { useSyncExternalStore } from "react";
 import {
   ListingFilter,
   Product,
@@ -17,6 +18,7 @@ import {
   toggleWishlistOnServer,
 } from "@/store/slices/wishlistSlice";
 import { toast } from "@/hooks/use-toast";
+import { getPublicProfilePath } from "@/lib/profile-url";
 import { getProductHref } from "@/lib/product-url";
 import { resolveProfileAvatarUrl } from "@/lib/profile-avatar";
 
@@ -26,6 +28,8 @@ interface Props {
   rentDurations: RentDuration[];
   priority?: boolean;
 }
+
+const subscribeHydration = () => () => {};
 
 function formatDistanceLabel(distance: number) {
   if (!Number.isFinite(distance) || distance < 0) {
@@ -61,6 +65,8 @@ export default function ProductCard({
   const router = useRouter();
   const dispatch = useAppDispatch();
   const liked = useAppSelector((state) => selectIsWishlisted(state, product.id));
+  const isHydrated = useSyncExternalStore(subscribeHydration, () => true, () => false);
+  const likedForUi = isHydrated ? liked : false;
   const pendingIds = useAppSelector(selectWishlistPendingIds);
   const isUpdating = pendingIds.includes(product.id);
   const images = product.images?.length > 0 ? product.images : [product.image];
@@ -75,7 +81,14 @@ export default function ProductCard({
   const hasReviews = typeof ratingValue === "number" && reviewCount > 0;
   const productHref = getProductHref(product);
   const ownerName = product.ownerName?.trim() || "Seller";
-  const ownerProfileHref = product.ownerId ? `/profile/${product.ownerId}` : null;
+  const ownerProfileHref = product.ownerId
+    ? product.ownerProfilePath ||
+      getPublicProfilePath({
+        id: product.ownerId,
+        username: product.ownerUsername,
+        displayName: ownerName,
+      })
+    : null;
   const ownerAvatarUrl = resolveProfileAvatarUrl(product.ownerImage);
 
   return (
@@ -127,7 +140,7 @@ export default function ProductCard({
           onClick={async (e) => {
             e.stopPropagation();
             const result = await dispatch(
-              toggleWishlistOnServer({ productId: product.id, like: !liked })
+              toggleWishlistOnServer({ productId: product.id, like: !likedForUi })
             );
 
             if (toggleWishlistOnServer.rejected.match(result)) {
@@ -143,11 +156,15 @@ export default function ProductCard({
           }}
           disabled={isUpdating}
           aria-busy={isUpdating}
-          aria-label={liked ? `Remove ${product.title} from wishlist` : `Save ${product.title} to wishlist`}
+          aria-label={
+            likedForUi
+              ? `Remove ${product.title} from wishlist`
+              : `Save ${product.title} to wishlist`
+          }
           className="absolute top-2.5 right-2.5 h-8 w-8 rounded-full bg-card/80 backdrop-blur-sm flex items-center justify-center transition-all duration-200 hover:bg-card hover:scale-110 active:scale-95 z-10 disabled:opacity-70"
         >
           <Heart
-            className={`h-4 w-4 transition-all duration-200 ${liked ? "fill-destructive text-destructive" : "text-foreground/60"}`}
+            className={`h-4 w-4 transition-all duration-200 ${likedForUi ? "fill-destructive text-destructive" : "text-foreground/60"}`}
           />
         </button>
       </div>
@@ -157,7 +174,7 @@ export default function ProductCard({
         {/* Price */}
         <div className="space-y-0.5">
           {showSellPrices && isSellAvailable && (
-            <p className="text-base font-extrabold text-foreground">
+            <p className="font-sans text-[1.08rem] font-black leading-tight tracking-tight text-foreground">
               {product.price != null
                 ? `Sell ${formatPrice(product.price)}`
                 : "Selling price on request"}
@@ -169,12 +186,12 @@ export default function ProductCard({
                 {renderRentPrice(product)}
               </div>
             ) : (
-              <p className="text-base font-extrabold text-foreground">Rent price on request</p>
+              <p className="font-sans text-[1.08rem] font-black leading-tight tracking-tight text-foreground">Rent price on request</p>
             )
           )}
         </div>
 
-        <h3 className="font-heading text-sm font-semibold leading-snug line-clamp-2 text-foreground">
+        <h3 className="font-sans text-sm font-medium leading-snug line-clamp-2 text-foreground">
           {product.title}
         </h3>
 
@@ -259,12 +276,12 @@ function renderRentPrice(product: Product) {
 
   if (items.length === 0) {
     return (
-      <p className="text-sm font-semibold text-foreground">Rent price on request</p>
+      <p className="font-sans text-[1.02rem] font-black leading-tight tracking-tight text-foreground">Rent price on request</p>
     );
   }
 
   return items.map((item) => (
-    <p key={item.key} className="text-[0.95rem] font-bold text-foreground leading-tight">
+    <p key={item.key} className="font-sans text-[1.02rem] font-black text-foreground leading-tight tracking-tight">
       {item.label} {formatPrice(item.price)}
       <span className="font-normal text-muted-foreground">{item.suffix}</span>
     </p>

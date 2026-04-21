@@ -17,19 +17,11 @@ export type CurrentUserInfo = {
   id: string | null;
   email: string;
   name: string | null;
+  username: string | null;
   avatarUrl: string | null;
   isVerified: boolean;
   role?: 'USER' | 'ADMIN' | null;
 };
-
-function isMissingColumnError(error: unknown) {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    (error as { code?: string }).code === "P2022"
-  );
-}
 
 function parsePositiveInt(value: string) {
   const parsed = Number.parseInt(value, 10);
@@ -52,54 +44,29 @@ export async function getCurrentUserInfo(): Promise<CurrentUserInfo | null> {
       id: true,
       email: true,
       name: true,
+      username: true,
       avatarUrl: true,
       phone: true,
       isVerified: true,
       role: true,
       sessionRevokedAt: true,
     } as const;
-    const fallbackUserSelect = {
-      id: true,
-      email: true,
-      name: true,
-      avatarUrl: true,
-      phone: true,
-      isVerified: true,
-      role: true,
-    } as const;
-    let user: unknown;
-
-    try {
-      user = sessionUserId
-        ? await prisma.user.findUnique({
-            where: { id: sessionUserId },
-            select: userSelect as never,
-          })
-        : await prisma.user.findUnique({
-            where: { email: customSession.email.toLowerCase() },
-            select: userSelect as never,
-          });
-    } catch (error) {
-      if (!isMissingColumnError(error)) {
-        throw error;
-      }
-
-      user = sessionUserId
-        ? await prisma.user.findUnique({
-            where: { id: sessionUserId },
-            select: fallbackUserSelect as never,
-          })
-        : await prisma.user.findUnique({
-            where: { email: customSession.email.toLowerCase() },
-            select: fallbackUserSelect as never,
-          });
-    }
+    const user = sessionUserId
+      ? await prisma.user.findUnique({
+          where: { id: sessionUserId },
+          select: userSelect,
+        })
+      : await prisma.user.findUnique({
+          where: { email: customSession.email.toLowerCase() },
+          select: userSelect,
+        });
 
     const userWithRevocation = user as (typeof user & {
       sessionRevokedAt?: Date | null;
       id?: number;
       email?: string;
       name?: string | null;
+      username: string | null;
       avatarUrl?: string | null;
       phone?: string | null;
       isVerified?: boolean;
@@ -117,6 +84,7 @@ export async function getCurrentUserInfo(): Promise<CurrentUserInfo | null> {
       id: userWithRevocation?.id ? String(userWithRevocation.id) : null,
       email: userWithRevocation?.email ?? customSession.email.toLowerCase(),
       name: userWithRevocation?.name ?? customSession.name ?? null,
+      username: userWithRevocation?.username ?? null,
       avatarUrl: userWithRevocation?.avatarUrl ?? null,
       isVerified: Boolean(userWithRevocation?.isVerified && userWithRevocation?.phone),
       role: (userWithRevocation?.role as 'USER' | 'ADMIN') ?? 'USER',
@@ -171,6 +139,7 @@ export async function getCurrentUserInfo(): Promise<CurrentUserInfo | null> {
     id: true,
     email: true,
     name: true,
+    username: true,
     avatarUrl: true,
     phone: true,
     isVerified: true,
@@ -178,12 +147,14 @@ export async function getCurrentUserInfo(): Promise<CurrentUserInfo | null> {
   } as const;
   const dbUser = await prisma.user.findUnique({
     where: { email: normalizedEmail },
-    select: dbUserSelect as never,
+    select: dbUserSelect,
   });
+
   const typedDbUser = dbUser as {
     id: number;
     email: string;
     name: string | null;
+    username: string | null;
     avatarUrl: string | null;
     phone: string | null;
     isVerified: boolean;
@@ -208,6 +179,7 @@ export async function getCurrentUserInfo(): Promise<CurrentUserInfo | null> {
     id: typedDbUser ? String(typedDbUser.id) : null,
     email: typedDbUser?.email ?? normalizedEmail,
     name: typedDbUser?.name ?? metadataName ?? null,
+    username: typedDbUser?.username ?? null,
     avatarUrl: typedDbUser?.avatarUrl ?? supabaseAvatarUrl ?? null,
     isVerified: Boolean(typedDbUser?.isVerified && typedDbUser?.phone),
     role: typedDbUser?.role ?? 'USER',

@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { Providers } from "@/providers";
+import SiteChrome from "@/components/layout/SiteChrome";
 import { getSiteUrl, SITE_DESCRIPTION, SITE_NAME } from "@/lib/site";
 import { Analytics } from "@vercel/analytics/next";
-import AdSenseInlineAd from "@/components/ui/AdSenseInlineAd";
 import Script from "next/script";
 
 const siteUrl = getSiteUrl();
@@ -88,7 +88,9 @@ export default function RootLayout({
           type="adsense"
           data-ad-client="ca-pub-9411649869227225"
         ></amp-auto-ads>
-        <Providers>{children}</Providers>
+        <Providers>
+          <SiteChrome>{children}</SiteChrome>
+        </Providers>
         {/* Removed bottom global AdSense slot to avoid extra whitespace below page footer when ads fail to load. */}
         <Analytics />
       </body>

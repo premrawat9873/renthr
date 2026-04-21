@@ -360,7 +360,7 @@ export async function POST(
     revalidatePath("/");
     revalidatePath("/profile");
     revalidatePath("/my-posts");
-    revalidatePath(`/profile/${listing.authorId}`);
+    revalidatePath('/profile/[id]', 'page');
     revalidatePath(`/product/${listing.id}`);
 
     return NextResponse.json({

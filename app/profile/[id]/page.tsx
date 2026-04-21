@@ -1,13 +1,12 @@
 import type { Metadata } from 'next';
 import Image from 'next/image';
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
-import { ArrowLeft, Calendar, CheckCircle2, Package, Star } from 'lucide-react';
+import { notFound, permanentRedirect } from 'next/navigation';
+import { Calendar, CheckCircle2, Package, Star } from 'lucide-react';
 
 import UserListingsGrid from '@/components/marketplace/UserListingsGrid';
 import ReportActionButton from '@/components/marketplace/ReportActionButton';
 import AdminUserActions from '@/components/marketplace/AdminUserActions';
-import { Button } from '@/components/ui/button';
 import { formatTimeAgo } from '@/data/marketplaceData';
 import {
   getMarketplaceListingProductsByUserId,
@@ -46,7 +45,7 @@ export async function generateMetadata({
     title: `${profile.name}'s Listings`,
     description: `Browse listings posted by ${profile.name}.`,
     alternates: {
-      canonical: `/profile/${profile.id}`,
+      canonical: profile.profilePath,
     },
   };
 }
@@ -61,6 +60,10 @@ export default async function PublicProfilePage({
   const profile = await getPublicListingUserProfileById(id);
   if (!profile) {
     notFound();
+  }
+
+  if (id !== profile.profilePath.split('/').pop()) {
+    permanentRedirect(profile.profilePath);
   }
 
   const currentUser = await getCurrentUserInfo();
@@ -95,41 +98,7 @@ export default async function PublicProfilePage({
   }).format(profile.joinedAt);
 
   return (
-    <main className="min-h-screen bg-background text-foreground">
-      <header className="sticky top-0 z-50 border-b border-border/50 bg-card/75 shadow-[0_6px_16px_-14px_hsl(var(--foreground)/0.35)] backdrop-blur-md">
-        <div className="mx-auto flex h-[62px] max-w-6xl items-center justify-between px-4 sm:px-6">
-          <div className="flex items-center gap-4">
-            <Button
-              asChild
-              variant="ghost"
-              size="sm"
-              className="-ml-2 text-muted-foreground transition-all duration-200 hover:bg-accent/70 hover:text-foreground"
-            >
-              <Link href="/">
-                <ArrowLeft className="mr-1.5 h-4 w-4" />
-                <span className="hidden sm:inline">Back</span>
-              </Link>
-            </Button>
-
-            <Link href="/" className="flex items-center gap-1">
-              <span className="text-xl font-semibold tracking-tight text-foreground">rent</span>
-              <span className="rounded-md bg-accent px-2 py-0.5 text-xl font-bold text-accent-foreground">
-                hour
-              </span>
-            </Link>
-          </div>
-
-          <Button
-            asChild
-            variant="ghost"
-            size="sm"
-            className="text-muted-foreground transition-all duration-200 hover:bg-accent/70 hover:text-foreground"
-          >
-            <Link href="/profile">My Profile</Link>
-          </Button>
-        </div>
-      </header>
-
+    <main className="bg-background text-foreground">
       <div className="container py-10 space-y-8">
         <section className="rounded-[1.35rem] border border-border/55 bg-card p-5 shadow-[0_8px_18px_-16px_hsl(var(--foreground)/0.45)] sm:p-8">
           <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-8">

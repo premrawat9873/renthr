@@ -22,14 +22,21 @@ type StartConversationRequestBody = {
   message?: unknown;
 };
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const userId = await resolveAuthenticatedUserId();
     if (!userId) {
       return NextResponse.json({ error: 'Please log in to view your chats.' }, { status: 401 });
     }
 
-    const conversations = await listChatConversationsForUser(userId);
+    const { searchParams } = new URL(request.url);
+    const includeEmpty =
+      searchParams.get('includeEmpty') === '1' ||
+      searchParams.get('includeEmpty') === 'true';
+
+    const conversations = await listChatConversationsForUser(userId, {
+      includeEmpty,
+    });
     return NextResponse.json({ conversations });
   } catch {
     return NextResponse.json({ error: 'Unable to load conversations right now.' }, { status: 500 });

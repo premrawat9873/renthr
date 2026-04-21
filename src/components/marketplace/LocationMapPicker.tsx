@@ -56,6 +56,7 @@ export default function LocationMapPicker({
   disabled = false,
   className,
 }: LocationMapPickerProps) {
+  const { latitude: defaultCenterLatitude, longitude: defaultCenterLongitude } = defaultCenter;
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<LeafletMap | null>(null);
   const markerRef = useRef<Marker | null>(null);
@@ -91,7 +92,11 @@ export default function LocationMapPicker({
         const L = leafletModule;
         leafletRef.current = L;
 
-        const initialCenter = value ?? defaultCenter;
+        const initialCenter =
+          value ?? {
+            latitude: defaultCenterLatitude,
+            longitude: defaultCenterLongitude,
+          };
 
         const map = L.map(containerRef.current, {
           zoomControl: false,
@@ -164,7 +169,7 @@ export default function LocationMapPicker({
       markerRef.current = null;
       leafletRef.current = null;
     };
-  }, [defaultCenter.latitude, defaultCenter.longitude, value, disabled]);
+  }, [defaultCenterLatitude, defaultCenterLongitude, value, disabled]);
 
   useEffect(() => {
     if (!mapRef.current || !leafletRef.current) {

@@ -1,12 +1,9 @@
 'use client';
 
 import { useMemo, useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import dynamic from 'next/dynamic';
-import MarketplaceHeader from '@/components/marketplace/MarketplaceHeader';
 import CategorySection from '@/components/marketplace/CategorySection';
 import FilterBar from '@/components/marketplace/FilterBar';
 import ProductGrid from '@/components/marketplace/ProductGrid';
-import Footer from '@/components/marketplace/Footer';
 import {
   deserializeListingProduct,
   type ListingProductPayload,
@@ -35,7 +32,6 @@ import {
   setLocation,
   setPriceRange,
   setRentDurations,
-  setSearchQuery,
   setSelectedCategories,
   setSort,
   setUserCoords,
@@ -44,13 +40,21 @@ import {
 import { useWishlistBootstrap } from '@/hooks/use-wishlist';
 
 const PAGE_SIZE = 8;
-const PostListingFlowDialog = dynamic(
-  () => import('@/components/marketplace/PostListingFlowDialog'),
-  { ssr: false }
-);
 const subscribeHydration = () => () => {};
+const EMPTY_CATEGORIES: string[] = [];
 const EMPTY_DURATIONS: RentDuration[] = [];
 const DEFAULT_PRICE_RANGE: [number, number] = [0, MAX_PRICE];
+const MARKETPLACE_CACHE_STORAGE_KEY = 'renthour_marketplace_list_cache_v1';
+const MARKETPLACE_CACHE_MAX_AGE_MS = 30 * 60 * 1000;
+
+type MarketplaceListCacheEntry = {
+  queryKey: string;
+  loadedProducts: ListingProductPayload[];
+  nextCursor: string | null;
+  hasMorePages: boolean;
+  scrollY: number;
+  savedAt: number;
+};
 
 const LOCATION_COORDINATES: Record<string, { lat: number; lng: number }> = {
   bangalore: { lat: 12.9716, lng: 77.5946 },
@@ -221,6 +225,63 @@ type ListingsPageResponse = {
   error?: string;
 };
 
+function isValidMarketplaceListCacheEntry(value: unknown): value is MarketplaceListCacheEntry {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const candidate = value as Partial<MarketplaceListCacheEntry>;
+  return (
+    typeof candidate.queryKey === 'string' &&
+    Array.isArray(candidate.loadedProducts) &&
+    (typeof candidate.nextCursor === 'string' || candidate.nextCursor === null) &&
+    typeof candidate.hasMorePages === 'boolean' &&
+    typeof candidate.scrollY === 'number' &&
+    Number.isFinite(candidate.scrollY) &&
+    typeof candidate.savedAt === 'number' &&
+    Number.isFinite(candidate.savedAt)
+  );
+}
+
+function readMarketplaceListCache() {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  try {
+    const raw = window.sessionStorage.getItem(MARKETPLACE_CACHE_STORAGE_KEY);
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw) as unknown;
+    if (!isValidMarketplaceListCacheEntry(parsed)) {
+      return null;
+    }
+
+    if (Date.now() - parsed.savedAt > MARKETPLACE_CACHE_MAX_AGE_MS) {
+      window.sessionStorage.removeItem(MARKETPLACE_CACHE_STORAGE_KEY);
+      return null;
+    }
+
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeMarketplaceListCache(entry: MarketplaceListCacheEntry) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.sessionStorage.setItem(MARKETPLACE_CACHE_STORAGE_KEY, JSON.stringify(entry));
+  } catch {
+    // Ignore storage write failures.
+  }
+}
+
 export function MarketplacePageClient({
   initialProducts,
   initialNextCursor,
@@ -236,9 +297,11 @@ export function MarketplacePageClient({
   const [isRefreshingProducts, setIsRefreshingProducts] = useState(false);
   const [isApplyingListingQuery, setIsApplyingListingQuery] = useState(false);
   const [hasManualSortSelection, setHasManualSortSelection] = useState(false);
-  const [isPostFlowOpen, setIsPostFlowOpen] = useState(false);
+  const [hasBootstrappedCache, setHasBootstrappedCache] = useState(false);
   const listingRequestSequenceRef = useRef(0);
   const hasCompletedInitialRefreshRef = useRef(false);
+  const hasRestoredFromCacheRef = useRef(false);
+  const pendingScrollRestoreRef = useRef<number | null>(null);
   const reduxAuthenticated = useAppSelector(selectIsAuthenticated);
   const location = useAppSelector(selectLocation);
   const userLocation = useAppSelector(selectUserLocation);
@@ -258,7 +321,10 @@ export function MarketplacePageClient({
   const safeUserLocation = isHydrated ? userLocation : null;
   const safeUserCoords = isHydrated ? userCoords : null;
   const safeSearchQuery = isHydrated ? searchQuery : '';
-  const safeSelectedCategories = isHydrated ? selectedCategories : [];
+  const safeSelectedCategories = useMemo(
+    () => (isHydrated ? selectedCategories : EMPTY_CATEGORIES),
+    [isHydrated, selectedCategories]
+  );
   const safeFilter = isHydrated ? filter : 'all';
   const safeRentDurations = isHydrated ? rentDurations : EMPTY_DURATIONS;
   const safeSort = isHydrated ? sort : 'distance';
@@ -305,6 +371,31 @@ export function MarketplacePageClient({
       safeSearchQuery,
       safeSelectedCategories,
     ]
+  );
+  const listingQueryCacheKey = useMemo(
+    () => JSON.stringify(listingQuery),
+    [listingQuery]
+  );
+
+  const persistMarketplaceCache = useCallback(
+    (scrollY?: number) => {
+      const resolvedScrollY =
+        typeof scrollY === 'number' && Number.isFinite(scrollY)
+          ? Math.max(0, scrollY)
+          : typeof window !== 'undefined'
+            ? Math.max(0, window.scrollY)
+            : 0;
+
+      writeMarketplaceListCache({
+        queryKey: listingQueryCacheKey,
+        loadedProducts,
+        nextCursor,
+        hasMorePages,
+        scrollY: resolvedScrollY,
+        savedAt: Date.now(),
+      });
+    },
+    [hasMorePages, listingQueryCacheKey, loadedProducts, nextCursor]
   );
 
   const buildListingsParams = useCallback(
@@ -625,107 +716,87 @@ export function MarketplacePageClient({
     };
   }, [fetchListingsPage, isHydrated]);
 
-  const handleManualLocation = useCallback((city: string, selection?: LocationData) => {
-    const normalizedLocation = city.trim();
-
-    if (!normalizedLocation) {
-      dispatch(setLocation(null));
-      dispatch(setUserCoords(null));
-      dispatch(setUserLocation(null));
-      return;
-    }
-
-    dispatch(setLocation(normalizedLocation));
-
-    if (selection) {
-      dispatch(
-        setUserLocation({
-          city: selection.city,
-          state: selection.state,
-          latitude: selection.latitude,
-          longitude: selection.longitude,
-        })
-      );
-      dispatch(
-        setUserCoords({
-          latitude: selection.latitude,
-          longitude: selection.longitude,
-        })
-      );
-      return;
-    }
-
-    const knownCoords = getKnownCoordinates(normalizedLocation);
-    if (knownCoords) {
-      const [resolvedCity, resolvedState] = normalizedLocation
-        .split(',')
-        .map((part) => part.trim());
-
-      dispatch(
-        setUserLocation({
-          city: resolvedCity || normalizedLocation,
-          state: resolvedState || '',
-          latitude: knownCoords.lat,
-          longitude: knownCoords.lng,
-        })
-      );
-      dispatch(
-        setUserCoords({
-          latitude: knownCoords.lat,
-          longitude: knownCoords.lng,
-        })
-      );
-      return;
-    }
-
-    dispatch(setUserCoords(null));
-    dispatch(setUserLocation(null));
-
-    void (async () => {
-      const resolvedLocation = await searchLocationSuggestion(normalizedLocation);
-      if (!resolvedLocation) {
-        return;
-      }
-
-      dispatch(setLocation(resolvedLocation.label));
-      dispatch(
-        setUserLocation({
-          city: resolvedLocation.city,
-          state: resolvedLocation.state,
-          latitude: resolvedLocation.latitude,
-          longitude: resolvedLocation.longitude,
-        })
-      );
-      dispatch(
-        setUserCoords({
-          latitude: resolvedLocation.latitude,
-          longitude: resolvedLocation.longitude,
-        })
-      );
-    })();
-  }, [dispatch]);
-
   const clearFilters = useCallback(() => {
     dispatch(clearMarketplaceFilters());
   }, [dispatch]);
 
-  const openPostFlow = useCallback(() => {
-    setIsPostFlowOpen(true);
-  }, []);
+  useEffect(() => {
+    if (!isHydrated || hasRestoredFromCacheRef.current) {
+      return;
+    }
+
+    hasRestoredFromCacheRef.current = true;
+    const cachedState = readMarketplaceListCache();
+
+    if (!cachedState || cachedState.queryKey !== listingQueryCacheKey) {
+      setHasBootstrappedCache(true);
+      return;
+    }
+
+    setLoadedProducts(cachedState.loadedProducts);
+    setNextCursor(cachedState.nextCursor);
+    setHasMorePages(cachedState.hasMorePages);
+    pendingScrollRestoreRef.current = cachedState.scrollY;
+    setHasBootstrappedCache(true);
+  }, [isHydrated, listingQueryCacheKey]);
+
+  useEffect(() => {
+    if (!isHydrated || !hasBootstrappedCache) {
+      return;
+    }
+
+    persistMarketplaceCache();
+  }, [hasBootstrappedCache, isHydrated, persistMarketplaceCache]);
+
+  useEffect(() => {
+    if (!isHydrated || !hasBootstrappedCache) {
+      return;
+    }
+
+    const handlePageHide = () => {
+      persistMarketplaceCache(window.scrollY);
+    };
+
+    window.addEventListener('pagehide', handlePageHide);
+
+    return () => {
+      window.removeEventListener('pagehide', handlePageHide);
+      persistMarketplaceCache(window.scrollY);
+    };
+  }, [hasBootstrappedCache, isHydrated, persistMarketplaceCache]);
+
+  useEffect(() => {
+    if (!isHydrated) {
+      return;
+    }
+
+    const targetScrollY = pendingScrollRestoreRef.current;
+    if (targetScrollY == null || loadedProducts.length === 0) {
+      return;
+    }
+
+    let timeoutId: number | null = null;
+    const frameId = window.requestAnimationFrame(() => {
+      window.scrollTo({ top: targetScrollY, behavior: 'auto' });
+
+      timeoutId = window.setTimeout(() => {
+        window.scrollTo({ top: targetScrollY, behavior: 'auto' });
+      }, 120);
+
+      pendingScrollRestoreRef.current = null;
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      if (timeoutId != null) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [isHydrated, loadedProducts.length]);
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
-      <MarketplaceHeader
-        location={safeLocation}
-        onRequestLocation={requestLocation}
-        onManualLocation={handleManualLocation}
-        searchQuery={safeSearchQuery}
-        onSearchChange={(query) => dispatch(setSearchQuery(query))}
-        searchPageHref="/search"
-        onAddPost={openPostFlow}
-      />
-
-      <main className="container flex-1">
+    <div className="bg-background">
+      <main className="container">
         {safeLocation && (
           <div className="flex items-center gap-2 pt-4 text-sm text-muted-foreground">
             <MapPin className="h-3.5 w-3.5 text-primary" />
@@ -784,12 +855,6 @@ export function MarketplacePageClient({
           onLoadMore={loadMoreProducts}
         />
       </main>
-
-      <Footer />
-
-      {isPostFlowOpen ? (
-        <PostListingFlowDialog open={isPostFlowOpen} onOpenChange={setIsPostFlowOpen} />
-      ) : null}
     </div>
   );
 }

@@ -81,7 +81,9 @@ export default async function ProfilePage({
 
   return (
     <ProfileDashboardClient
+      profileId={currentUser.id}
       displayName={displayName}
+      username={currentUser.username ?? null}
       email={currentUser.email}
       avatarUrl={resolveProfileAvatarUrl(currentUser.avatarUrl)}
       isVerified={currentUser.isVerified}

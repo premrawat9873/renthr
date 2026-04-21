@@ -36,6 +36,7 @@ type CreateListingBody = {
   video?: unknown;
   location?: unknown;
   featured?: unknown;
+  saveAddress?: unknown;
 };
 
 const MAX_IMAGE_COUNT = 3;
@@ -632,6 +633,7 @@ export async function POST(request: Request) {
     const ageValue = parseNonNegativeFloat(body.ageValue);
     const location = parseListingLocation(body.location);
     const featured = parseBoolean(body.featured, false);
+    const saveAddress = parseBoolean(body.saveAddress, false);
 
     if (title.length < 3) {
       return NextResponse.json(
@@ -835,78 +837,108 @@ export async function POST(request: Request) {
       },
     });
 
-    const post = await prisma.post.create({
-      data: {
-        title,
-        description,
-        status: "ACTIVE",
-        author: {
-          connect: {
-            id: user.id,
+    const normalizedAddress = {
+      label: location.label || "Listing location",
+      line1: location.line1,
+      landmark: location.landmark,
+      city: location.city,
+      state: location.state,
+      pincode: location.pincode || "000000",
+      country: location.country || "IN",
+      latitude: location.latitude,
+      longitude: location.longitude,
+    };
+
+    const post = await prisma.$transaction(async (tx) => {
+      const createdPost = await tx.post.create({
+        data: {
+          title,
+          description,
+          status: "ACTIVE",
+          author: {
+            connect: {
+              id: user.id,
+            },
+          },
+          category: {
+            connect: {
+              id: category.id,
+            },
+          },
+          listingType,
+          featured,
+          publishedAt: new Date(),
+          address: {
+            create: normalizedAddress,
+          },
+          sellPricePaise:
+            supportsSell && sellPrice != null ? sellPrice * 100 : null,
+          rentHourlyPaise:
+            supportsRent && rentPrices.hourly != null
+              ? rentPrices.hourly * 100
+              : null,
+          rentDailyPaise:
+            supportsRent && rentPrices.daily != null
+              ? rentPrices.daily * 100
+              : null,
+          rentWeeklyPaise:
+            supportsRent && rentPrices.weekly != null
+              ? rentPrices.weekly * 100
+              : null,
+          rentMonthlyPaise:
+            supportsRent && rentPrices.monthly != null
+              ? rentPrices.monthly * 100
+              : null,
+          videoUrl: video?.url ?? null,
+          videoStorageKey: video?.storageKey ?? null,
+          videoDurationSeconds: video?.durationSeconds ?? null,
+          videoSizeBytes: video?.sizeBytes ?? null,
+          videoMimeType: video?.contentType ?? null,
+          images: {
+            create: imageUrls.map((url, index) => ({
+              url,
+              sortOrder: index,
+              isPrimary: index === 0,
+            })),
           },
         },
-        category: {
-          connect: {
-            id: category.id,
-          },
+        select: {
+          id: true,
         },
-        listingType,
-        featured,
-        publishedAt: new Date(),
-        address: {
-          create: {
-            label: location.label || "Listing location",
-            line1: location.line1,
-            landmark: location.landmark,
-            city: location.city,
-            state: location.state,
-            pincode: location.pincode || "000000",
-            country: location.country || "IN",
-            latitude: location.latitude,
-            longitude: location.longitude,
+      });
+
+      if (saveAddress) {
+        const existingAddress = await tx.address.findFirst({
+          where: {
             userId: user.id,
+            line1: normalizedAddress.line1,
+            city: normalizedAddress.city,
+            state: normalizedAddress.state,
+            pincode: normalizedAddress.pincode,
+            country: normalizedAddress.country,
           },
-        },
-        sellPricePaise:
-          supportsSell && sellPrice != null ? sellPrice * 100 : null,
-        rentHourlyPaise:
-          supportsRent && rentPrices.hourly != null
-            ? rentPrices.hourly * 100
-            : null,
-        rentDailyPaise:
-          supportsRent && rentPrices.daily != null
-            ? rentPrices.daily * 100
-            : null,
-        rentWeeklyPaise:
-          supportsRent && rentPrices.weekly != null
-            ? rentPrices.weekly * 100
-            : null,
-        rentMonthlyPaise:
-          supportsRent && rentPrices.monthly != null
-            ? rentPrices.monthly * 100
-            : null,
-        videoUrl: video?.url ?? null,
-        videoStorageKey: video?.storageKey ?? null,
-        videoDurationSeconds: video?.durationSeconds ?? null,
-        videoSizeBytes: video?.sizeBytes ?? null,
-        videoMimeType: video?.contentType ?? null,
-        images: {
-          create: imageUrls.map((url, index) => ({
-            url,
-            sortOrder: index,
-            isPrimary: index === 0,
-          })),
-        },
-      },
-      select: {
-        id: true,
-      },
+          select: {
+            id: true,
+          },
+        });
+
+        if (!existingAddress) {
+          await tx.address.create({
+            data: {
+              ...normalizedAddress,
+              userId: user.id,
+            },
+          });
+        }
+      }
+
+      return createdPost;
     });
 
     revalidatePath("/");
     revalidatePath("/profile");
     revalidatePath("/my-posts");
-    revalidatePath(`/profile/${user.id}`);
+    revalidatePath('/profile/[id]', 'page');
     revalidatePath(`/product/${post.id}`);
 
     return NextResponse.json(

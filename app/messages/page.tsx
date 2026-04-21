@@ -65,12 +65,14 @@ export default async function MessagesPage({
     );
   }
 
-  const conversations = await listChatConversationsForUser(userId);
   const params = await searchParams;
   const initialConversationId =
     typeof params.conversation === 'string' ? params.conversation : null;
   const initialDraftMessage =
     typeof params.draft === 'string' ? params.draft.slice(0, 2000) : null;
+  const conversations = await listChatConversationsForUser(userId, {
+    includeEmpty: Boolean(initialConversationId),
+  });
 
   return (
     <ChatPageClient

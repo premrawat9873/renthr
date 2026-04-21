@@ -208,14 +208,25 @@ function parseMessagePageSize(limit: unknown) {
 }
 
 export async function listChatConversationsForUser(
-  userId: number
+  userId: number,
+  options?: {
+    includeEmpty?: boolean;
+  }
 ): Promise<ChatConversationPayload[]> {
+  const includeEmpty = options?.includeEmpty === true;
   const conversations = await prisma.conversation.findMany({
     where: {
       type: 'LISTING',
       postId: {
         not: null,
       },
+      ...(includeEmpty
+        ? {}
+        : {
+            lastMessageAt: {
+              not: null,
+            },
+          }),
       participants: {
         some: {
           userId,
@@ -484,7 +495,9 @@ export async function startOrGetDirectConversation(input: {
     });
   }
 
-  const conversations = await listChatConversationsForUser(userId);
+  const conversations = await listChatConversationsForUser(userId, {
+    includeEmpty: true,
+  });
   const selectedConversation = conversations.find(
     (conversation) => conversation.id === String(baseConversation.id)
   );

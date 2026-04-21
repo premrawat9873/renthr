@@ -12,6 +12,11 @@ import {
 } from "@/data/listings";
 import type { Prisma } from "../../generated/prisma/client";
 import { resolveProfileAvatarUrl } from "@/lib/profile-avatar";
+import {
+  getPublicProfilePath,
+  normalizeProfileUsername,
+  parsePublicProfileId,
+} from "@/lib/profile-url";
 import { prisma } from "@/lib/prisma";
 
 export const MARKETPLACE_DEFAULT_PAGE_SIZE = 8;
@@ -86,6 +91,7 @@ const listingSelect = {
     select: {
       id: true,
       name: true,
+      username: true,
       email: true,
       avatarUrl: true,
       phone: true,
@@ -118,6 +124,7 @@ type ListingsByUserOptions = {
 
 export type PublicListingUserProfile = {
   id: string;
+  profilePath: string;
   name: string;
   avatarUrl: string;
   rating: number;
@@ -478,6 +485,13 @@ function mapListingRecordToProduct(record: ListingRecord): Product {
     videoSizeBytes: record.videoSizeBytes ?? undefined,
     videoContentType: record.videoMimeType ?? undefined,
     ownerId: String(record.author.id),
+    ownerProfilePath: getPublicProfilePath({
+      id: record.author.id,
+      username: record.author.username,
+      displayName: record.author.name,
+      email: record.author.email,
+    }),
+    ownerUsername: record.author.username ?? undefined,
     ownerName,
     ownerImage: resolveProfileAvatarUrl(record.author.avatarUrl),
     ownerTag: ownerIsVerified ? "Verified Seller" : "Not Verified",
@@ -853,8 +867,8 @@ function buildMarketplaceListingsWhere(
   return where;
 }
 
-async function findManyListings() {
-  return prisma.post.findMany({
+async function findManyListings(): Promise<ListingRecord[]> {
+  const args = {
     where: {
       status: "ACTIVE",
       publishedAt: {
@@ -864,18 +878,26 @@ async function findManyListings() {
     orderBy: {
       createdAt: "desc",
     },
+  } as const;
+
+  return prisma.post.findMany({
+    ...args,
     select: listingSelect,
   });
 }
 
 async function findManyListingsForMarketplaceQuery(
   where: Prisma.PostWhereInput
-) {
-  return prisma.post.findMany({
+): Promise<ListingRecord[]> {
+  const args = {
     where,
     orderBy: {
       id: "desc",
     },
+  } as const;
+
+  return prisma.post.findMany({
+    ...args,
     select: listingSelect,
   });
 }
@@ -883,44 +905,54 @@ async function findManyListingsForMarketplaceQuery(
 async function findManyListingsByAuthorId(
   authorId: number,
   options: ListingsByUserOptions = {}
-) {
+): Promise<ListingRecord[]> {
   const includeInactive = options.includeInactive ?? false;
 
+  const where: Prisma.PostWhereInput = {
+    authorId,
+    status: includeInactive
+      ? {
+          in: ["ACTIVE", "INACTIVE"],
+        }
+      : "ACTIVE",
+    publishedAt: {
+      not: null,
+    },
+  };
+
+  const orderBy: Prisma.PostOrderByWithRelationInput = {
+    createdAt: "desc",
+  };
+
   return prisma.post.findMany({
-    where: {
-      authorId,
-      status: includeInactive
-        ? {
-            in: ["ACTIVE", "INACTIVE"],
-          }
-        : "ACTIVE",
-      publishedAt: {
-        not: null,
-      },
-    },
-    orderBy: {
-      createdAt: "desc",
-    },
+    where,
+    orderBy,
     select: listingSelect,
   });
 }
 
-async function findWishlistListingsByUserId(userId: number) {
-  return prisma.wishlistItem.findMany({
-    where: {
-      userId,
-      post: {
-        publishedAt: {
-          not: null,
-        },
-        status: {
-          in: ["ACTIVE", "INACTIVE"],
-        },
+async function findWishlistListingsByUserId(
+  userId: number
+): Promise<Array<{ post: ListingRecord | null }>> {
+  const where: Prisma.WishlistItemWhereInput = {
+    userId,
+    post: {
+      publishedAt: {
+        not: null,
+      },
+      status: {
+        in: ["ACTIVE", "INACTIVE"],
       },
     },
-    orderBy: {
-      createdAt: "desc",
-    },
+  };
+
+  const orderBy: Prisma.WishlistItemOrderByWithRelationInput = {
+    createdAt: "desc",
+  };
+
+  return prisma.wishlistItem.findMany({
+    where,
+    orderBy,
     select: {
       post: {
         select: listingSelect,
@@ -1113,31 +1145,66 @@ export async function getWishlistProductPayloadByUserId(
 }
 
 export async function getPublicListingUserProfileById(userId: string | number) {
-  const parsedUserId =
-    typeof userId === "number" ? userId : Number.parseInt(userId, 10);
-  if (!Number.isFinite(parsedUserId) || parsedUserId <= 0) {
-    return null;
-  }
+  const normalizedIdentifier = (() => {
+    if (typeof userId !== "string") {
+      return String(userId);
+    }
+
+    const trimmed = userId.trim();
+    try {
+      return decodeURIComponent(trimmed).trim();
+    } catch {
+      return trimmed;
+    }
+  })();
+
+  const normalizedUsername = normalizeProfileUsername(normalizedIdentifier);
+  const canLookupByUsername =
+    typeof userId === "string" &&
+    normalizedUsername.length > 0 &&
+    normalizedUsername === normalizedIdentifier.toLowerCase();
 
   const user = await withDatabaseReadFallback(
     "getPublicListingUserProfileById",
-    () =>
-      prisma.user.findUnique({
+    async () => {
+      const baseSelect = {
+        id: true,
+        name: true,
+        username: true,
+        email: true,
+        avatarUrl: true,
+        phone: true,
+        isVerified: true,
+        rating: true,
+        reviewCount: true,
+        createdAt: true,
+      } as const;
+
+      if (canLookupByUsername) {
+        const byUsername = await prisma.user.findUnique({
+          where: {
+            username: normalizedUsername,
+          },
+          select: baseSelect,
+        });
+
+        if (byUsername) {
+          return byUsername;
+        }
+      }
+
+      const parsedUserId = parsePublicProfileId(normalizedIdentifier);
+      if (!Number.isFinite(parsedUserId) || parsedUserId <= 0) {
+        return null;
+      }
+
+      return prisma.user.findUnique({
         where: {
           id: parsedUserId,
         },
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          avatarUrl: true,
-          phone: true,
-          isVerified: true,
-          rating: true,
-          reviewCount: true,
-          createdAt: true,
-        },
-      }),
+        select: baseSelect,
+      });
+    },
     null
   );
 
@@ -1145,8 +1212,16 @@ export async function getPublicListingUserProfileById(userId: string | number) {
     return null;
   }
 
+  const resolvedUsername = user.username;
+
   return {
     id: String(user.id),
+    profilePath: getPublicProfilePath({
+      id: user.id,
+      username: resolvedUsername,
+      displayName: user.name,
+      email: user.email,
+    }),
     name: formatUserDisplayName(user.name, user.email),
     avatarUrl: resolveProfileAvatarUrl(user.avatarUrl),
     rating: Number((convertDecimalToNumber(user.rating) ?? 0).toFixed(1)),
@@ -1263,17 +1338,21 @@ export async function getListingProductById(id: string) {
     return null;
   }
 
+  const args = {
+    where: {
+      id: listingId,
+      status: "ACTIVE",
+      publishedAt: {
+        not: null,
+      },
+    },
+  } as const;
+
   const record = await withDatabaseReadFallback(
     "getListingProductById",
     () =>
       prisma.post.findFirst({
-        where: {
-          id: listingId,
-          status: "ACTIVE",
-          publishedAt: {
-            not: null,
-          },
-        },
+        ...args,
         select: listingSelect,
       }),
     null

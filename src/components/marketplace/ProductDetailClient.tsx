@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
-import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
@@ -38,7 +37,6 @@ import {
   Video,
 } from 'lucide-react';
 
-import MarketplaceHeader from '@/components/marketplace/MarketplaceHeader';
 import { cn } from '@/lib/utils';
 import { CATEGORIES } from '@/data/mockData';
 import type { ListingProductPayload } from '@/data/listings';
@@ -50,6 +48,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/hooks/use-toast';
 import { useWishlistBootstrap } from '@/hooks/use-wishlist';
 import { resolveProfileAvatarUrl } from '@/lib/profile-avatar';
+import { getPublicProfilePath } from '@/lib/profile-url';
 import { getProductHref } from '@/lib/product-url';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import {
@@ -59,11 +58,6 @@ import {
 } from '@/store/slices/wishlistSlice';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import ReportActionButton from '@/components/marketplace/ReportActionButton';
-
-const PostListingFlowDialog = dynamic(
-  () => import('@/components/marketplace/PostListingFlowDialog'),
-  { ssr: false }
-);
 
 const CATEGORY_ITEMS = [
   { id: 'all', label: 'All Categories', icon: LayoutGrid },
@@ -276,9 +270,6 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
   const [isReserveDialogOpen, setIsReserveDialogOpen] = useState(false);
   const [activeChatAction, setActiveChatAction] = useState<ChatLaunchAction | null>(null);
   const openingRef = useRef(false);
-  const [headerLocation, setHeaderLocation] = useState<string | null>(null);
-  const [headerSearchQuery, setHeaderSearchQuery] = useState('');
-  const [isPostFlowOpen, setIsPostFlowOpen] = useState(false);
   const [reviews, setReviews] = useState<ListingReview[]>([]);
   const [reviewSummary, setReviewSummary] = useState<ReviewSummary>(EMPTY_REVIEW_SUMMARY);
   const [reviewAuth, setReviewAuth] = useState<ReviewsAuthState>(EMPTY_REVIEW_AUTH);
@@ -405,7 +396,14 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
   const ownerDisplayName = product.ownerName || 'User';
   const ownerIsVerified = Boolean(product.ownerIsVerified);
   const ownerAvatarUrl = resolveProfileAvatarUrl(product.ownerImage);
-  const ownerProfileHref = product.ownerId ? `/profile/${product.ownerId}` : null;
+  const ownerProfileHref = product.ownerId
+    ? product.ownerProfilePath ||
+      getPublicProfilePath({
+        id: product.ownerId,
+        username: product.ownerUsername,
+        displayName: ownerDisplayName,
+      })
+    : null;
   const sellerIdentityContent = (
     <>
       <div className="relative">
@@ -739,77 +737,6 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
     });
   };
 
-  const handleHeaderManualLocation = useCallback((city: string) => {
-    setHeaderLocation(city.trim() || null);
-  }, []);
-
-  const handleHeaderRequestLocation = useCallback(() => {
-    if (typeof navigator === 'undefined' || !navigator.geolocation) {
-      toast({
-        title: 'Location unavailable',
-        description: 'Your browser does not support location services.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        void (async () => {
-          const { latitude, longitude } = position.coords;
-
-          try {
-            const response = await fetch(
-              `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`,
-              { cache: 'no-store' }
-            );
-
-            if (!response.ok) {
-              throw new Error('Unable to resolve your location.');
-            }
-
-            const payload = (await response.json()) as {
-              address?: {
-                city?: string;
-                town?: string;
-                village?: string;
-                county?: string;
-                state?: string;
-              };
-            };
-
-            const city =
-              payload.address?.city ??
-              payload.address?.town ??
-              payload.address?.village ??
-              payload.address?.county ??
-              '';
-            const state = payload.address?.state ?? '';
-            const displayValue = [city, state].filter(Boolean).join(', ');
-
-            setHeaderLocation(
-              displayValue || `${latitude.toFixed(3)}, ${longitude.toFixed(3)}`
-            );
-          } catch {
-            setHeaderLocation(`${latitude.toFixed(3)}, ${longitude.toFixed(3)}`);
-          }
-        })();
-      },
-      () => {
-        toast({
-          title: 'Location permission denied',
-          description: 'Allow location access to auto-detect your city.',
-          variant: 'destructive',
-        });
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 300000,
-      }
-    );
-  }, []);
-
   const loadReviews = useCallback(async () => {
     setIsLoadingReviews(true);
     setReviewsError(null);
@@ -926,17 +853,7 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <MarketplaceHeader
-        location={headerLocation}
-        onRequestLocation={handleHeaderRequestLocation}
-        onManualLocation={handleHeaderManualLocation}
-        searchQuery={headerSearchQuery}
-        onSearchChange={setHeaderSearchQuery}
-        searchPageHref="/search"
-        onAddPost={() => setIsPostFlowOpen(true)}
-      />
-
+    <div className="bg-background">
       <header className="border-b border-border/50 bg-card/80 backdrop-blur-md">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
           <div className="flex items-center gap-4">
@@ -1996,11 +1913,6 @@ export default function ProductDetailClient({ product }: { product: ListingProdu
           </div>
         </div>
       )}
-
-      {isPostFlowOpen ? (
-        <PostListingFlowDialog open={isPostFlowOpen} onOpenChange={setIsPostFlowOpen} />
-      ) : null}
-
     </div>
   );
 }

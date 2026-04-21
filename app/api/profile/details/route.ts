@@ -2,16 +2,30 @@ import { NextResponse } from 'next/server';
 
 import { resolveAuthenticatedUserId } from '@/lib/address-utils';
 import { resolveProfileAvatarUrl } from '@/lib/profile-avatar';
+import {
+  getProfileUsernameValidationError,
+  getPublicProfilePath,
+  normalizeProfileUsername,
+} from '@/lib/profile-url';
 import { prisma } from '@/lib/prisma';
 
 export const runtime = 'nodejs';
 
 type UpdateProfileBody = {
   name?: unknown;
+  username?: unknown;
 };
 
 const NAME_MIN_LENGTH = 2;
 const NAME_MAX_LENGTH = 80;
+
+const userSelectWithUsername = {
+  id: true,
+  email: true,
+  name: true,
+  username: true,
+  avatarUrl: true,
+} as const;
 
 function normalizeName(value: unknown) {
   if (typeof value !== 'string') {
@@ -19,6 +33,10 @@ function normalizeName(value: unknown) {
   }
 
   return value.trim().replace(/\s+/g, ' ');
+}
+
+function hasOwnField(value: unknown, key: string) {
+  return Boolean(value && typeof value === 'object' && key in value);
 }
 
 export async function GET() {
@@ -33,11 +51,7 @@ export async function GET() {
 
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: {
-        email: true,
-        name: true,
-        avatarUrl: true,
-      },
+      select: userSelectWithUsername,
     });
 
     if (!user) {
@@ -48,7 +62,14 @@ export async function GET() {
       user: {
         email: user.email,
         name: user.name,
+        username: user.username,
         avatarUrl: resolveProfileAvatarUrl(user.avatarUrl),
+        publicProfilePath: getPublicProfilePath({
+          id: user.id,
+          username: user.username,
+          displayName: user.name,
+          email: user.email,
+        }),
       },
     });
   } catch {
@@ -71,6 +92,9 @@ export async function PATCH(request: Request) {
 
     const body = (await request.json()) as UpdateProfileBody;
     const normalizedName = normalizeName(body.name);
+    const hasUsernameField = hasOwnField(body, 'username');
+    const rawUsername = typeof body.username === 'string' ? body.username.trim() : '';
+    const normalizedUsername = normalizeProfileUsername(body.username);
 
     if (normalizedName.length > 0 && normalizedName.length < NAME_MIN_LENGTH) {
       return NextResponse.json(
@@ -86,23 +110,60 @@ export async function PATCH(request: Request) {
       );
     }
 
+    if (hasUsernameField) {
+      if (rawUsername.length > 0 && normalizedUsername.length === 0) {
+        return NextResponse.json(
+          { error: 'Username can include lowercase letters, numbers, and hyphens.' },
+          { status: 400 }
+        );
+      }
+
+      const usernameError = getProfileUsernameValidationError(normalizedUsername);
+      if (usernameError) {
+        return NextResponse.json(
+          { error: usernameError },
+          { status: 400 }
+        );
+      }
+
+      if (normalizedUsername) {
+        const existingUser = await prisma.user.findUnique({
+          where: { username: normalizedUsername },
+          select: { id: true },
+        });
+
+        if (existingUser && existingUser.id !== userId) {
+          return NextResponse.json(
+            { error: 'Username is already taken. Please choose another one.' },
+            { status: 409 }
+          );
+        }
+      }
+    }
+
     const updatedUser = await prisma.user.update({
       where: { id: userId },
       data: {
         name: normalizedName || null,
+        ...(hasUsernameField
+          ? { username: normalizedUsername || null }
+          : {}),
       },
-      select: {
-        email: true,
-        name: true,
-        avatarUrl: true,
-      },
+      select: userSelectWithUsername,
     });
 
     return NextResponse.json({
       user: {
         email: updatedUser.email,
         name: updatedUser.name,
+        username: updatedUser.username,
         avatarUrl: resolveProfileAvatarUrl(updatedUser.avatarUrl),
+        publicProfilePath: getPublicProfilePath({
+          id: updatedUser.id,
+          username: updatedUser.username,
+          displayName: updatedUser.name,
+          email: updatedUser.email,
+        }),
       },
     });
   } catch {

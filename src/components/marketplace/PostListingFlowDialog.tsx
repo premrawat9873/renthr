@@ -56,6 +56,21 @@ type CreateListingResponse = {
   error?: string;
 };
 
+type AddressItem = {
+  id: string;
+  address: string;
+  state: string;
+  city: string;
+  pincode: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type AddressListResponse = {
+  addresses?: AddressItem[];
+  error?: string;
+};
+
 const MAX_CATEGORY_SELECTION = 2;
 const MAX_PHOTO_UPLOADS = 3;
 const MAX_SINGLE_UPLOAD_PAYLOAD_BYTES = 4 * 1024 * 1024;
@@ -304,13 +319,6 @@ function loadVideoDurationSeconds(file: File) {
 function toOptimizedVideoFileName(name: string) {
   const baseName = name.replace(/\.[^.]+$/, "");
   return `${baseName || "clip"}-optimized.webm`;
-}
-
-function formatDurationLabel(seconds: number) {
-  const safeSeconds = Math.max(0, Math.floor(seconds));
-  const minutes = Math.floor(safeSeconds / 60);
-  const remainingSeconds = safeSeconds % 60;
-  return `${minutes}:${String(remainingSeconds).padStart(2, "0")}`;
 }
 
 function formatDurationPreciseLabel(seconds: number) {
@@ -570,6 +578,10 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
   const [locationCity, setLocationCity] = useState("");
   const [locationState, setLocationState] = useState("");
   const [locationPincode, setLocationPincode] = useState("");
+  const [savedAddresses, setSavedAddresses] = useState<AddressItem[]>([]);
+  const [isLoadingSavedAddresses, setIsLoadingSavedAddresses] = useState(false);
+  const [selectedSavedAddressId, setSelectedSavedAddressId] = useState<string | null>(null);
+  const [saveAddressForFuture, setSaveAddressForFuture] = useState(false);
   const [locationCoordinates, setLocationCoordinates] = useState<MapCoordinates | null>(null);
   const [isResolvingPinAddress, setIsResolvingPinAddress] = useState(false);
   const [isUsingCurrentLocation, setIsUsingCurrentLocation] = useState(false);
@@ -723,6 +735,8 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
     setLocationCity("");
     setLocationState("");
     setLocationPincode("");
+    setSelectedSavedAddressId(null);
+    setSaveAddressForFuture(false);
     setLocationCoordinates(null);
     setSelectedStateCode("");
     setCityOptions([]);
@@ -892,6 +906,30 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
     }
   }, []);
 
+  const loadSavedAddresses = useCallback(async () => {
+    try {
+      setIsLoadingSavedAddresses(true);
+      const response = await fetch("/api/addresses", {
+        method: "GET",
+        cache: "no-store",
+      });
+
+      const payload = (await response
+        .json()
+        .catch(() => null)) as AddressListResponse | null;
+
+      if (!response.ok || !Array.isArray(payload?.addresses)) {
+        throw new Error(payload?.error || "Unable to load saved addresses right now.");
+      }
+
+      setSavedAddresses(payload.addresses);
+    } catch {
+      setSavedAddresses([]);
+    } finally {
+      setIsLoadingSavedAddresses(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (!open || step !== "location" || stateOptions.length > 0) {
       return;
@@ -899,6 +937,28 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
 
     void fetchIndiaStates();
   }, [fetchIndiaStates, open, stateOptions.length, step]);
+
+  useEffect(() => {
+    if (!open || step !== "location") {
+      return;
+    }
+
+    void loadSavedAddresses();
+  }, [loadSavedAddresses, open, step]);
+
+  const applySavedAddress = useCallback((address: AddressItem) => {
+    setSelectedSavedAddressId(address.id);
+    setSaveAddressForFuture(false);
+    setLocationLine1(address.address.trim());
+    setLocationCity(address.city.trim());
+    setLocationState(address.state.trim());
+    setLocationPincode(normalizePincodeInput(address.pincode));
+    setSelectedStateCode("");
+    setCityOptions([]);
+    pinResolveRequestIdRef.current += 1;
+    setIsResolvingPinAddress(false);
+    setLocationCoordinates(null);
+  }, []);
 
   const handlePhotosSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const incomingFiles = Array.from(event.target.files ?? []);
@@ -1193,6 +1253,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
 
   const handleStateSelection = useCallback(
     async (nextStateCode: string) => {
+      setSelectedSavedAddressId(null);
       if (!nextStateCode) {
         setSelectedStateCode("");
         setLocationState("");
@@ -1211,6 +1272,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
   );
 
   const handleCitySelection = useCallback((nextCity: string) => {
+    setSelectedSavedAddressId(null);
     setLocationCity(nextCity);
   }, []);
 
@@ -1218,6 +1280,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
     async (coordinates: MapCoordinates, trigger: "auto" | "manual") => {
       const requestId = ++pinResolveRequestIdRef.current;
       setIsResolvingPinAddress(true);
+      setSelectedSavedAddressId(null);
 
       try {
         const resolvedAddress = await reverseGeocodeCoordinates(coordinates);
@@ -1486,6 +1549,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
                 durationSeconds: uploadedVideo.durationSeconds,
               }
             : null,
+          saveAddress: saveAddressForFuture && !selectedSavedAddressId,
           location: locationPayload,
         }),
       });
@@ -1558,7 +1622,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
               active={step === "category"}
               complete={step !== "category"}
               stepNumber={1}
-              title="Window 1"
+              title="Categories"
               subtitle="Search + choose up to 2 categories"
               onClick={() => handleStepNavigation("category")}
               disabled={isSubmitting}
@@ -1572,7 +1636,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
               active={step === "details"}
               complete={step === "photos" || step === "location" || step === "purpose"}
               stepNumber={2}
-              title="Window 2"
+              title="Details"
               subtitle="Product name, description, and age"
               onClick={() => handleStepNavigation("details")}
               disabled={!canNavigateToStep("details") || isSubmitting}
@@ -1586,7 +1650,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
               active={step === "photos"}
               complete={step === "location" || step === "purpose"}
               stepNumber={3}
-              title="Window 3"
+              title="Photos"
               subtitle="Upload up to 3 photos + 1 video"
               onClick={() => handleStepNavigation("photos")}
               disabled={!canNavigateToStep("photos") || isSubmitting}
@@ -1600,7 +1664,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
               active={step === "location"}
               complete={step === "purpose"}
               stepNumber={4}
-              title="Window 4"
+              title="Location"
               subtitle="Add product pickup location"
               onClick={() => handleStepNavigation("location")}
               disabled={!canNavigateToStep("location") || isSubmitting}
@@ -1614,7 +1678,7 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
               active={step === "purpose"}
               complete={false}
               stepNumber={5}
-              title="Window 5"
+              title="Purpose"
               subtitle="Review, pricing, and publish"
               onClick={() => handleStepNavigation("purpose")}
               disabled={!canNavigateToStep("purpose") || isSubmitting}
@@ -2034,6 +2098,52 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
                 City and state are required so buyers can get accurate distance from your listing.
               </p>
 
+              <div className="space-y-2 rounded-xl border border-primary/25 bg-accent/15 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-semibold text-foreground">Saved addresses</p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void loadSavedAddresses()}
+                    disabled={isLoadingSavedAddresses}
+                    className="h-8 border-primary/45 text-xs"
+                  >
+                    {isLoadingSavedAddresses ? "Refreshing..." : "Refresh"}
+                  </Button>
+                </div>
+
+                {isLoadingSavedAddresses ? (
+                  <p className="text-xs text-muted-foreground">Loading saved addresses...</p>
+                ) : savedAddresses.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">No saved addresses yet.</p>
+                ) : (
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {savedAddresses.map((address) => {
+                      const selected = selectedSavedAddressId === address.id;
+                      return (
+                        <button
+                          key={address.id}
+                          type="button"
+                          onClick={() => applySavedAddress(address)}
+                          className={cn(
+                            "rounded-xl border px-3 py-2 text-left transition-colors",
+                            selected
+                              ? "border-primary bg-primary/10"
+                              : "border-primary/30 bg-background hover:border-primary/55 hover:bg-accent/40",
+                          )}
+                        >
+                          <p className="truncate text-xs font-semibold text-foreground">{address.address}</p>
+                          <p className="truncate text-[11px] text-muted-foreground">
+                            {address.city}, {address.state} {address.pincode}
+                          </p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
               <div className="space-y-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <Label>Pin exact location on map</Label>
@@ -2104,7 +2214,10 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
                 <Input
                   id="post-listing-location-line1"
                   value={locationLine1}
-                  onChange={(event) => setLocationLine1(event.target.value)}
+                  onChange={(event) => {
+                    setSelectedSavedAddressId(null);
+                    setLocationLine1(event.target.value);
+                  }}
                   placeholder="Street, area, or landmark"
                   maxLength={120}
                   className={FIELD_BORDER_CLASS}
@@ -2183,7 +2296,10 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
                 <Input
                   id="post-listing-location-pincode"
                   value={locationPincode}
-                  onChange={(event) => setLocationPincode(normalizePincodeInput(event.target.value))}
+                  onChange={(event) => {
+                    setSelectedSavedAddressId(null);
+                    setLocationPincode(normalizePincodeInput(event.target.value));
+                  }}
                   placeholder="e.g. 560001"
                   maxLength={6}
                   inputMode="numeric"
@@ -2193,6 +2309,22 @@ export default function PostListingFlowDialog({ open, onOpenChange }: PostListin
                 <p className="text-xs text-muted-foreground">
                   Enter a 6-digit pincode.
                 </p>
+              </div>
+
+              <div className="flex items-center justify-between rounded-xl border border-primary/30 bg-accent/20 px-3 py-2.5">
+                <div className="space-y-0.5">
+                  <p className="text-sm font-semibold text-foreground">Save this address for next time</p>
+                  <p className="text-xs text-muted-foreground">
+                    {selectedSavedAddressId
+                      ? "Using an existing saved address."
+                      : "Address will be saved to your profile only when enabled."}
+                  </p>
+                </div>
+                <Switch
+                  checked={saveAddressForFuture && !selectedSavedAddressId}
+                  onCheckedChange={setSaveAddressForFuture}
+                  disabled={Boolean(selectedSavedAddressId) || isSubmitting}
+                />
               </div>
 
               {!hasValidLocation && (

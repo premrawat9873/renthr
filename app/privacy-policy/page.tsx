@@ -69,9 +69,9 @@ export default function PrivacyPolicyPage() {
           Effective date: {LAST_UPDATED}
         </p>
         <p className="mt-4 text-sm leading-7 text-muted-foreground md:text-base">
-          This Privacy Policy explains how {SITE_NAME} ("we", "our", "us") collects, uses,
+          This Privacy Policy explains how {SITE_NAME} (&quot;we&quot;, &quot;our&quot;, &quot;us&quot;) collects, uses,
           shares, and protects personal data when you use our website, apps, APIs, and related
-          services (collectively, the "Services").
+          services (collectively, the &quot;Services&quot;).
         </p>
 
         <nav aria-label="Privacy policy contents" className="mt-8 rounded-2xl border border-border bg-card p-5">

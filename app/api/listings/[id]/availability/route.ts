@@ -80,7 +80,7 @@ export async function PATCH(
     revalidatePath("/");
     revalidatePath("/profile");
     revalidatePath("/my-posts");
-    revalidatePath(`/profile/${listing.authorId}`);
+    revalidatePath('/profile/[id]', 'page');
     revalidatePath(`/product/${updated.id}`);
 
     return NextResponse.json({

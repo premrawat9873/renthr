@@ -815,11 +815,6 @@ export default function MarketplaceHeader({
             value={localSearchInput}
             onChange={(e) => setLocalSearchInput(e.target.value)}
             onFocus={() => {
-              if (searchPageHref) {
-                commitSearchQuery(localSearchInput);
-                return;
-              }
-
               setSearchFocused(true);
             }}
             onBlur={() => {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -64,6 +64,11 @@ import {
   getDefaultProfileAvatarUrl,
   resolveProfileAvatarUrl,
 } from '@/lib/profile-avatar';
+import {
+  getProfileUsernameValidationError,
+  getPublicProfilePath,
+  normalizeProfileUsername,
+} from '@/lib/profile-url';
 import { getProductHref } from '@/lib/product-url';
 import { cn } from '@/lib/utils';
 
@@ -81,7 +86,9 @@ type SettingsItemKey =
 type SettingsDialogKey = Exclude<SettingsItemKey, 'logout'>;
 
 type ProfileDashboardClientProps = {
+  profileId: string | null;
   displayName: string;
+  username: string | null;
   email: string;
   avatarUrl: string | null;
   isVerified: boolean;
@@ -101,8 +108,10 @@ type AvatarUploadResponse = {
 type ProfileDetailsResponse = {
   user?: {
     name: string | null;
+    username: string | null;
     email: string;
     avatarUrl: string | null;
+    publicProfilePath?: string | null;
   };
   error?: string;
 };
@@ -438,7 +447,9 @@ function getTabIcon(tab: TabKey) {
 const DEFAULT_WISHLIST_RENT_DURATIONS: RentDuration[] = ['hourly', 'daily', 'weekly', 'monthly'];
 
 export default function ProfileDashboardClient({
+  profileId,
   displayName,
+  username,
   email,
   avatarUrl,
   isVerified,
@@ -475,7 +486,9 @@ export default function ProfileDashboardClient({
   const [settingsDialog, setSettingsDialog] = useState<SettingsDialogKey | null>(null);
 
   const [profileDisplayName, setProfileDisplayName] = useState(displayName);
+  const [profileUsername, setProfileUsername] = useState(username);
   const [profileFormName, setProfileFormName] = useState(displayName);
+  const [profileFormUsername, setProfileFormUsername] = useState(username ?? '');
   const [isSavingProfile, setIsSavingProfile] = useState(false);
 
   const [addresses, setAddresses] = useState<AddressItem[]>([]);
@@ -501,6 +514,32 @@ export default function ProfileDashboardClient({
   );
   const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
 
+  const publicProfilePath = useMemo(() => {
+    if (!profileId) {
+      return null;
+    }
+
+    return getPublicProfilePath({
+      id: profileId,
+      username: profileUsername,
+      displayName: profileDisplayName,
+      email,
+    });
+  }, [email, profileDisplayName, profileId, profileUsername]);
+
+  const profileFormPathPreview = useMemo(() => {
+    if (!profileId) {
+      return null;
+    }
+
+    return getPublicProfilePath({
+      id: profileId,
+      username: normalizeProfileUsername(profileFormUsername),
+      displayName: profileFormName || profileDisplayName,
+      email,
+    });
+  }, [email, profileDisplayName, profileFormName, profileFormUsername, profileId]);
+
   useEffect(() => {
     setListingItems(products);
     setAvailabilityById(
@@ -520,8 +559,10 @@ export default function ProfileDashboardClient({
 
   useEffect(() => {
     setProfileDisplayName(displayName);
+    setProfileUsername(username);
     setProfileFormName(displayName);
-  }, [displayName]);
+    setProfileFormUsername(username ?? '');
+  }, [displayName, username]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -636,6 +677,59 @@ export default function ProfileDashboardClient({
 
     router.push('/');
   };
+
+  const handleShareProfile = useCallback(async () => {
+    if (!publicProfilePath || typeof window === 'undefined') {
+      toast({
+        title: 'Profile link unavailable',
+        description: 'Sign in to generate your public profile link.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const absoluteUrl = new URL(publicProfilePath, window.location.origin).toString();
+    const sharePayload = {
+      title: `${profileDisplayName} on RentHour`,
+      text: 'Check out my profile on RentHour.',
+      url: absoluteUrl,
+    };
+
+    if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+      try {
+        await navigator.share(sharePayload);
+        return;
+      } catch (error) {
+        if (
+          error &&
+          typeof error === 'object' &&
+          'name' in error &&
+          (error as { name?: string }).name === 'AbortError'
+        ) {
+          return;
+        }
+      }
+    }
+
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(absoluteUrl);
+        toast({
+          title: 'Profile link copied',
+          description: absoluteUrl,
+        });
+        return;
+      } catch {
+        // Fall through to error state below.
+      }
+    }
+
+    toast({
+      title: 'Could not share profile link',
+      description: absoluteUrl,
+      variant: 'destructive',
+    });
+  }, [profileDisplayName, publicProfilePath]);
 
   const handleAvatarFileChange = async (
     event: React.ChangeEvent<HTMLInputElement>
@@ -802,6 +896,8 @@ export default function ProfileDashboardClient({
 
   const handleSaveProfile = async () => {
     const normalizedName = profileFormName.trim().replace(/\s+/g, ' ');
+    const rawUsername = profileFormUsername.trim();
+    const normalizedUsername = normalizeProfileUsername(profileFormUsername);
 
     if (normalizedName.length > 0 && normalizedName.length < 2) {
       toast({
@@ -821,6 +917,25 @@ export default function ProfileDashboardClient({
       return;
     }
 
+    if (rawUsername.length > 0 && normalizedUsername.length === 0) {
+      toast({
+        title: 'Invalid username',
+        description: 'Username can include lowercase letters, numbers, and hyphens.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const usernameError = getProfileUsernameValidationError(normalizedUsername);
+    if (usernameError) {
+      toast({
+        title: 'Invalid username',
+        description: usernameError,
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setIsSavingProfile(true);
 
     try {
@@ -829,7 +944,10 @@ export default function ProfileDashboardClient({
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ name: normalizedName || null }),
+        body: JSON.stringify({
+          name: normalizedName || null,
+          username: normalizedUsername || null,
+        }),
       });
 
       const payload = (await response
@@ -845,10 +963,12 @@ export default function ProfileDashboardClient({
 
       setProfileDisplayName(nextDisplayName);
       setProfileFormName(nextDisplayName);
+      setProfileUsername(payload.user.username ?? null);
+      setProfileFormUsername(payload.user.username ?? '');
 
       toast({
         title: 'Profile updated',
-        description: 'Your display name has been saved.',
+        description: 'Your profile details and public username were saved.',
       });
 
       setSettingsDialog(null);
@@ -1194,6 +1314,7 @@ export default function ProfileDashboardClient({
 
     if (itemKey === 'profile') {
       setProfileFormName(profileDisplayName);
+      setProfileFormUsername(profileUsername ?? '');
     }
 
     if (itemKey === 'address') {
@@ -2118,6 +2239,8 @@ export default function ProfileDashboardClient({
             <Button
               variant="ghost"
               size="sm"
+              onClick={() => void handleShareProfile()}
+              disabled={!publicProfilePath}
               className="text-muted-foreground transition-all duration-200 hover:bg-accent/70 hover:text-foreground"
             >
               <Share2 className="mr-1.5 h-4 w-4" />
@@ -2733,6 +2856,27 @@ export default function ProfileDashboardClient({
                       disabled={isSavingProfile}
                       placeholder="Your name"
                     />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label htmlFor="profile-username">Username</Label>
+                    <Input
+                      id="profile-username"
+                      value={profileFormUsername}
+                      onChange={(event) => setProfileFormUsername(event.target.value)}
+                      disabled={isSavingProfile}
+                      placeholder="your-username"
+                      autoCapitalize="off"
+                      autoCorrect="off"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Used in your public URL. Only lowercase letters, numbers, and hyphens.
+                    </p>
+                    {profileFormPathPreview ? (
+                      <p className="text-xs text-primary">
+                        URL: {profileFormPathPreview}
+                      </p>
+                    ) : null}
                   </div>
 
                   <div className="space-y-1.5">

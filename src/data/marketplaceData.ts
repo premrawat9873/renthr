@@ -30,6 +30,8 @@ export interface Product {
   description?: string;
   features?: string[];
   ownerId?: string;
+  ownerProfilePath?: string;
+  ownerUsername?: string;
   ownerName?: string;
   ownerImage?: string;
   ownerTag?: string;

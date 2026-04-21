@@ -15,6 +15,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/hooks/use-toast';
+import { getPublicProfilePath } from '@/lib/profile-url';
 import { getSupabaseBrowserClient } from '@/lib/supabase-client';
 import { cn } from '@/lib/utils';
 import type {
@@ -236,12 +237,17 @@ export default function ChatPageClient({
   };
 
   const openProfile = useCallback(
-    (userId: string | null | undefined) => {
+    (userId: string | null | undefined, displayName?: string | null) => {
       if (!userId) {
         return;
       }
 
-      router.push(`/profile/${encodeURIComponent(userId)}`);
+      router.push(
+        getPublicProfilePath({
+          id: userId,
+          displayName,
+        })
+      );
     },
     [router]
   );
@@ -253,7 +259,11 @@ export default function ChatPageClient({
       }
 
       try {
-        const response = await fetch('/api/chat/conversations', {
+        const endpoint = initialConversationId
+          ? '/api/chat/conversations?includeEmpty=1'
+          : '/api/chat/conversations';
+
+        const response = await fetch(endpoint, {
           cache: 'no-store',
         });
         const payload = (await response.json()) as {
@@ -279,7 +289,7 @@ export default function ChatPageClient({
         }
       }
     },
-    []
+    [initialConversationId]
   );
 
   const loadMessages = useCallback(
@@ -644,13 +654,13 @@ export default function ChatPageClient({
                           tabIndex={conversation.peer.id ? 0 : undefined}
                           onClick={(event) => {
                             event.stopPropagation();
-                            openProfile(conversation.peer.id);
+                            openProfile(conversation.peer.id, peerName);
                           }}
                           onKeyDown={(event) => {
                             if (event.key === 'Enter' || event.key === ' ') {
                               event.preventDefault();
                               event.stopPropagation();
-                              openProfile(conversation.peer.id);
+                              openProfile(conversation.peer.id, peerName);
                             }
                           }}
                           aria-label={
@@ -660,6 +670,8 @@ export default function ChatPageClient({
                           }
                         >
                           {conversation.peer.avatarUrl ? (
+                            // Avatar URLs are user-provided and can point to arbitrary hosts; keep native img here.
+                            // eslint-disable-next-line @next/next/no-img-element
                             <img
                               src={conversation.peer.avatarUrl}
                               alt={peerName}
@@ -720,11 +732,13 @@ export default function ChatPageClient({
                     <div className="flex min-w-0 items-center gap-3">
                       <button
                         type="button"
-                        onClick={() => openProfile(activeConversation.peer.id)}
+                        onClick={() => openProfile(activeConversation.peer.id, activeConversation.peer.name)}
                         className="relative h-10 w-10 shrink-0 overflow-hidden rounded-full border border-[#d9e4de] bg-[#e7efe9] transition-transform hover:scale-[1.03]"
                         aria-label={`View ${activeConversation.peer.name || 'user'} profile`}
                       >
                         {activeConversation.peer.avatarUrl ? (
+                          // Avatar URLs are user-provided and can point to arbitrary hosts; keep native img here.
+                          // eslint-disable-next-line @next/next/no-img-element
                           <img
                             src={activeConversation.peer.avatarUrl}
                             alt={activeConversation.peer.name}
@@ -836,11 +850,13 @@ export default function ChatPageClient({
                               {!message.mine ? (
                                 <button
                                   type="button"
-                                  onClick={() => openProfile(message.senderId)}
+                                  onClick={() => openProfile(message.senderId, message.senderName)}
                                   className="mb-5 h-8 w-8 shrink-0 overflow-hidden rounded-full border border-[#d9e4de] bg-[#e7efe9]"
                                   aria-label={`View ${message.senderName || 'user'} profile`}
                                 >
                                   {message.senderAvatarUrl ? (
+                                    // Avatar URLs are user-provided and can point to arbitrary hosts; keep native img here.
+                                    // eslint-disable-next-line @next/next/no-img-element
                                     <img
                                       src={message.senderAvatarUrl}
                                       alt={message.senderName}
