@@ -32,14 +32,3 @@ export async function POST() {
   return response;
 }
 
-export async function GET(request: Request) {
-  const cookieStore = await cookies();
-  const requestUrl = new URL(request.url);
-  const nextParam = requestUrl.searchParams.get('next');
-  const nextPath = isSafeInternalPath(nextParam) ? nextParam : '/login';
-
-  const response = NextResponse.redirect(new URL(nextPath, requestUrl.origin));
-  clearAuthCookies(response, cookieStore.getAll());
-
-  return response;
-}

@@ -9,6 +9,7 @@ import {
   clearSupabaseAuthTokenCookies,
   isSupabaseRefreshTokenNotFoundError,
 } from '@/lib/supabase-auth-utils';
+import { ensureCsrfCookie } from '@/lib/csrf';
 
 const PROTECTED_ROUTES: string[] = [];
 
@@ -46,8 +47,17 @@ export async function updateSession(request: NextRequest) {
   });
   const pathname = request.nextUrl.pathname;
 
+  function finalizeResponse(resp: NextResponse) {
+    try {
+      ensureCsrfCookie(request, resp);
+    } catch (e) {
+      // Best-effort only; don't block responses on CSRF cookie setting failures.
+    }
+    return resp;
+  }
+
   if (pathname === '/' && request.nextUrl.searchParams.has('code')) {
-    return NextResponse.redirect(getOAuthCallbackRedirectUrl(request));
+    return finalizeResponse(NextResponse.redirect(getOAuthCallbackRedirectUrl(request)));
   }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -107,12 +117,12 @@ export async function updateSession(request: NextRequest) {
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = '/login';
     redirectUrl.searchParams.set('next', `${pathname}${request.nextUrl.search}`);
-    return NextResponse.redirect(redirectUrl);
+    return finalizeResponse(NextResponse.redirect(redirectUrl));
   }
 
   if (pathname === '/login' && isAuthenticated) {
-    return NextResponse.redirect(new URL(getPostLoginRedirectPath(request), request.url));
+    return finalizeResponse(NextResponse.redirect(new URL(getPostLoginRedirectPath(request), request.url)));
   }
 
-  return response;
+  return finalizeResponse(response);
 }

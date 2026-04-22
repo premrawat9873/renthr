@@ -1,6 +1,8 @@
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 import { updateSession } from '@/lib/supabase-proxy';
+import { isMutatingMethod } from '@/lib/csrf-constants';
+import { CSRF_COOKIE_NAME, CSRF_HEADER_NAME } from '@/lib/csrf-constants';
 
 // Strict CORS configuration - only allows renthour.in website and mobile app requests
 const ALLOWED_WEB_ORIGINS = new Set([
@@ -71,6 +73,52 @@ export async function proxy(request: NextRequest) {
   const origin = request.headers.get('origin');
   const allowedOrigin = getAllowedOrigin(origin, request);
   const hasOriginHeader = Boolean(origin);
+
+  // If this appears to be a browser navigation/request (Origin or Referer present),
+  // enforce additional protections for mutating HTTP methods.
+  const isMutating = isMutatingMethod(request.method);
+  const hasNavHeader = Boolean(request.headers.get('origin') || request.headers.get('referer'));
+
+  if (isMutating && hasNavHeader) {
+    // Strict Origin header match if provided
+    const originHeader = request.headers.get('origin');
+    if (originHeader && allowedOrigin && allowedOrigin !== 'mobile-app' && originHeader !== allowedOrigin) {
+      return withCorsHeaders(
+        NextResponse.json({ error: 'Origin mismatch.' }, { status: 403 }),
+        null
+      );
+    }
+
+    // Strict Referer origin check when present
+    const referer = request.headers.get('referer');
+    if (referer && allowedOrigin && allowedOrigin !== 'mobile-app') {
+      try {
+        const refererOrigin = new URL(referer).origin;
+        if (refererOrigin !== allowedOrigin) {
+          return withCorsHeaders(
+            NextResponse.json({ error: 'Referer origin mismatch.' }, { status: 403 }),
+            null
+          );
+        }
+      } catch {
+        // If referer is weird, block the request
+        return withCorsHeaders(
+          NextResponse.json({ error: 'Invalid referer.' }, { status: 403 }),
+          null
+        );
+      }
+    }
+
+    // Double-submit CSRF check: require header equals cookie for browser mutating requests
+    const csrfHeader = request.headers.get(CSRF_HEADER_NAME);
+    const csrfCookie = request.cookies.get(CSRF_COOKIE_NAME)?.value;
+    if (!csrfHeader || !csrfCookie || csrfHeader !== csrfCookie) {
+      return withCorsHeaders(
+        NextResponse.json({ error: 'CSRF validation failed.' }, { status: 403 }),
+        null
+      );
+    }
+  }
 
   // Strict CORS enforcement:
   // - If Origin header is present, it MUST be in the whitelist

@@ -6,13 +6,26 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { Toaster } from '@/components/ui/toaster';
 import { Toaster as SonnerToaster } from '@/components/ui/sonner';
 import StartupSplash from '@/components/ui/StartupSplash';
-import { ReactNode } from 'react';
+import { ReactNode, useEffect } from 'react';
 import { store } from '@/store/store';
 import { SupabaseAuthProvider } from '@/lib/supabase-auth';
 
 const queryClient = new QueryClient();
 
 export function Providers({ children }: { children: ReactNode }) {
+  useEffect(() => {
+    try {
+      // Patch the global fetch to add CSRF header for mutating same-origin requests
+      // This is best-effort and only runs in the browser.
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const mod = require('@/lib/fetch-csrf-client');
+      if (mod && typeof mod.patchFetchWithCsrf === 'function') {
+        mod.patchFetchWithCsrf();
+      }
+    } catch (e) {
+      // ignore
+    }
+  }, []);
   return (
     <SupabaseAuthProvider>
       <ReduxProvider store={store}>
