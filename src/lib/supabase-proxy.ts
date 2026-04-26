@@ -50,7 +50,7 @@ export async function updateSession(request: NextRequest) {
   function finalizeResponse(resp: NextResponse) {
     try {
       ensureCsrfCookie(request, resp);
-    } catch (e) {
+    } catch {
       // Best-effort only; don't block responses on CSRF cookie setting failures.
     }
     return resp;

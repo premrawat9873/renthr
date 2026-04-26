@@ -13,7 +13,7 @@ export function getCsrfCookieOptions() {
     httpOnly: false as const,
     path: '/',
     maxAge: 60 * 60 * 24, // 1 day
-  } as Record<string, any>;
+  };
 }
 
 export function setCsrfCookie(response: NextResponse, token?: string) {
@@ -37,9 +37,11 @@ export function validateDoubleSubmit(request: NextRequest) {
   return headerVal === cookieVal;
 }
 
-export default {
+const csrfUtils = {
   generateCsrfToken,
   ensureCsrfCookie,
   validateDoubleSubmit,
   setCsrfCookie,
 };
+
+export default csrfUtils;

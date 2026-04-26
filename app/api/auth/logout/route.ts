@@ -9,10 +9,6 @@ import {
   clearSupabaseAuthTokenCookies,
 } from '@/lib/supabase-auth-utils';
 
-function isSafeInternalPath(path: string | null) {
-  return Boolean(path && path.startsWith('/') && !path.startsWith('//'));
-}
-
 function clearAuthCookies(response: NextResponse, cookieList: Array<{ name: string; value: string }>) {
   response.cookies.set(CUSTOM_SESSION_COOKIE_NAME, '', {
     ...getCustomSessionCookieOptions(),
@@ -31,4 +27,3 @@ export async function POST() {
 
   return response;
 }
-

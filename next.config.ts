@@ -47,6 +47,7 @@ if (r2Pattern) {
 }
 
 const nextConfig: NextConfig = {
+  outputFileTracingRoot: process.cwd(),
   async redirects() {
     return [
       {

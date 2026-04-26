@@ -14,17 +14,15 @@ const queryClient = new QueryClient();
 
 export function Providers({ children }: { children: ReactNode }) {
   useEffect(() => {
-    try {
-      // Patch the global fetch to add CSRF header for mutating same-origin requests
-      // This is best-effort and only runs in the browser.
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const mod = require('@/lib/fetch-csrf-client');
-      if (mod && typeof mod.patchFetchWithCsrf === 'function') {
-        mod.patchFetchWithCsrf();
-      }
-    } catch (e) {
-      // ignore
-    }
+    // Patch global fetch to add CSRF header for mutating same-origin requests.
+    // Best-effort in browser only.
+    void import('@/lib/fetch-csrf-client')
+      .then((mod) => {
+        mod.patchFetchWithCsrf?.();
+      })
+      .catch(() => {
+        // ignore
+      });
   }, []);
   return (
     <SupabaseAuthProvider>

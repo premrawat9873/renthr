@@ -4,7 +4,7 @@ import { updateSession } from '@/lib/supabase-proxy';
 import { isMutatingMethod } from '@/lib/csrf-constants';
 import { CSRF_COOKIE_NAME, CSRF_HEADER_NAME } from '@/lib/csrf-constants';
 
-// Strict CORS configuration - only allows renthour.in website and mobile app requests
+// Strict client allowlist - only website and signed mobile app requests.
 const ALLOWED_WEB_ORIGINS = new Set([
   'https://renthour.in',
   'https://www.renthour.in',
@@ -14,40 +14,60 @@ if (process.env.NODE_ENV !== 'production') {
   ALLOWED_WEB_ORIGINS.add('http://localhost:3000');
 }
 
-// Expected header from mobile app requests
-const MOBILE_APP_IDENTIFIER = 'X-App-Client';
+const MOBILE_APP_IDENTIFIER_HEADER = 'x-app-client';
+const MOBILE_APP_KEY_HEADER = 'x-app-key';
 
 const CORS_ALLOWED_METHODS = 'GET,POST,PATCH,PUT,DELETE,OPTIONS';
 const CORS_ALLOWED_HEADERS =
-  'Accept,Authorization,Content-Type,X-Requested-With,X-App-Client';
+  'Accept,Authorization,Content-Type,X-Requested-With,X-App-Client,X-App-Key';
 
 function isApiRequest(request: NextRequest) {
   return request.nextUrl.pathname.startsWith('/api/');
 }
 
-function isMobileAppRequest(request: NextRequest): boolean {
-  // Mobile app requests typically don't send an Origin header
-  // but they can optionally send an X-App-Client header for explicit identification
-  const origin = request.headers.get('origin');
-  const appClientHeader = request.headers.get(MOBILE_APP_IDENTIFIER);
-  
-  // If no origin header is present and it's an API request, consider it from mobile app
-  // (Native mobile apps don't send Origin headers by default)
-  return !origin && appClientHeader === 'true';
-}
-
-function getAllowedOrigin(origin: string | null, request: NextRequest) {
-  if (!origin) {
-    // Check if this is a legitimate mobile app request
-    if (isMobileAppRequest(request)) {
-      return 'mobile-app'; // Signal that this is a mobile app request
-    }
-    // No origin header and not identified as mobile app - allow for native requests
+function parseOrigin(value: string | null) {
+  if (!value) return null;
+  try {
+    return new URL(value).origin;
+  } catch {
     return null;
   }
+}
 
-  // For web requests, validate against whitelist
-  return ALLOWED_WEB_ORIGINS.has(origin) ? origin : null;
+function getRequestOrigin(request: NextRequest) {
+  const origin = parseOrigin(request.headers.get('origin'));
+  if (origin) return origin;
+  return parseOrigin(request.headers.get('referer'));
+}
+
+function getMobileAppSecret() {
+  return (process.env.MOBILE_APP_API_KEY || '').trim();
+}
+
+function isAllowedWebRequest(request: NextRequest) {
+  const requestOrigin = getRequestOrigin(request);
+  return Boolean(requestOrigin && ALLOWED_WEB_ORIGINS.has(requestOrigin));
+}
+
+function isAllowedMobileRequest(request: NextRequest) {
+  // Native requests generally have no Origin/Referer.
+  if (request.headers.get('origin') || request.headers.get('referer')) {
+    return false;
+  }
+
+  const appClientHeader = request.headers.get(MOBILE_APP_IDENTIFIER_HEADER);
+  if (appClientHeader !== 'true') {
+    return false;
+  }
+
+  const expectedKey = getMobileAppSecret();
+  if (!expectedKey) {
+    // Fail closed in production if secret is not configured.
+    return process.env.NODE_ENV !== 'production';
+  }
+
+  const providedKey = request.headers.get(MOBILE_APP_KEY_HEADER) || '';
+  return providedKey === expectedKey;
 }
 
 function withCorsHeaders(response: NextResponse, allowedOrigin: string | null) {
@@ -56,9 +76,7 @@ function withCorsHeaders(response: NextResponse, allowedOrigin: string | null) {
   response.headers.set('Access-Control-Allow-Methods', CORS_ALLOWED_METHODS);
   response.headers.set('Access-Control-Allow-Headers', CORS_ALLOWED_HEADERS);
 
-  // Only set Access-Control-Allow-Origin if we have an allowed origin
-  // This prevents accidental CORS allowance
-  if (allowedOrigin && allowedOrigin !== 'mobile-app') {
+  if (allowedOrigin) {
     response.headers.set('Access-Control-Allow-Origin', allowedOrigin);
   }
 
@@ -70,9 +88,24 @@ export async function proxy(request: NextRequest) {
     return updateSession(request);
   }
 
-  const origin = request.headers.get('origin');
-  const allowedOrigin = getAllowedOrigin(origin, request);
-  const hasOriginHeader = Boolean(origin);
+  const allowedWebRequest = isAllowedWebRequest(request);
+  const allowedMobileRequest = isAllowedMobileRequest(request);
+  const requestOrigin = getRequestOrigin(request);
+  const allowedOrigin = allowedWebRequest ? requestOrigin : null;
+
+  if (!allowedWebRequest && !allowedMobileRequest) {
+    if (request.method === 'OPTIONS') {
+      return withCorsHeaders(new NextResponse(null, { status: 403 }), null);
+    }
+
+    return withCorsHeaders(
+      NextResponse.json(
+        { error: 'Access denied. API is restricted to RentHour website and approved mobile app clients.' },
+        { status: 403 }
+      ),
+      null
+    );
+  }
 
   // If this appears to be a browser navigation/request (Origin or Referer present),
   // enforce additional protections for mutating HTTP methods.
@@ -80,36 +113,7 @@ export async function proxy(request: NextRequest) {
   const hasNavHeader = Boolean(request.headers.get('origin') || request.headers.get('referer'));
 
   if (isMutating && hasNavHeader) {
-    // Strict Origin header match if provided
-    const originHeader = request.headers.get('origin');
-    if (originHeader && allowedOrigin && allowedOrigin !== 'mobile-app' && originHeader !== allowedOrigin) {
-      return withCorsHeaders(
-        NextResponse.json({ error: 'Origin mismatch.' }, { status: 403 }),
-        null
-      );
-    }
-
-    // Strict Referer origin check when present
-    const referer = request.headers.get('referer');
-    if (referer && allowedOrigin && allowedOrigin !== 'mobile-app') {
-      try {
-        const refererOrigin = new URL(referer).origin;
-        if (refererOrigin !== allowedOrigin) {
-          return withCorsHeaders(
-            NextResponse.json({ error: 'Referer origin mismatch.' }, { status: 403 }),
-            null
-          );
-        }
-      } catch {
-        // If referer is weird, block the request
-        return withCorsHeaders(
-          NextResponse.json({ error: 'Invalid referer.' }, { status: 403 }),
-          null
-        );
-      }
-    }
-
-    // Double-submit CSRF check: require header equals cookie for browser mutating requests
+    // Double-submit CSRF check for browser mutating requests.
     const csrfHeader = request.headers.get(CSRF_HEADER_NAME);
     const csrfCookie = request.cookies.get(CSRF_COOKIE_NAME)?.value;
     if (!csrfHeader || !csrfCookie || csrfHeader !== csrfCookie) {
@@ -118,21 +122,6 @@ export async function proxy(request: NextRequest) {
         null
       );
     }
-  }
-
-  // Strict CORS enforcement:
-  // - If Origin header is present, it MUST be in the whitelist
-  // - If no Origin header, allow only if it's a mobile app request or native request
-  if (hasOriginHeader && !allowedOrigin) {
-    // Browser-based cross-origin request from disallowed origin
-    if (request.method === 'OPTIONS') {
-      return withCorsHeaders(new NextResponse(null, { status: 403 }), null);
-    }
-
-    return withCorsHeaders(
-      NextResponse.json({ error: 'CORS policy: Request origin not allowed. Only renthour.in and approved mobile apps can access this API.' }, { status: 403 }),
-      null
-    );
   }
 
   if (request.method === 'OPTIONS') {
